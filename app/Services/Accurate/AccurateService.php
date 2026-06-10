@@ -333,6 +333,8 @@ class AccurateService
             $lines = collect($d['detailItem'] ?? [])->map(fn ($r) => [
                 'item_no' => is_array($r['item'] ?? null) ? ($r['item']['no'] ?? null) : null,
                 'item_name' => $r['detailName'] ?? (is_array($r['item'] ?? null) ? ($r['item']['name'] ?? null) : null),
+                'so_number' => is_array($r['salesOrder'] ?? null) ? ($r['salesOrder']['number'] ?? null) : null,
+                'do_number' => is_array($r['deliveryOrder'] ?? null) ? ($r['deliveryOrder']['number'] ?? null) : null,
                 'qty' => $r['quantity'] ?? 0,
                 'unit' => is_array($r['itemUnit'] ?? null) ? ($r['itemUnit']['name'] ?? null) : ($r['availableItemUnitName'] ?? null),
                 'unit_price' => $r['unitPrice'] ?? 0,
@@ -351,9 +353,11 @@ class AccurateService
                 'header' => [
                     'number' => $d['number'] ?? null,
                     'po_number' => $d['poNumber'] ?? null,
+                    'description' => $d['description'] ?? null,
                     'customer' => is_array($d['customer'] ?? null) ? ($d['customer']['name'] ?? null) : ($d['retailWpName'] ?? null),
                     'status' => $d['statusName'] ?? null,
                     'trans_date' => $d['transDate'] ?? ($d['transDateView'] ?? null),
+                    'ship_date' => $d['shipDate'] ?? ($d['shipDateView'] ?? null),
                     'dpp' => $d['taxableAmount1'] ?? 0,
                     'ppn' => $d['tax1Amount'] ?? 0,
                     'total' => $d['totalAmount'] ?? 0,

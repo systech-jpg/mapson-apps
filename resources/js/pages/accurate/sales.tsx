@@ -29,6 +29,8 @@ interface Row {
 interface DetailLine {
     item_no: string | null;
     item_name: string | null;
+    so_number: string | null;
+    do_number: string | null;
     qty: number | string | null;
     unit: string | null;
     unit_price: number | string | null;
@@ -42,7 +44,7 @@ interface DetailLine {
 }
 
 interface DetailData {
-    header: { number: string; po_number: string | null; customer: string | null; status: string | null; trans_date: string | null; dpp: number; ppn: number; total: number };
+    header: { number: string; po_number: string | null; description: string | null; customer: string | null; status: string | null; trans_date: string | null; ship_date: string | null; dpp: number; ppn: number; total: number };
     lines: DetailLine[];
 }
 
@@ -206,6 +208,84 @@ export default function AccurateSales({ ready, status }: { ready: boolean; statu
                     </div>
                 )}
             </div>
+
+            <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+                <DialogContent className="max-w-5xl w-[96vw]">
+                    <DialogHeader>
+                        <DialogTitle>Detail Faktur {detail?.header.number ?? ''}</DialogTitle>
+                    </DialogHeader>
+
+                    {detailLoading && (
+                        <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+                            <LoaderCircle className="size-4 animate-spin" /> Memuat detail dari Accurate…
+                        </div>
+                    )}
+                    {detailError && <p className="py-4 text-sm text-red-600">{detailError}</p>}
+
+                    {detail && (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+                                <div><span className="text-muted-foreground">No PO:</span> {detail.header.po_number ?? '-'}</div>
+                                <div><span className="text-muted-foreground">Tgl Faktur:</span> {detail.header.trans_date ?? '-'}</div>
+                                <div><span className="text-muted-foreground">Tgl Kirim:</span> {detail.header.ship_date ?? '-'}</div>
+                                <div><span className="text-muted-foreground">Status:</span> <Badge variant="secondary">{detail.header.status}</Badge></div>
+                                <div className="col-span-2"><span className="text-muted-foreground">Keterangan:</span> {detail.header.description || '-'}</div>
+                                <div className="col-span-2 sm:col-span-3"><span className="text-muted-foreground">Customer:</span> {detail.header.customer ?? '-'}</div>
+                            </div>
+
+                            <div className="overflow-x-auto rounded-md border">
+                                <Table className="text-sm [&_td]:px-2 [&_td]:py-1.5 [&_th]:h-9 [&_th]:px-2">
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Item</TableHead>
+                                            <TableHead className="text-right">Qty</TableHead>
+                                            <TableHead className="text-right">Harga</TableHead>
+                                            <TableHead className="text-right">Bruto</TableHead>
+                                            <TableHead className="text-right">Diskon</TableHead>
+                                            <TableHead className="text-right">DPP</TableHead>
+                                            <TableHead className="text-right">PPN</TableHead>
+                                            <TableHead className="text-right">Total</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {detail.lines.map((l, i) => (
+                                            <TableRow key={i}>
+                                                <TableCell>
+                                                    <div className="font-medium">{l.item_name}</div>
+                                                    {l.item_no && <div className="text-xs text-muted-foreground">{l.item_no}</div>}
+                                                    {(l.so_number || l.do_number) && (
+                                                        <div className="text-xs text-muted-foreground">
+                                                            {l.so_number && <>SO: {l.so_number}</>}
+                                                            {l.so_number && l.do_number && ' · '}
+                                                            {l.do_number && <>DO: {l.do_number}</>}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">{money(l.qty)} {l.unit ?? ''}</TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">{money(l.unit_price)}</TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">{money(l.gross)}</TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">
+                                                    {money(l.disc_amount)}
+                                                    {Number(l.disc_percent) > 0 && <span className="text-xs text-muted-foreground"> ({l.disc_percent}%)</span>}
+                                                </TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">{money(l.dpp)}</TableCell>
+                                                <TableCell className="text-right whitespace-nowrap">{money(l.ppn)}</TableCell>
+                                                <TableCell className="text-right font-medium whitespace-nowrap">{money(l.total)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+
+                            <div className="flex justify-end gap-6 text-sm">
+                                <span><span className="text-muted-foreground">DPP:</span> {money(detail.header.dpp)}</span>
+                                <span><span className="text-muted-foreground">PPN:</span> {money(detail.header.ppn)}</span>
+                                <span className="font-semibold">Total: {money(detail.header.total)}</span>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </AppLayout>
     );
 }
