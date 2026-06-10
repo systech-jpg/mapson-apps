@@ -31,6 +31,7 @@ interface DetailLine {
     item_name: string | null;
     so_number: string | null;
     do_number: string | null;
+    do_date: string | null;
     qty: number | string | null;
     unit: string | null;
     unit_price: number | string | null;
@@ -257,7 +258,7 @@ export default function AccurateSales({ ready, status }: { ready: boolean; statu
                                                         <div className="text-xs text-muted-foreground">
                                                             {l.so_number && <>SO: {l.so_number}</>}
                                                             {l.so_number && l.do_number && ' · '}
-                                                            {l.do_number && <>DO: {l.do_number}</>}
+                                                            {l.do_number && <>DO: {l.do_number}{l.do_date && ` (${l.do_date})`}</>}
                                                         </div>
                                                     )}
                                                 </TableCell>

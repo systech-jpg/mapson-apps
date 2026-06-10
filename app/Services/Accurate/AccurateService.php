@@ -39,6 +39,34 @@ class AccurateService
         ];
     }
 
+    /**
+     * Low-level authenticated GET against a database API endpoint (for ETL/staging).
+     * Returns the decoded JSON. Throws on connection/auth problems.
+     *
+     * @param  array<string, mixed>  $query
+     * @return array<string, mixed>
+     */
+    public function apiGet(AccurateSetting $s, string $path, array $query = []): array
+    {
+        $token = $this->freshToken($s);
+        if (! $token) {
+            throw new \RuntimeException('Accurate belum terhubung.');
+        }
+        if (blank($s->api_host)) {
+            throw new \RuntimeException('API Host belum diisi.');
+        }
+
+        $headers = $this->apiHeaders($s, $token);
+        if (filled($s->session_id)) {
+            $headers['X-Session-ID'] = $s->session_id;
+        }
+
+        $resp = $this->http()->withHeaders($headers)
+            ->get(rtrim($s->api_host, '/').'/accurate/api/'.ltrim($path, '/'), $query);
+
+        return $resp->json() ?? [];
+    }
+
     /** Fixed OAuth callback URL — must be registered in the Accurate app exactly. */
     public function callbackUrl(): string
     {
@@ -335,6 +363,7 @@ class AccurateService
                 'item_name' => $r['detailName'] ?? (is_array($r['item'] ?? null) ? ($r['item']['name'] ?? null) : null),
                 'so_number' => is_array($r['salesOrder'] ?? null) ? ($r['salesOrder']['number'] ?? null) : null,
                 'do_number' => is_array($r['deliveryOrder'] ?? null) ? ($r['deliveryOrder']['number'] ?? null) : null,
+                'do_id' => $r['deliveryOrderId'] ?? null,
                 'qty' => $r['quantity'] ?? 0,
                 'unit' => is_array($r['itemUnit'] ?? null) ? ($r['itemUnit']['name'] ?? null) : ($r['availableItemUnitName'] ?? null),
                 'unit_price' => $r['unitPrice'] ?? 0,
@@ -346,6 +375,16 @@ class AccurateService
                 'tax_name' => $r['detailTaxName'] ?? null,
                 'total' => $r['totalPrice'] ?? 0,
             ])->all();
+
+            // Enrich with the real Delivery Order (Surat Jalan) date, fetched once per
+            // unique DO id. Used for Dolibarr↔Accurate reconciliation.
+            $doDates = $this->deliveryOrderDates($s, $headers, collect($lines)->pluck('do_id')->filter()->unique()->all());
+            $lines = array_map(function ($l) use ($doDates) {
+                $l['do_date'] = $l['do_id'] !== null ? ($doDates[$l['do_id']] ?? null) : null;
+                unset($l['do_id']);
+
+                return $l;
+            }, $lines);
 
             return [
                 'ok' => true,
@@ -367,6 +406,32 @@ class AccurateService
         } catch (Throwable $e) {
             return ['ok' => false, 'message' => 'Tidak bisa menghubungi Accurate: '.$e->getMessage()];
         }
+    }
+
+    /**
+     * Resolve Delivery Order (Surat Jalan) transaction dates by id.
+     *
+     * @param  array<string, string>  $headers
+     * @param  array<int, int>  $ids
+     * @return array<int, string|null>  map of doId => date (dd/MM/yyyy)
+     */
+    protected function deliveryOrderDates(AccurateSetting $s, array $headers, array $ids): array
+    {
+        $base = rtrim($s->api_host, '/');
+        $dates = [];
+
+        foreach ($ids as $id) {
+            try {
+                $dd = $this->http()->withHeaders($headers)
+                    ->get($base.'/accurate/api/delivery-order/detail.do', ['id' => $id])
+                    ->json('d');
+                $dates[$id] = is_array($dd) ? ($dd['transDate'] ?? ($dd['transDateView'] ?? null)) : null;
+            } catch (Throwable $e) {
+                $dates[$id] = null;
+            }
+        }
+
+        return $dates;
     }
 
     /**
