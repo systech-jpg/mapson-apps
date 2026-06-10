@@ -1,0 +1,25 @@
+# App served at http://localhost/mapson-apps with clean URLs (no /public segment).
+# Real static files in public/ (Vite build assets, favicon, robots, storage, ...) are
+# passed through; everything else goes to the front controller (index.php) in this dir,
+# which keeps base_path()/public_path() pointing at public/ via bootstrap/app.php.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Already at the front controller: stop, so the rule below can't re-route it.
+    RewriteRule ^index\.php$ - [L]
+
+    # Pass real static files that live in public/ straight through
+    RewriteCond %{DOCUMENT_ROOT}/mapson-apps/public/$1 -f
+    RewriteRule ^(.+)$ public/$1 [L]
+
+    # Authorization header (some FastCGI setups strip it)
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Everything else -> Laravel front controller
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+DirectoryIndex index.php
