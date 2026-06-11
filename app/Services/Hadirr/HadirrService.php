@@ -60,7 +60,10 @@ class HadirrService
                     ->withHeaders(['Authorization' => 'bearer '.$encoded])
                     ->post($this->base($s).'/auth');
 
-                $token = $this->extractToken($resp->json() ?? []);
+                // Hadirr returns the JWT in the X-Access-Token response header
+                // (response body's `data` is null). Fall back to body just in case.
+                $token = $resp->header('X-Access-Token')
+                    ?: ($resp->header('Authorization') ?: $this->extractToken($resp->json() ?? []));
 
                 if ($resp->successful() && filled($token)) {
                     $s->access_token = $token;
