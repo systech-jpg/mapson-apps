@@ -3,6 +3,7 @@ import {
     BarChart3,
     Briefcase,
     Building2,
+    CalendarCheck,
     Circle,
     Contact,
     Database,
@@ -54,6 +55,7 @@ export const menuIcons: Record<string, LucideIcon> = {
     Plug,
     Fingerprint,
     ShoppingCart,
+    CalendarCheck,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

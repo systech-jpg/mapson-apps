@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccurateController;
+use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\HadirrController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
@@ -40,6 +41,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('integration/hadirr/settings', [HadirrController::class, 'settings'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.settings');
     Route::put('integration/hadirr/settings', [HadirrController::class, 'update'])->middleware('menu.access:hadirr-setting,edit')->name('hadirr.settings.update');
     Route::post('integration/hadirr/test', [HadirrController::class, 'test'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.test');
+
+    // Human Resources → Data Absensi (fed from Hadirr staging)
+    Route::get('attendance', [AttendanceController::class, 'index'])->middleware('menu.access:attendance,view')->name('attendance.index');
+    Route::post('attendance/sync', [AttendanceController::class, 'sync'])->middleware('menu.access:attendance,edit')->name('attendance.sync');
 
     // Users
     Route::get('users', [UserController::class, 'index'])->middleware('menu.access:users,view')->name('users.index');

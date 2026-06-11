@@ -62,6 +62,7 @@ class MenuSeeder extends Seeder
             'sort_order' => 5,
         ]);
         $this->menu(['key' => 'employees', 'title' => 'Employees', 'route' => 'employees.index', 'icon' => 'IdCard', 'sort_order' => 1], $hr->id);
+        $this->menu(['key' => 'attendance', 'title' => 'Data Absensi', 'route' => 'attendance.index', 'icon' => 'CalendarCheck', 'sort_order' => 2], $hr->id);
 
         // Module: Integrasi Data.
         $integrasi = $this->menu([

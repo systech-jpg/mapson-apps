@@ -107,6 +107,36 @@ class HadirrService
     }
 
     /**
+     * Authenticated GET against the Hadirr API (for sync/ETL). Returns decoded JSON.
+     * Throws on missing credentials/token.
+     *
+     * @param  array<string, mixed>  $query
+     * @return array<string, mixed>
+     */
+    public function apiGet(HadirrSetting $s, string $path, array $query = []): array
+    {
+        $token = $this->freshToken($s);
+        if (! $token) {
+            throw new \RuntimeException('Hadirr belum terhubung (token gagal). Cek Setting.');
+        }
+
+        $resp = $this->http()->withToken($token)
+            ->get($this->base($s).'/'.ltrim($path, '/'), $query);
+
+        // Expired token mid-run: re-auth once and retry.
+        if ($resp->status() === 401) {
+            $token = $this->authenticate($s);
+            if (! $token) {
+                throw new \RuntimeException('Hadirr token kadaluarsa dan re-auth gagal.');
+            }
+            $resp = $this->http()->withToken($token)
+                ->get($this->base($s).'/'.ltrim($path, '/'), $query);
+        }
+
+        return $resp->json() ?? [];
+    }
+
+    /**
      * Verify connectivity: get a JWT, then hit GET /employees.
      *
      * @return array{ok: bool, message: string}
