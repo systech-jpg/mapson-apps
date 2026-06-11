@@ -8,6 +8,7 @@ import {
     Database,
     DatabaseZap,
     FileBadge,
+    Fingerprint,
     IdCard,
     Layers,
     LayoutGrid,
@@ -16,6 +17,7 @@ import {
     Network,
     Plug,
     Settings,
+    ShoppingCart,
     Shield,
     UserCog,
     Users,
@@ -50,6 +52,8 @@ export const menuIcons: Record<string, LucideIcon> = {
     FileBadge,
     BarChart3,
     Plug,
+    Fingerprint,
+    ShoppingCart,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

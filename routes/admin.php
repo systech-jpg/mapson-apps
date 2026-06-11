@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccurateController;
+use App\Http\Controllers\Admin\HadirrController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\IntegrationController;
@@ -34,6 +35,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('integration/accurate/sales', [AccurateController::class, 'salesPage'])->middleware('menu.access:accurate-sales,view')->name('accurate.sales');
     Route::get('integration/accurate/sales/data', [AccurateController::class, 'salesData'])->middleware('menu.access:accurate-sales,view')->name('accurate.sales.data');
     Route::get('integration/accurate/sales/{id}/detail', [AccurateController::class, 'salesDetail'])->whereNumber('id')->middleware('menu.access:accurate-sales,view')->name('accurate.sales.detail');
+
+    // Data Integration → Hadirr
+    Route::get('integration/hadirr/settings', [HadirrController::class, 'settings'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.settings');
+    Route::put('integration/hadirr/settings', [HadirrController::class, 'update'])->middleware('menu.access:hadirr-setting,edit')->name('hadirr.settings.update');
+    Route::post('integration/hadirr/test', [HadirrController::class, 'test'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.test');
 
     // Users
     Route::get('users', [UserController::class, 'index'])->middleware('menu.access:users,view')->name('users.index');

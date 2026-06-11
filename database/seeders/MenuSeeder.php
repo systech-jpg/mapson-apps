@@ -78,6 +78,10 @@ class MenuSeeder extends Seeder
         $this->menu(['key' => 'accurate-setting', 'title' => 'Setting', 'route' => 'accurate.settings', 'icon' => 'Settings', 'sort_order' => 1], $accurate->id);
         $this->menu(['key' => 'accurate-sales', 'title' => 'Penjualan', 'route' => 'accurate.sales', 'icon' => 'ShoppingCart', 'sort_order' => 2], $accurate->id);
 
+        // Sub-module: Hadirr (attendance).
+        $hadirr = $this->menu(['key' => 'hadirr', 'title' => 'Hadirr', 'route' => null, 'icon' => 'Fingerprint', 'sort_order' => 3], $integrasi->id);
+        $this->menu(['key' => 'hadirr-setting', 'title' => 'Setting', 'route' => 'hadirr.settings', 'icon' => 'Settings', 'sort_order' => 1], $hadirr->id);
+
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();
         if ($reporting) {
