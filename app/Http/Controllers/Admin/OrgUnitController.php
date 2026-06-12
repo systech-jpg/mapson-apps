@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\StoreOrgUnitRequest;
 use App\Http\Requests\Admin\UpdateOrgUnitRequest;
 use App\Models\Company;
 use App\Models\CostCenter;
+use App\Models\Employee;
 use App\Models\OrgUnit;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -17,9 +18,16 @@ class OrgUnitController extends Controller
     public function index(): Response
     {
         return Inertia::render('org-units/index', [
-            'orgUnits' => OrgUnit::with('company:id,name', 'parent:id,name')->orderBy('sort_order')->orderBy('name')->get(),
+            'orgUnits' => OrgUnit::with('company:id,name', 'parent:id,name', 'manager:id,full_name')
+                ->orderBy('sort_order')->orderBy('name')->get(),
             'companies' => Company::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'costCenters' => CostCenter::where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            // Active-employee headcount per unit (from the current_* snapshot).
+            'headcounts' => Employee::query()
+                ->whereNotNull('current_org_unit_id')
+                ->selectRaw('current_org_unit_id, COUNT(*) as c')
+                ->groupBy('current_org_unit_id')
+                ->pluck('c', 'current_org_unit_id'),
         ]);
     }
 
