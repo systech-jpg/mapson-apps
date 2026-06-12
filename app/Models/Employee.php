@@ -32,8 +32,9 @@ class Employee extends Model
         // Identity
         'user_id', 'employee_code', 'department_id', 'position_id', 'phone', 'hire_date', 'address', 'is_active',
         // Personal
-        'first_name', 'last_name', 'full_name', 'nik_ktp', 'npwp', 'gender', 'birth_place', 'birth_date',
-        'religion', 'marital_status', 'nationality', 'blood_type', 'bpjs_kesehatan_no', 'bpjs_ketenagakerjaan_no', 'photo_path',
+        'first_name', 'last_name', 'full_name', 'nik_ktp', 'kk_number', 'npwp', 'gender', 'birth_place', 'birth_date',
+        'religion', 'marital_status', 'ptkp_status', 'nationality', 'blood_type',
+        'bpjs_kesehatan_no', 'bpjs_kesehatan_notes', 'bpjs_ketenagakerjaan_no', 'bpjs_ketenagakerjaan_notes', 'photo_path',
         // Snapshot (written by AssignmentService)
         'current_company_id', 'current_org_unit_id', 'current_position_id', 'current_job_catalog_id', 'current_job_grade_id',
         'current_cost_center_id', 'current_location_id', 'current_employee_group_id', 'current_employee_subgroup_id',
@@ -201,6 +202,11 @@ class Employee extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(EmployeeDocument::class);
+    }
+
+    public function contracts(): HasMany
+    {
+        return $this->hasMany(EmployeeContract::class)->orderByDesc('start_date');
     }
 
     public function auditLogs(): MorphMany

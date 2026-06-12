@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem, type Employee, type Lookup, type Paginated } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { Eye, Plus, RotateCcw, Search } from 'lucide-react';
+import { Archive, Eye, Plus, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Employees', href: '/employees' }];
@@ -147,15 +147,25 @@ export default function EmployeesIndex({ employees, filters, orgUnits }: Props) 
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             {e.deleted_at ? (
-                                                <Can on="employees" do="edit">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => router.put(route('employees.restore', e.id), {}, { preserveScroll: true })}
-                                                    >
-                                                        <RotateCcw className="size-4" />
-                                                    </Button>
-                                                </Can>
+                                                <>
+                                                    <Can on="employees" do="edit">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            title="Pulihkan"
+                                                            onClick={() => router.put(route('employees.restore', e.id), {}, { preserveScroll: true })}
+                                                        >
+                                                            <RotateCcw className="size-4" />
+                                                        </Button>
+                                                    </Can>
+                                                    <Can on="employees" do="delete">
+                                                        <ConfirmDelete
+                                                            url={`${route('employees.destroy', e.id)}?force=1`}
+                                                            title={`Hapus PERMANEN ${e.full_name}?`}
+                                                            description="Data employee beserta seluruh riwayat penempatan, kontrak, dokumen, dan sub-data lainnya akan dihapus selamanya. Tindakan ini TIDAK bisa dibatalkan."
+                                                        />
+                                                    </Can>
+                                                </>
                                             ) : (
                                                 <>
                                                     <Button variant="ghost" size="icon" asChild>
@@ -164,7 +174,26 @@ export default function EmployeesIndex({ employees, filters, orgUnits }: Props) 
                                                         </Link>
                                                     </Button>
                                                     <Can on="employees" do="delete">
-                                                        <ConfirmDelete url={route('employees.destroy', e.id)} title={`Nonaktifkan ${e.full_name}?`} description="Employee akan di-soft delete dan bisa dipulihkan." />
+                                                        <ConfirmDelete
+                                                            url={route('employees.destroy', e.id)}
+                                                            title={`Nonaktifkan ${e.full_name}? (soft delete)`}
+                                                            description="Employee disembunyikan tapi datanya tersimpan dan bisa dipulihkan kapan saja dari filter 'Hanya terhapus'."
+                                                            trigger={
+                                                                <Button variant="ghost" size="icon" title="Soft delete (bisa dipulihkan)" className="text-amber-600 hover:text-amber-600">
+                                                                    <Archive className="size-4" />
+                                                                </Button>
+                                                            }
+                                                        />
+                                                        <ConfirmDelete
+                                                            url={`${route('employees.destroy', e.id)}?force=1`}
+                                                            title={`Hapus PERMANEN ${e.full_name}?`}
+                                                            description="Data employee beserta seluruh riwayat penempatan, kontrak, dokumen, dan sub-data lainnya akan dihapus selamanya. Tindakan ini TIDAK bisa dibatalkan."
+                                                            trigger={
+                                                                <Button variant="ghost" size="icon" title="Hapus permanen" className="text-destructive hover:text-destructive">
+                                                                    <Trash2 className="size-4" />
+                                                                </Button>
+                                                            }
+                                                        />
                                                     </Can>
                                                 </>
                                             )}

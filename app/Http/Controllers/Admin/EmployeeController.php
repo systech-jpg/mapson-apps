@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ChangeAssignmentRequest;
+use App\Http\Requests\Admin\StoreEmployeeContractRequest;
 use App\Http\Requests\Admin\StoreEmployeeRequest;
 use App\Http\Requests\Admin\UpdateEmployeeRequest;
 use App\Models\Company;
 use App\Models\CostCenter;
 use App\Models\Employee;
+use App\Models\EmployeeContract;
 use App\Models\EmployeeGroup;
 use App\Models\EmployeeSubgroup;
 use App\Models\EmploymentType;
@@ -79,16 +81,20 @@ class EmployeeController extends Controller
                 'last_name' => $data['last_name'] ?? null,
                 'full_name' => trim(($data['first_name'] ?? '').' '.($data['last_name'] ?? '')),
                 'nik_ktp' => $data['nik_ktp'] ?? null,
+                'kk_number' => $data['kk_number'] ?? null,
                 'npwp' => $data['npwp'] ?? null,
                 'gender' => $data['gender'] ?? null,
                 'birth_place' => $data['birth_place'] ?? null,
                 'birth_date' => $data['birth_date'] ?? null,
                 'religion' => $data['religion'] ?? null,
                 'marital_status' => $data['marital_status'] ?? null,
+                'ptkp_status' => $data['ptkp_status'] ?? null,
                 'nationality' => $data['nationality'] ?? 'WNI',
                 'blood_type' => $data['blood_type'] ?? null,
                 'bpjs_kesehatan_no' => $data['bpjs_kesehatan_no'] ?? null,
+                'bpjs_kesehatan_notes' => $data['bpjs_kesehatan_notes'] ?? null,
                 'bpjs_ketenagakerjaan_no' => $data['bpjs_ketenagakerjaan_no'] ?? null,
+                'bpjs_ketenagakerjaan_notes' => $data['bpjs_ketenagakerjaan_notes'] ?? null,
                 'hire_date' => $data['valid_from'],
                 'is_active' => $data['is_active'] ?? true,
                 'user_id' => $data['user_id'] ?? null,
@@ -116,7 +122,7 @@ class EmployeeController extends Controller
             'assignments.orgUnit:id,name', 'assignments.position:id,name', 'assignments.jobGrade:id,name',
             'assignments.company:id,name', 'assignments.location:id,name',
             'addresses', 'contacts', 'emergencyContacts', 'families', 'educations', 'experiences',
-            'trainings', 'bankAccounts', 'documents.uploader:id,name',
+            'trainings', 'bankAccounts', 'documents.uploader:id,name', 'contracts.creator:id,name',
             'auditLogs.user:id,name',
         ]);
 
@@ -136,16 +142,20 @@ class EmployeeController extends Controller
             'last_name' => $data['last_name'] ?? null,
             'full_name' => trim(($data['first_name'] ?? '').' '.($data['last_name'] ?? '')),
             'nik_ktp' => $data['nik_ktp'] ?? null,
+            'kk_number' => $data['kk_number'] ?? null,
             'npwp' => $data['npwp'] ?? null,
             'gender' => $data['gender'] ?? null,
             'birth_place' => $data['birth_place'] ?? null,
             'birth_date' => $data['birth_date'] ?? null,
             'religion' => $data['religion'] ?? null,
             'marital_status' => $data['marital_status'] ?? null,
+            'ptkp_status' => $data['ptkp_status'] ?? null,
             'nationality' => $data['nationality'] ?? 'WNI',
             'blood_type' => $data['blood_type'] ?? null,
             'bpjs_kesehatan_no' => $data['bpjs_kesehatan_no'] ?? null,
+            'bpjs_kesehatan_notes' => $data['bpjs_kesehatan_notes'] ?? null,
             'bpjs_ketenagakerjaan_no' => $data['bpjs_ketenagakerjaan_no'] ?? null,
+            'bpjs_ketenagakerjaan_notes' => $data['bpjs_ketenagakerjaan_notes'] ?? null,
             'is_active' => $data['is_active'] ?? true,
             'user_id' => $data['user_id'] ?? null,
             'updated_by' => $request->user()?->id,
@@ -170,8 +180,16 @@ class EmployeeController extends Controller
         return back()->with('success', 'Penempatan employee berhasil diperbarui.');
     }
 
-    public function destroy(Employee $employee): RedirectResponse
+    public function destroy(Request $request, Employee $employee): RedirectResponse
     {
+        // Hard delete: permanent, removes the row (children cascade) + stored files.
+        if ($request->boolean('force')) {
+            Storage::disk('local')->deleteDirectory("employees/{$employee->id}");
+            $employee->forceDelete();
+
+            return to_route('employees.index')->with('success', 'Employee dihapus permanen.');
+        }
+
         $employee->delete();
 
         return to_route('employees.index')->with('success', 'Employee berhasil dinonaktifkan (soft delete).');
@@ -182,6 +200,45 @@ class EmployeeController extends Controller
         $employee->restore();
 
         return back()->with('success', 'Employee berhasil dipulihkan.');
+    }
+
+    public function storeContract(StoreEmployeeContractRequest $request, Employee $employee): RedirectResponse
+    {
+        $data = $request->validated();
+
+        DB::transaction(function () use ($employee, $data, $request) {
+            if ($data['is_current'] ?? false) {
+                $employee->contracts()->update(['is_current' => false]);
+            }
+
+            $employee->contracts()->create($data + ['created_by' => $request->user()?->id]);
+        });
+
+        return back()->with('success', 'Kontrak berhasil ditambahkan.');
+    }
+
+    public function updateContract(StoreEmployeeContractRequest $request, Employee $employee, EmployeeContract $contract): RedirectResponse
+    {
+        abort_unless($contract->employee_id === $employee->id, 404);
+        $data = $request->validated();
+
+        DB::transaction(function () use ($employee, $contract, $data) {
+            if ($data['is_current'] ?? false) {
+                $employee->contracts()->whereKeyNot($contract->id)->update(['is_current' => false]);
+            }
+
+            $contract->update($data);
+        });
+
+        return back()->with('success', 'Kontrak berhasil diperbarui.');
+    }
+
+    public function destroyContract(Employee $employee, EmployeeContract $contract): RedirectResponse
+    {
+        abort_unless($contract->employee_id === $employee->id, 404);
+        $contract->delete();
+
+        return back()->with('success', 'Kontrak berhasil dihapus.');
     }
 
     public function photo(Employee $employee): StreamedResponse

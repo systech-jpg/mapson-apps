@@ -99,16 +99,20 @@ export interface Employee {
     last_name: string | null;
     full_name: string | null;
     nik_ktp: string | null;
+    kk_number: string | null;
     npwp: string | null;
     gender: 'male' | 'female' | null;
     birth_place: string | null;
     birth_date: string | null;
     religion: string | null;
     marital_status: string | null;
+    ptkp_status: string | null;
     nationality: string | null;
     blood_type: string | null;
     bpjs_kesehatan_no: string | null;
+    bpjs_kesehatan_notes: string | null;
     bpjs_ketenagakerjaan_no: string | null;
+    bpjs_ketenagakerjaan_notes: string | null;
     photo_path: string | null;
     hire_date: string | null;
     is_active: boolean;
@@ -130,6 +134,12 @@ export interface Employee {
     user?: User | null;
     // Sub-modules / history
     assignments?: EmployeeAssignment[];
+    contracts?: unknown[];
+    addresses?: unknown[];
+    contacts?: unknown[];
+    emergency_contacts?: unknown[];
+    educations?: unknown[];
+    bank_accounts?: unknown[];
     audit_logs?: AuditLog[];
     // Legacy fields (retired in Phase 5 cleanup) — kept optional for the User Management module.
     department_id?: number | null;

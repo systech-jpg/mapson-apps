@@ -13,6 +13,7 @@ const GENDERS = [
 ];
 const RELIGIONS = ['islam', 'kristen', 'katolik', 'hindu', 'buddha', 'konghucu', 'lainnya'];
 const MARITAL = ['single', 'married', 'divorced', 'widowed'];
+const PTKP = ['TK/0', 'TK/1', 'TK/2', 'TK/3', 'K/0', 'K/1', 'K/2', 'K/3'];
 const BLOOD = ['A', 'B', 'AB', 'O'];
 
 interface Props {
@@ -51,9 +52,17 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                     <InputError message={errors.nik_ktp} />
                 </div>
                 <div className="grid gap-2">
+                    <Label htmlFor="kk_number">Nomor KK</Label>
+                    <Input id="kk_number" value={str('kk_number')} onChange={(e) => setData('kk_number', e.target.value)} />
+                    <InputError message={errors.kk_number} />
+                </div>
+                <div className="grid gap-2">
                     <Label htmlFor="npwp">NPWP</Label>
                     <Input id="npwp" value={str('npwp')} onChange={(e) => setData('npwp', e.target.value)} />
                 </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
                     <Label htmlFor="gender">Jenis Kelamin</Label>
                     <Select value={str('gender') || NONE} onValueChange={(v) => setData('gender', v === NONE ? '' : v)}>
@@ -70,9 +79,6 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         </SelectContent>
                     </Select>
                 </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
                     <Label htmlFor="birth_place">Tempat Lahir</Label>
                     <Input id="birth_place" value={str('birth_place')} onChange={(e) => setData('birth_place', e.target.value)} />
@@ -81,6 +87,9 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                     <Label htmlFor="birth_date">Tanggal Lahir</Label>
                     <Input id="birth_date" type="date" value={str('birth_date')} onChange={(e) => setData('birth_date', e.target.value)} />
                 </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
                     <Label htmlFor="religion">Agama</Label>
                     <Select value={str('religion') || NONE} onValueChange={(v) => setData('religion', v === NONE ? '' : v)}>
@@ -97,9 +106,6 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         </SelectContent>
                     </Select>
                 </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
                     <Label htmlFor="marital_status">Status Pernikahan</Label>
                     <Select value={str('marital_status') || NONE} onValueChange={(v) => setData('marital_status', v === NONE ? '' : v)}>
@@ -116,6 +122,26 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         </SelectContent>
                     </Select>
                 </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="ptkp_status">Status Pajak (PTKP)</Label>
+                    <Select value={str('ptkp_status') || NONE} onValueChange={(v) => setData('ptkp_status', v === NONE ? '' : v)}>
+                        <SelectTrigger id="ptkp_status">
+                            <SelectValue placeholder="Pilih" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={NONE}>- Tidak diisi -</SelectItem>
+                            {PTKP.map((p) => (
+                                <SelectItem key={p} value={p}>
+                                    {p}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <InputError message={errors.ptkp_status} />
+                </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
                 <div className="grid gap-2">
                     <Label htmlFor="nationality">Kewarganegaraan</Label>
                     <Input id="nationality" value={str('nationality')} onChange={(e) => setData('nationality', e.target.value)} />
@@ -136,17 +162,6 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         </SelectContent>
                     </Select>
                 </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-                <div className="grid gap-2">
-                    <Label htmlFor="bpjs_kesehatan_no">BPJS Kesehatan</Label>
-                    <Input id="bpjs_kesehatan_no" value={str('bpjs_kesehatan_no')} onChange={(e) => setData('bpjs_kesehatan_no', e.target.value)} />
-                </div>
-                <div className="grid gap-2">
-                    <Label htmlFor="bpjs_ketenagakerjaan_no">BPJS Ketenagakerjaan</Label>
-                    <Input id="bpjs_ketenagakerjaan_no" value={str('bpjs_ketenagakerjaan_no')} onChange={(e) => setData('bpjs_ketenagakerjaan_no', e.target.value)} />
-                </div>
                 {linkableUsers && (
                     <div className="grid gap-2">
                         <Label htmlFor="user_id">Akun Login (opsional)</Label>
@@ -166,6 +181,19 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         <InputError message={errors.user_id} />
                     </div>
                 )}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                    <Label htmlFor="bpjs_kesehatan_no">BPJS Kesehatan</Label>
+                    <Input id="bpjs_kesehatan_no" value={str('bpjs_kesehatan_no')} onChange={(e) => setData('bpjs_kesehatan_no', e.target.value)} />
+                    <Input id="bpjs_kesehatan_notes" placeholder="Catatan (mis. pakai KIS, tidak ditanggung perusahaan)" value={str('bpjs_kesehatan_notes')} onChange={(e) => setData('bpjs_kesehatan_notes', e.target.value)} />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="bpjs_ketenagakerjaan_no">BPJS Ketenagakerjaan</Label>
+                    <Input id="bpjs_ketenagakerjaan_no" value={str('bpjs_ketenagakerjaan_no')} onChange={(e) => setData('bpjs_ketenagakerjaan_no', e.target.value)} />
+                    <Input id="bpjs_ketenagakerjaan_notes" placeholder="Catatan (mis. akan didaftarkan setelah penilaian)" value={str('bpjs_ketenagakerjaan_notes')} onChange={(e) => setData('bpjs_ketenagakerjaan_notes', e.target.value)} />
+                </div>
             </div>
 
             <div className="flex items-center gap-3">
