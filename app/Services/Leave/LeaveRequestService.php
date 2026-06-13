@@ -96,6 +96,72 @@ class LeaveRequestService
         return $request;
     }
 
+    /**
+     * HR direct entry: create an already-approved leave for an employee (e.g. from the
+     * attendance recap). Skips min-notice/future-date rules (HR may backfill past dates),
+     * commits balance immediately, and records a single approved HR step for the timeline.
+     *
+     * @param  array{leave_type_id:int,start_date:string,end_date?:string,day_part?:string,reason?:string}  $data
+     */
+    public function adminRecord(Employee $employee, array $data, ?User $actor = null): LeaveRequest
+    {
+        $type = LeaveType::findOrFail($data['leave_type_id']);
+        $start = Carbon::parse($data['start_date'])->startOfDay();
+        $end = Carbon::parse($data['end_date'] ?? $data['start_date'])->startOfDay();
+        $dayPart = $data['day_part'] ?? 'full';
+
+        $this->validateAdmin($employee, $type, $start, $end, $dayPart);
+
+        $days = $this->calculator->effectiveDays($start->toDateString(), $end->toDateString(), $dayPart);
+        if ($days <= 0) {
+            throw new RuntimeException('Tanggal yang dipilih jatuh pada akhir pekan/hari libur (0 hari efektif).');
+        }
+
+        $year = $start->year;
+
+        $request = DB::transaction(function () use ($employee, $type, $start, $end, $dayPart, $days, $year, $data, $actor) {
+            $request = LeaveRequest::create([
+                'request_number' => 'TMP',
+                'employee_id' => $employee->id,
+                'leave_type_id' => $type->id,
+                'start_date' => $start->toDateString(),
+                'end_date' => $end->toDateString(),
+                'day_part' => $dayPart,
+                'total_days' => $days,
+                'year' => $year,
+                'reason' => $data['reason'] ?? 'Input langsung oleh HR',
+                'status' => LeaveRequest::STATUS_APPROVED,
+                'current_level' => 1,
+                'submitted_at' => now(),
+                'decided_at' => now(),
+                'decision_note' => 'Disetujui otomatis (input HR)',
+                'created_by' => $actor?->id,
+            ]);
+            $request->update(['request_number' => 'LR-'.$year.'-'.str_pad((string) $request->id, 6, '0', STR_PAD_LEFT)]);
+
+            // Hold then commit → straight to "used".
+            if ($bt = $this->balanceType($type)) {
+                $this->balances->hold($employee->id, $bt->id, $year, $days);
+                $this->balances->commit($employee->id, $bt->id, $year, $days);
+            }
+
+            $request->approvals()->create([
+                'level' => 1,
+                'role' => 'hr',
+                'approver_employee_id' => $actor?->employee?->id,
+                'status' => LeaveApproval::STATUS_APPROVED,
+                'notes' => 'Input langsung oleh HR',
+                'acted_at' => now(),
+            ]);
+
+            return $request->fresh('approvals');
+        });
+
+        $this->notifier->notifyRequester($request, 'approved');
+
+        return $request;
+    }
+
     /** Approve the active step; advance or finalize (commit balance). */
     public function approve(LeaveRequest $request, Employee $approver, ?string $notes = null): LeaveRequest
     {
@@ -234,6 +300,32 @@ class LeaveRequestService
         }
 
         return $type->requires_balance ? $type : null;
+    }
+
+    /** Validation for HR direct entry: no min-notice/future-date rule, but still guard conflicts. */
+    private function validateAdmin(Employee $employee, LeaveType $type, Carbon $start, Carbon $end, string $dayPart): void
+    {
+        if (! $type->is_active) {
+            throw new RuntimeException('Jenis cuti tidak aktif.');
+        }
+        if ($end->lt($start)) {
+            throw new RuntimeException('Tanggal selesai tidak boleh sebelum tanggal mulai.');
+        }
+        if ($type->gender_constraint !== 'any' && $employee->gender && $employee->gender !== $type->gender_constraint) {
+            throw new RuntimeException('Jenis cuti ini tidak berlaku untuk jenis kelamin karyawan.');
+        }
+        if ($dayPart !== 'full' && ! $type->allow_half_day) {
+            throw new RuntimeException('Jenis cuti ini tidak mendukung setengah hari.');
+        }
+
+        $overlap = LeaveRequest::where('employee_id', $employee->id)
+            ->whereIn('status', array_merge(LeaveRequest::PENDING_STATUSES, [LeaveRequest::STATUS_APPROVED]))
+            ->where('start_date', '<=', $end->toDateString())
+            ->where('end_date', '>=', $start->toDateString())
+            ->exists();
+        if ($overlap) {
+            throw new RuntimeException('Sudah ada pengajuan/cuti yang menumpuk pada tanggal tersebut.');
+        }
     }
 
     private function validate(Employee $employee, LeaveType $type, Carbon $start, Carbon $end, string $dayPart): void

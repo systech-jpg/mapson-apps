@@ -35,6 +35,8 @@ export default function CreateEmployee(props: Props) {
         ptkp_status: '',
         nationality: 'WNI',
         blood_type: '',
+        has_meal_allowance: true,
+        has_transport_allowance: true,
         bpjs_kesehatan_no: '',
         bpjs_kesehatan_notes: '',
         bpjs_ketenagakerjaan_no: '',

@@ -111,6 +111,8 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
         ptkp_status: employee.ptkp_status ?? '',
         nationality: employee.nationality ?? 'WNI',
         blood_type: employee.blood_type ?? '',
+        has_meal_allowance: Boolean(employee.has_meal_allowance),
+        has_transport_allowance: Boolean(employee.has_transport_allowance),
         bpjs_kesehatan_no: employee.bpjs_kesehatan_no ?? '',
         bpjs_kesehatan_notes: employee.bpjs_kesehatan_notes ?? '',
         bpjs_ketenagakerjaan_no: employee.bpjs_ketenagakerjaan_no ?? '',

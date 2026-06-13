@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Services\Leave\LeaveRequestService;
@@ -48,6 +49,28 @@ class LeaveAdminController extends Controller
                 LeaveRequest::STATUS_WITHDRAWN, LeaveRequest::STATUS_CANCELLED, LeaveRequest::STATUS_EXPIRED,
             ]),
         ]);
+    }
+
+    /** HR direct entry from the attendance recap: record + auto-approve a leave for an employee. */
+    public function record(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'employee_id' => ['required', 'exists:employees,id'],
+            'leave_type_id' => ['required', 'exists:leave_types,id'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'day_part' => ['nullable', 'in:full,first_half,second_half'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $employee = Employee::findOrFail($data['employee_id']);
+            $this->service->adminRecord($employee, $data, $request->user());
+        } catch (Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Cuti berhasil dicatat & disetujui.');
     }
 
     /** HR override cancel. */

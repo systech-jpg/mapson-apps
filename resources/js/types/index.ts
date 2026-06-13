@@ -109,6 +109,8 @@ export interface Employee {
     ptkp_status: string | null;
     nationality: string | null;
     blood_type: string | null;
+    has_meal_allowance: boolean;
+    has_transport_allowance: boolean;
     bpjs_kesehatan_no: string | null;
     bpjs_kesehatan_notes: string | null;
     bpjs_ketenagakerjaan_no: string | null;

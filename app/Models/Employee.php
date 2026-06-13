@@ -34,6 +34,7 @@ class Employee extends Model
         // Personal
         'first_name', 'last_name', 'full_name', 'nik_ktp', 'kk_number', 'npwp', 'gender', 'birth_place', 'birth_date',
         'religion', 'marital_status', 'ptkp_status', 'nationality', 'blood_type',
+        'has_meal_allowance', 'has_transport_allowance',
         'bpjs_kesehatan_no', 'bpjs_kesehatan_notes', 'bpjs_ketenagakerjaan_no', 'bpjs_ketenagakerjaan_notes', 'photo_path',
         // Snapshot (written by AssignmentService)
         'current_company_id', 'current_org_unit_id', 'current_position_id', 'current_job_catalog_id', 'current_job_grade_id',
@@ -51,6 +52,8 @@ class Employee extends Model
             'current_effective_date' => 'date',
             'termination_date' => 'date',
             'is_active' => 'boolean',
+            'has_meal_allowance' => 'boolean',
+            'has_transport_allowance' => 'boolean',
         ];
     }
 

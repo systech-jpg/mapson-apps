@@ -34,6 +34,8 @@ class UpdateEmployeeRequest extends FormRequest
             'ptkp_status' => ['nullable', 'in:TK/0,TK/1,TK/2,TK/3,K/0,K/1,K/2,K/3'],
             'nationality' => ['nullable', 'string', 'max:255'],
             'blood_type' => ['nullable', 'in:A,B,AB,O'],
+            'has_meal_allowance' => ['boolean'],
+            'has_transport_allowance' => ['boolean'],
             'bpjs_kesehatan_no' => ['nullable', 'string', 'max:255'],
             'bpjs_kesehatan_notes' => ['nullable', 'string', 'max:500'],
             'bpjs_ketenagakerjaan_no' => ['nullable', 'string', 'max:255'],

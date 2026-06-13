@@ -82,12 +82,20 @@ class AttendanceController extends Controller
             'dates' => $r['dates'],
             'employees' => $r['employees'],
             'rules' => ['deadline' => self::DEADLINE, 'full' => self::FULL_DAY_AFTER],
+            'leaveTypes' => $this->leaveTypeOptions(),
             'stats' => [
                 'unmatched_employees' => DB::table('hadirr_employees')->whereNull('employee_id')->count(),
                 'last_sync' => DB::table('hadirr_attendances')->max('synced_at'),
             ],
             'connected' => HadirrSetting::current()->isConnected() || filled(HadirrSetting::current()->access_key),
         ]);
+    }
+
+    /** Active leave types for the HR direct-entry dialog (recap pages). */
+    private function leaveTypeOptions(): \Illuminate\Support\Collection
+    {
+        return DB::table('leave_types')->where('is_active', true)->orderBy('sort_order')
+            ->get(['id', 'name', 'code', 'allow_half_day']);
     }
 
     /** Export the recap matrix as an Excel-openable .xls (HTML table). */
@@ -210,6 +218,7 @@ class AttendanceController extends Controller
         $r = $this->attendanceReport($request->input('period'));
 
         return Inertia::render('attendance/recap', $r + [
+            'leaveTypes' => $this->leaveTypeOptions(),
             'stats' => [
                 'unmatched_employees' => DB::table('hadirr_employees')->whereNull('employee_id')->count(),
                 'last_sync' => DB::table('hadirr_attendances')->max('synced_at'),
@@ -309,9 +318,36 @@ class AttendanceController extends Controller
             $legend[] = $tc['abbr'].' = '.$tc['label'];
         }
 
+        // Summary table: prorated meal/transport allowance deduction per attendance.
+        $sum = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:11px;">';
+        $sum .= '<tr style="'.$hdr.'"><th>No</th><th style="text-align:left;">Nama Karyawan</th><th style="text-align:left;">Noted</th>';
+        foreach ($typeCols as $tc) {
+            $sum .= '<th title="'.$esc($tc['label']).'">'.$esc($tc['abbr']).'</th>';
+        }
+        $sum .= '<th>A</th><th>Total</th><th>Sisa Cuti</th>'
+            .'<th style="color:#b91c1c;">POTONG TM</th><th style="color:#b91c1c;">POTONG GTM</th><th>POTONG CUTI</th><th style="text-align:left;">Keterangan</th></tr>';
+        foreach ($r['employees'] as $i => $e) {
+            $sum .= '<tr><td style="text-align:center;">'.($i + 1).'</td><td>'.$esc($e['name']).'</td><td>'.$esc($e['noted']).'</td>';
+            foreach ($typeCols as $tc) {
+                $v = $e['by_type'][$tc['code']] ?? 0;
+                $sum .= '<td style="text-align:center;">'.($v > 0 ? $num($v) : '-').'</td>';
+            }
+            $sum .= '<td style="text-align:center;">'.($e['alpha'] > 0 ? $num($e['alpha']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;font-weight:bold;">'.($e['potong_days'] > 0 ? $num($e['potong_days']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;">'.($e['sisa_cuti'] === null ? '-' : $num($e['sisa_cuti'])).'</td>';
+            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_meal'] ? $num($e['potong_meal']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_transport'] ? $num($e['potong_transport']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;">'.($e['potong_cuti'] > 0 ? $num($e['potong_cuti']) : '-').'</td>';
+            $sum .= '<td></td></tr>';
+        }
+        $sum .= '</table>';
+
         $doc = '<html><head><meta charset="UTF-8"></head><body>'
             .'<h3>Rekap Kehadiran — '.$esc($r['periodLabel']).'</h3>'
             .$html
+            .'<h3 style="margin-top:24px;">Potongan Tunjangan (Prorata Kehadiran)</h3>'
+            .'<p style="font-size:10px;color:#666;">POTONG TM = Tunjangan Makan · POTONG GTM = Tunjangan Transport · POTONG CUTI = potong saldo cuti tahunan. Satuan = hari.</p>'
+            .$sum
             .'<p style="font-size:10px;color:#666;">✓ = Hadir · LN = Libur Nasional · A = Alpha (tanpa keterangan) · '.$esc(implode(' · ', $legend)).'.</p>'
             .'<p style="font-size:10px;color:#666;">Pemakaian Total Cuti = akumulasi cuti tahunan terpakai s/d tahun '.$r['year'].'; Sisa Cuti = saldo cuti tahunan tersisa.</p>'
             .'</body></html>';
@@ -370,6 +406,7 @@ class AttendanceController extends Controller
             ->get([
                 'he.nik', 'he.name as hadirr_name', 'he.employee_id',
                 'e.full_name as employee_name', 'e.employee_code', 'p.name as position',
+                'e.has_meal_allowance', 'e.has_transport_allowance',
             ]);
 
         // Presence (any clock-in) by nik + date.
@@ -448,8 +485,18 @@ class AttendanceController extends Controller
             $wfh = (float) ($byType['WFH'] ?? 0);
             $bal = $balByEmp[$r->employee_id] ?? null;
 
+            // Allowance proration: every non-present workday (leave incl. WFH, or alpha) cuts
+            // 1 day of meal & transport allowance (half-day leave = 0.5). Eligibility per employee.
+            $potongDays = $alpha + array_sum($byType);
+            // Unmatched Hadirr rows have no master flags → assume eligible (common case).
+            $meal = $r->employee_id === null ? true : (bool) $r->has_meal_allowance;
+            $transport = $r->employee_id === null ? true : (bool) $r->has_transport_allowance;
+            // Days that consume the annual leave balance.
+            $potongCuti = (float) ($byType['ANNUAL'] ?? 0) + (float) ($byType['HALFDAY'] ?? 0);
+
             return [
                 'nik' => $r->nik,
+                'employee_id' => $r->employee_id,
                 'name' => $r->employee_name ?? $r->hadirr_name,
                 'code' => $r->employee_code,
                 'position' => $r->position,
@@ -462,6 +509,13 @@ class AttendanceController extends Controller
                 'alpha' => $alpha,
                 'pemakaian_cuti' => $bal['used'] ?? null,
                 'sisa_cuti' => $bal['available'] ?? null,
+                'has_meal' => $meal,
+                'has_transport' => $transport,
+                'noted' => $this->allowanceNote($meal, $transport),
+                'potong_days' => $potongDays,
+                'potong_meal' => $meal ? $potongDays : null,
+                'potong_transport' => $transport ? $potongDays : null,
+                'potong_cuti' => $potongCuti,
             ];
         })->values()->all();
 
@@ -535,6 +589,7 @@ class AttendanceController extends Controller
 
             return [
                 'nik' => $r->nik,
+                'employee_id' => $r->employee_id,
                 'name' => $r->employee_name ?? $r->hadirr_name,
                 'code' => $r->employee_code,
                 'position' => $r->position,
@@ -587,6 +642,17 @@ class AttendanceController extends Controller
         }
 
         return $result;
+    }
+
+    /** Human-readable allowance eligibility note (the "Noted" column). */
+    private function allowanceNote(bool $meal, bool $transport): string
+    {
+        return match (true) {
+            $meal && $transport => 'Pot transport + makan',
+            $transport => 'Pot transport',
+            $meal => 'Pot makan',
+            default => 'Tidak ada tunjangan makan & transport',
+        };
     }
 
     /** Minutes → "Xj Ym" (or "Ym"). */

@@ -196,6 +196,18 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                 </div>
             </div>
 
+            <div className="grid gap-3 rounded-md border p-3 md:grid-cols-2">
+                <div className="md:col-span-2 text-sm font-medium text-muted-foreground">Tunjangan (dasar potongan prorata kehadiran)</div>
+                <div className="flex items-center gap-3">
+                    <Switch id="has_meal_allowance" checked={Boolean(data.has_meal_allowance)} onCheckedChange={(v) => setData('has_meal_allowance', v)} />
+                    <Label htmlFor="has_meal_allowance">Dapat tunjangan makan</Label>
+                </div>
+                <div className="flex items-center gap-3">
+                    <Switch id="has_transport_allowance" checked={Boolean(data.has_transport_allowance)} onCheckedChange={(v) => setData('has_transport_allowance', v)} />
+                    <Label htmlFor="has_transport_allowance">Dapat tunjangan transport</Label>
+                </div>
+            </div>
+
             <div className="flex items-center gap-3">
                 <Switch id="is_active" checked={Boolean(data.is_active)} onCheckedChange={(v) => setData('is_active', v)} />
                 <Label htmlFor="is_active">Employee aktif</Label>

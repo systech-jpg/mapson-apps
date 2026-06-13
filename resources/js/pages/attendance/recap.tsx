@@ -1,9 +1,12 @@
+import AdminLeaveDialog, { type AdminLeaveTarget, type AdminLeaveType } from '@/components/leave/admin-leave-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -34,6 +37,7 @@ interface TypeCol {
 
 interface EmployeeRow {
     nik: string;
+    employee_id: number | null;
     name: string | null;
     code: string | null;
     position: string | null;
@@ -46,6 +50,13 @@ interface EmployeeRow {
     alpha: number;
     pemakaian_cuti: number | null;
     sisa_cuti: number | null;
+    has_meal: boolean;
+    has_transport: boolean;
+    noted: string;
+    potong_days: number;
+    potong_meal: number | null;
+    potong_transport: number | null;
+    potong_cuti: number;
 }
 
 interface Props {
@@ -55,6 +66,7 @@ interface Props {
     dates: DateCol[];
     typeCols: TypeCol[];
     employees: EmployeeRow[];
+    leaveTypes: AdminLeaveType[];
     stats: { unmatched_employees: number; last_sync: string | null };
 }
 
@@ -71,7 +83,11 @@ const CELL_CLASS: Record<Cell['kind'], string> = {
     empty: 'text-muted-foreground/40',
 };
 
-export default function AttendanceRecap({ period, periodLabel, year, dates, typeCols, employees, stats }: Props) {
+export default function AttendanceRecap({ period, periodLabel, year, dates, typeCols, employees, leaveTypes, stats }: Props) {
+    const { can } = usePermissions();
+    const canRecord = can('leave-admin-requests', 'create');
+    const [target, setTarget] = useState<AdminLeaveTarget | null>(null);
+
     const shiftPeriod = (delta: number) => {
         const [y, m] = period.split('-').map(Number);
         const d = new Date(y, m - 1 + delta, 1);
@@ -166,10 +182,13 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                                                 </td>
                                                 {dates.map((d) => {
                                                     const c = e.cells[d.date];
+                                                    const clickable = canRecord && e.employee_id !== null && !d.weekend && !d.holiday;
                                                     return (
                                                         <td
                                                             key={d.date}
-                                                            className={`border-r px-1 py-1 text-center whitespace-nowrap ${d.holiday ? 'bg-rose-100 dark:bg-rose-950/30' : d.weekend ? 'bg-rose-50 dark:bg-rose-950/20' : ''}`}
+                                                            onClick={clickable ? () => setTarget({ employeeId: e.employee_id as number, employeeName: e.name ?? e.nik, date: d.date }) : undefined}
+                                                            title={clickable ? 'Klik untuk catat cuti/absen' : undefined}
+                                                            className={`border-r px-1 py-1 text-center whitespace-nowrap ${d.holiday ? 'bg-rose-100 dark:bg-rose-950/30' : d.weekend ? 'bg-rose-50 dark:bg-rose-950/20' : ''} ${clickable ? 'cursor-pointer hover:bg-primary/10' : ''}`}
                                                         >
                                                             <span className={c ? CELL_CLASS[c.kind] : ''}>{c?.mark ?? <span className="text-muted-foreground/30">·</span>}</span>
                                                         </td>
@@ -195,6 +214,64 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                     </CardContent>
                 </Card>
 
+                <div>
+                    <h2 className="mb-1 text-base font-semibold">Potongan Tunjangan (Prorata Kehadiran)</h2>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                        Potongan dihitung dari hari kerja yang <b>tidak hadir di kantor</b> (cuti/sakit/izin/alpha + WFH); setengah hari = 0,5.
+                        <b className="text-rose-700"> POTONG TM</b> = Tunjangan Makan, <b className="text-rose-700">POTONG GTM</b> = Tunjangan Transport, <b>POTONG CUTI</b> = potong saldo cuti tahunan. Satuan = hari.
+                    </p>
+                    <Card>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse text-xs">
+                                    <thead>
+                                        <tr className="border-b bg-muted/40 text-center">
+                                            <th className="border-r px-2 py-1.5">No</th>
+                                            <th className="sticky left-0 z-20 min-w-[180px] border-r bg-muted px-2 py-1.5 text-left">Nama Karyawan</th>
+                                            <th className="border-r px-2 py-1.5 text-left">Noted</th>
+                                            {typeCols.map((t) => (
+                                                <th key={t.code} className="border-r px-1.5 py-1.5" title={t.label}>{t.abbr}</th>
+                                            ))}
+                                            <th className="border-r px-1.5 py-1.5" title="Alpha">A</th>
+                                            <th className="border-r px-1.5 py-1.5 font-semibold" title="Total hari potongan (tidak hadir)">Total</th>
+                                            <th className="border-r px-1.5 py-1.5">Sisa Cuti</th>
+                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potongan Tunjangan Makan">POTONG TM</th>
+                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potongan Tunjangan Transport">POTONG GTM</th>
+                                            <th className="border-r px-1.5 py-1.5" title="Potong saldo cuti tahunan">POTONG CUTI</th>
+                                            <th className="px-2 py-1.5 text-left">Keterangan</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {employees.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={typeCols.length + 9} className="py-8 text-center text-muted-foreground">Belum ada data.</td>
+                                            </tr>
+                                        ) : (
+                                            employees.map((e, i) => (
+                                                <tr key={e.nik} className="border-b text-center hover:bg-muted/20">
+                                                    <td className="border-r px-2 py-1 text-muted-foreground">{i + 1}</td>
+                                                    <td className="sticky left-0 z-10 border-r bg-background px-2 py-1 text-left font-medium whitespace-nowrap">{e.name ?? e.nik}</td>
+                                                    <td className="border-r px-2 py-1 text-left text-muted-foreground whitespace-nowrap">{e.noted}</td>
+                                                    {typeCols.map((t) => (
+                                                        <td key={t.code} className="border-r px-1.5 py-1">{cnt(e.by_type[t.code] ?? 0) || '-'}</td>
+                                                    ))}
+                                                    <td className={`border-r px-1.5 py-1 ${e.alpha > 0 ? 'font-semibold text-rose-600' : ''}`}>{cnt(e.alpha) || '-'}</td>
+                                                    <td className="border-r px-1.5 py-1 font-semibold">{e.potong_days > 0 ? num(e.potong_days) : '-'}</td>
+                                                    <td className="border-r px-1.5 py-1">{num(e.sisa_cuti)}</td>
+                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_meal ? num(e.potong_meal) : '-'}</td>
+                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_transport ? num(e.potong_transport) : '-'}</td>
+                                                    <td className="border-r px-1.5 py-1">{e.potong_cuti > 0 ? num(e.potong_cuti) : '-'}</td>
+                                                    <td className="px-2 py-1 text-left text-muted-foreground"></td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span><b className="text-emerald-600">✓</b> Hadir</span>
                     <span><b className="text-rose-500">LN</b> Libur Nasional</span>
@@ -206,8 +283,11 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                 <p className="text-xs text-muted-foreground">
                     <b>Total</b> = Hadir + WFH. <b>Pemakaian</b> = akumulasi cuti tahunan terpakai s/d {year}; <b>Sisa Cuti</b> = saldo cuti tahunan tersisa (dari modul Cuti).
                     Kode absen diambil dari pengajuan cuti yang <b>disetujui</b>; kolom berarsir = akhir pekan / libur.
+                    {canRecord && <> <b className="text-foreground">Klik sel tanggal</b> untuk mencatat cuti/absen karyawan (langsung disetujui).</>}
                 </p>
             </div>
+
+            <AdminLeaveDialog target={target} leaveTypes={leaveTypes} onClose={() => setTarget(null)} />
         </AppLayout>
     );
 }

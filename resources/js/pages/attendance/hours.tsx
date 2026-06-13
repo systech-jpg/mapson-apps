@@ -1,9 +1,12 @@
+import AdminLeaveDialog, { type AdminLeaveTarget, type AdminLeaveType } from '@/components/leave/admin-leave-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -26,6 +29,7 @@ interface Cell {
 
 interface EmployeeRow {
     nik: string;
+    employee_id: number | null;
     name: string | null;
     code: string | null;
     position: string | null;
@@ -44,12 +48,17 @@ interface Props {
     dates: DateCol[];
     employees: EmployeeRow[];
     rules: { deadline: string; full: string };
+    leaveTypes: AdminLeaveType[];
     stats: { unmatched_employees: number; last_sync: string | null };
 }
 
 const fmtAl = (n: number) => (n > 0 ? n.toLocaleString('id-ID') : '-');
 
-export default function AttendanceHours({ period, periodLabel, dates, employees, rules, stats }: Props) {
+export default function AttendanceHours({ period, periodLabel, dates, employees, rules, leaveTypes, stats }: Props) {
+    const { can } = usePermissions();
+    const canRecord = can('leave-admin-requests', 'create');
+    const [target, setTarget] = useState<AdminLeaveTarget | null>(null);
+
     const shiftPeriod = (delta: number) => {
         const [y, m] = period.split('-').map(Number);
         const d = new Date(y, m - 1 + delta, 1);
@@ -132,8 +141,14 @@ export default function AttendanceHours({ period, periodLabel, dates, employees,
                                                 </td>
                                                 {dates.map((d) => {
                                                     const c = e.cells[d.date];
+                                                    const clickable = canRecord && e.employee_id !== null && !d.weekend;
                                                     return (
-                                                        <td key={d.date} className={`border-r px-1 py-1 text-center leading-tight whitespace-nowrap ${d.weekend ? 'bg-rose-50 dark:bg-rose-950/20' : ''}`}>
+                                                        <td
+                                                            key={d.date}
+                                                            onClick={clickable ? () => setTarget({ employeeId: e.employee_id as number, employeeName: e.name ?? e.nik, date: d.date }) : undefined}
+                                                            title={clickable ? 'Klik untuk catat cuti/absen' : undefined}
+                                                            className={`border-r px-1 py-1 text-center leading-tight whitespace-nowrap ${d.weekend ? 'bg-rose-50 dark:bg-rose-950/20' : ''} ${clickable ? 'cursor-pointer hover:bg-primary/10' : ''}`}
+                                                        >
                                                             {c?.t || c?.o ? (
                                                                 <>
                                                                     <div className={c.late ? 'font-semibold text-rose-600' : ''}>{c.t ?? '–'}</div>
@@ -162,8 +177,11 @@ export default function AttendanceHours({ period, periodLabel, dates, employees,
                 <p className="text-xs text-muted-foreground">
                     Aturan: masuk lebih dari <b>{rules.deadline}</b> dihitung terlambat → potong cuti <b>½ hari</b>; lebih dari <b>{rules.full}</b> → potong cuti <b>1 hari</b>.
                     Tiap sel: baris atas = <b>jam masuk</b> (merah jika telat), baris bawah = <b>jam keluar</b>. Kolom berarsir = akhir pekan.
+                    {canRecord && <> <b className="text-foreground">Klik sel tanggal</b> untuk mencatat cuti/absen karyawan (langsung disetujui).</>}
                 </p>
             </div>
+
+            <AdminLeaveDialog target={target} leaveTypes={leaveTypes} onClose={() => setTarget(null)} />
         </AppLayout>
     );
 }
