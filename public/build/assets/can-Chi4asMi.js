@@ -1,1 +1,0 @@
-import{K as i,j as u}from"./app-DfMlSdfr.js";function a(){const{permissions:n,isSuperAdmin:r}=i().props;return{can:(t,e="view")=>{var s;return r?!0:!!((s=n==null?void 0:n[t])!=null&&s[e])},isSuperAdmin:r}}function m({on:n,do:r="view",children:o,fallback:t=null}){const{can:e}=a();return u.jsx(u.Fragment,{children:e(n,r)?o:t})}export{m as C,a as u};

@@ -67,6 +67,7 @@ class MenuSeeder extends Seeder
         $attendance = $this->menu(['key' => 'attendance', 'title' => 'Data Absensi', 'route' => null, 'icon' => 'CalendarCheck', 'sort_order' => 2], $hr->id);
         $this->menu(['key' => 'attendance-raw', 'title' => 'Tarikan Hadirr', 'route' => 'attendance.index', 'icon' => 'Download', 'sort_order' => 1], $attendance->id);
         $this->menu(['key' => 'attendance-hours', 'title' => 'Rekap per Jam', 'route' => 'attendance.hours', 'icon' => 'Clock', 'sort_order' => 2], $attendance->id);
+        $this->menu(['key' => 'attendance-recap', 'title' => 'Rekap Kehadiran', 'route' => 'attendance.recap', 'icon' => 'ClipboardCheck', 'sort_order' => 3], $attendance->id);
 
         // Sub-module: Cuti (Leave Management).
         $leave = $this->menu(['key' => 'leave', 'title' => 'Cuti', 'route' => null, 'icon' => 'CalendarDays', 'sort_order' => 3], $hr->id);

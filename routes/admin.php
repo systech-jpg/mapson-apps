@@ -59,6 +59,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('attendance/sync', [AttendanceController::class, 'sync'])->middleware('menu.access:attendance-raw,edit')->name('attendance.sync');
     Route::get('attendance/hours', [AttendanceController::class, 'hours'])->middleware('menu.access:attendance-hours,view')->name('attendance.hours');
     Route::get('attendance/hours/export', [AttendanceController::class, 'exportHours'])->middleware('menu.access:attendance-hours,view')->name('attendance.hours.export');
+    Route::get('attendance/recap', [AttendanceController::class, 'attendance'])->middleware('menu.access:attendance-recap,view')->name('attendance.recap');
+    Route::get('attendance/recap/export', [AttendanceController::class, 'exportAttendance'])->middleware('menu.access:attendance-recap,view')->name('attendance.recap.export');
 
     // Leave Management — Cuti Saya
     Route::get('leave', [LeaveRequestController::class, 'index'])->middleware('menu.access:leave-mine,view')->name('leave.index');
