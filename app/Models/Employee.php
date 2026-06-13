@@ -209,6 +209,16 @@ class Employee extends Model
         return $this->hasMany(EmployeeContract::class)->orderByDesc('start_date');
     }
 
+    public function leaveRequests(): HasMany
+    {
+        return $this->hasMany(LeaveRequest::class)->orderByDesc('start_date');
+    }
+
+    public function leaveBalances(): HasMany
+    {
+        return $this->hasMany(LeaveBalance::class);
+    }
+
     public function auditLogs(): MorphMany
     {
         return $this->morphMany(AuditLog::class, 'auditable')->latest();

@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Repositories\Contracts\HolidayRepositoryInterface;
+use App\Repositories\Eloquent\EloquentHolidayRepository;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -14,7 +16,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Leave Management repositories (repository pattern → swappable/mocking).
+        $this->app->bind(HolidayRepositoryInterface::class, EloquentHolidayRepository::class);
     }
 
     /**

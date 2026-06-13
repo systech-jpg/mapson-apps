@@ -19,10 +19,14 @@ interface Props {
     title?: string;
     description?: string;
     trigger?: ReactNode;
+    method?: 'delete' | 'post';
+    actionLabel?: string;
 }
 
-export function ConfirmDelete({ url, title = 'Hapus data ini?', description = 'Tindakan ini tidak dapat dibatalkan.', trigger }: Props) {
-    const onConfirm = () => router.delete(url, { preserveScroll: true });
+export function ConfirmDelete({ url, title = 'Hapus data ini?', description = 'Tindakan ini tidak dapat dibatalkan.', trigger, method = 'delete', actionLabel = 'Hapus' }: Props) {
+    const onConfirm = () => (method === 'post'
+        ? router.post(url, {}, { preserveScroll: true })
+        : router.delete(url, { preserveScroll: true }));
 
     return (
         <AlertDialog>
@@ -41,7 +45,7 @@ export function ConfirmDelete({ url, title = 'Hapus data ini?', description = 'T
                 <AlertDialogFooter>
                     <AlertDialogCancel>Batal</AlertDialogCancel>
                     <AlertDialogAction onClick={onConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                        Hapus
+                        {actionLabel}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

@@ -1,4 +1,5 @@
 import { Breadcrumbs } from '@/components/breadcrumbs';
+import { NotificationsBell } from '@/components/notifications-bell';
 import { Button } from '@/components/ui/button';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { type BreadcrumbItem as BreadcrumbItemType, type SharedData } from '@/types';
@@ -15,13 +16,16 @@ export function AppSidebarHeader({ breadcrumbs = [] }: { breadcrumbs?: Breadcrum
                 <Breadcrumbs breadcrumbs={breadcrumbs} />
             </div>
 
-            {canReporting && (
-                <Button variant="outline" size="sm" className="ml-auto" asChild>
-                    <Link href={route('dashboard')}>
-                        <LayoutDashboard className="size-4" /> Dashboard
-                    </Link>
-                </Button>
-            )}
+            <div className="ml-auto flex items-center gap-2">
+                {canReporting && (
+                    <Button variant="outline" size="sm" asChild>
+                        <Link href={route('dashboard')}>
+                            <LayoutDashboard className="size-4" /> Dashboard
+                        </Link>
+                    </Button>
+                )}
+                <NotificationsBell />
+            </div>
         </header>
     );
 }

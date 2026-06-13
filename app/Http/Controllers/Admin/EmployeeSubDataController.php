@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  */
 class EmployeeSubDataController extends Controller
 {
-    public const TYPES = ['addresses', 'contacts', 'emergency-contacts', 'educations', 'bank-accounts'];
+    public const TYPES = ['addresses', 'contacts', 'emergency-contacts', 'educations', 'bank-accounts', 'families', 'experiences', 'trainings'];
 
     public function store(Request $request, Employee $employee, string $type): RedirectResponse
     {
@@ -153,6 +153,44 @@ class EmployeeSubDataController extends Controller
                     'account_holder' => ['nullable', 'string', 'max:255'],
                     'branch' => ['nullable', 'string', 'max:255'],
                     'is_primary' => ['boolean'],
+                ],
+            ],
+            'families' => [
+                'relation' => 'families',
+                'label' => 'Anggota keluarga',
+                'rules' => [
+                    'name' => ['required', 'string', 'max:255'],
+                    'relationship' => ['required', 'in:spouse,child,parent,sibling,other'],
+                    'gender' => ['nullable', 'in:male,female'],
+                    'birth_date' => ['nullable', 'date'],
+                    'nik' => ['nullable', 'string', 'max:32'],
+                    'is_dependent' => ['boolean'],
+                    'occupation' => ['nullable', 'string', 'max:255'],
+                ],
+            ],
+            'experiences' => [
+                'relation' => 'experiences',
+                'label' => 'Pengalaman kerja',
+                'rules' => [
+                    'company_name' => ['required', 'string', 'max:255'],
+                    'position' => ['nullable', 'string', 'max:255'],
+                    'start_date' => ['nullable', 'date'],
+                    'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+                    'description' => ['nullable', 'string', 'max:2000'],
+                    'last_salary' => ['nullable', 'numeric', 'min:0'],
+                ],
+            ],
+            'trainings' => [
+                'relation' => 'trainings',
+                'label' => 'Training/sertifikat',
+                'rules' => [
+                    'type' => ['required', 'in:training,certification'],
+                    'name' => ['required', 'string', 'max:255'],
+                    'provider' => ['nullable', 'string', 'max:255'],
+                    'issued_date' => ['nullable', 'date'],
+                    'expiry_date' => ['nullable', 'date', 'after_or_equal:issued_date'],
+                    'certificate_no' => ['nullable', 'string', 'max:255'],
+                    'notes' => ['nullable', 'string', 'max:1000'],
                 ],
             ],
             default => abort(404),

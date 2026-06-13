@@ -7,6 +7,7 @@ use App\Models\HadirrSetting;
 use App\Services\Hadirr\HadirrSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,6 +18,12 @@ class AttendanceController extends Controller
     {
     }
 
+    /** On-time deadline; later = late + annual-leave deduction. */
+    private const DEADLINE = '09:00';
+
+    private const FULL_DAY_AFTER = '12:00';   // > 12:00 → potong AL 1 hari (else 0.5)
+
+    /** Page 1: raw Hadirr pull (flat list) + date-range sync. */
     public function index(Request $request): Response
     {
         $from = $request->date('from')?->toDateString();
@@ -45,18 +52,263 @@ class AttendanceController extends Controller
             ->paginate(25)
             ->withQueryString();
 
-        $lastSync = DB::table('hadirr_attendances')->max('synced_at');
-
         return Inertia::render('attendance/index', [
             'rows' => $rows,
             'filters' => ['from' => $from, 'to' => $to, 'search' => $search],
             'stats' => [
                 'total' => DB::table('hadirr_attendances')->count(),
                 'unmatched_employees' => DB::table('hadirr_employees')->whereNull('employee_id')->count(),
-                'last_sync' => $lastSync,
+                'last_sync' => DB::table('hadirr_attendances')->max('synced_at'),
             ],
             'connected' => HadirrSetting::current()->isConnected() || filled(HadirrSetting::current()->access_key),
         ]);
+    }
+
+    /** Page 2: attendance recap by clock-in time (matrix, lateness + AL rules). */
+    public function hours(Request $request): Response
+    {
+        $r = $this->hoursReport($request->input('period'));
+
+        return Inertia::render('attendance/hours', [
+            'period' => $r['period'],
+            'periodLabel' => $r['periodLabel'],
+            'dates' => $r['dates'],
+            'employees' => $r['employees'],
+            'rules' => ['deadline' => self::DEADLINE, 'full' => self::FULL_DAY_AFTER],
+            'stats' => [
+                'unmatched_employees' => DB::table('hadirr_employees')->whereNull('employee_id')->count(),
+                'last_sync' => DB::table('hadirr_attendances')->max('synced_at'),
+            ],
+            'connected' => HadirrSetting::current()->isConnected() || filled(HadirrSetting::current()->access_key),
+        ]);
+    }
+
+    /** Export the recap matrix as an Excel-openable .xls (HTML table). */
+    public function exportHours(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        $r = $this->hoursReport($request->input('period'));
+        $dates = $r['dates'];
+
+        $esc = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES);
+        $weekendBg = 'background:#fde8e8;';
+
+        $hdr = 'background:#f1f5f9;font-weight:bold;text-align:center;';
+        $bulanID = [1 => 'JANUARI', 2 => 'FEBRUARI', 3 => 'MARET', 4 => 'APRIL', 5 => 'MEI', 6 => 'JUNI', 7 => 'JULI', 8 => 'AGUSTUS', 9 => 'SEPTEMBER', 10 => 'OKTOBER', 11 => 'NOVEMBER', 12 => 'DESEMBER'];
+
+        // Group consecutive dates by month for the top header row.
+        $monthGroups = [];
+        foreach ($dates as $d) {
+            $c = Carbon::parse($d['date']);
+            $label = $bulanID[$c->month].' '.$c->year;
+            $n = count($monthGroups);
+            if ($n > 0 && $monthGroups[$n - 1]['label'] === $label) {
+                $monthGroups[$n - 1]['count']++;
+            } else {
+                $monthGroups[] = ['label' => $label, 'count' => 1];
+            }
+        }
+
+        $html = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:11px;">';
+
+        // Header row 1: BULAN (fixed cols + summary span all 4 header rows).
+        $html .= '<tr style="'.$hdr.'">';
+        $html .= '<th rowspan="4">No</th><th rowspan="4" style="text-align:left;">Nama</th><th rowspan="4" style="text-align:left;">Jabatan</th>';
+        foreach ($monthGroups as $g) {
+            $html .= '<th colspan="'.($g['count'] * 2).'">'.$g['label'].'</th>';
+        }
+        $html .= '<th rowspan="4">Telat</th><th rowspan="4">Total Jam Telat</th><th rowspan="4">Potong Cuti</th><th rowspan="4">Overtime</th><th rowspan="4" style="text-align:left;">Keterangan</th></tr>';
+
+        // Header row 2: HARI (day of week).
+        $html .= '<tr style="'.$hdr.'">';
+        foreach ($dates as $d) {
+            $html .= '<th colspan="2" style="'.($d['weekend'] ? $weekendBg : '').'">'.$d['dow'].'</th>';
+        }
+        $html .= '</tr>';
+
+        // Header row 3: TGL (date number).
+        $html .= '<tr style="'.$hdr.'">';
+        foreach ($dates as $d) {
+            $html .= '<th colspan="2" style="'.($d['weekend'] ? $weekendBg : '').'">'.$d['day'].'</th>';
+        }
+        $html .= '</tr>';
+
+        // Header row 4: IN / OUT.
+        $html .= '<tr style="'.$hdr.'">';
+        foreach ($dates as $d) {
+            $wb = $d['weekend'] ? $weekendBg : '';
+            $html .= '<th style="'.$wb.'">IN</th><th style="'.$wb.'">OUT</th>';
+        }
+        $html .= '</tr>';
+
+        // Rows
+        foreach ($r['employees'] as $i => $e) {
+            $html .= '<tr>';
+            $html .= '<td style="text-align:center;">'.($i + 1).'</td>';
+            $html .= '<td>'.$esc($e['name']).'</td>';
+            $html .= '<td>'.$esc($e['position'] ?? '').'</td>';
+            foreach ($dates as $d) {
+                $c = $e['cells'][$d['date']] ?? null;
+                $style = 'text-align:center;'.($d['weekend'] ? $weekendBg : '');
+                $inStyle = $style.($c && $c['late'] ? 'color:#dc2626;font-weight:bold;' : '');
+                $html .= '<td style="'.$inStyle.'">'.($c && $c['t'] ? $esc($c['t']) : '').'</td>';
+                $html .= '<td style="'.$style.'">'.($c && $c['o'] ? $esc($c['o']) : '').'</td>';
+            }
+            $html .= '<td style="text-align:center;">'.($e['late_count'] ?: '').'</td>';
+            $html .= '<td style="text-align:center;">'.($e['late_count'] ? $esc($e['late_label']) : '').'</td>';
+            $html .= '<td style="text-align:center;">'.($e['al_deduction'] > 0 ? $esc($e['al_deduction']) : '').'</td>';
+            $html .= '<td style="text-align:center;">'.$esc($e['overtime_label']).'</td>';
+            $html .= '<td>'.$esc($e['keterangan']).'</td>';
+            $html .= '</tr>';
+        }
+        $html .= '</table>';
+
+        $doc = '<html><head><meta charset="UTF-8"></head><body>'
+            .'<h3>Rekap Absensi per Jam — '.$esc($r['periodLabel']).'</h3>'
+            .$html
+            .'<p style="font-size:10px;color:#666;">Aturan: masuk &gt; '.self::DEADLINE.' = telat (potong cuti ½ hari); &gt; '.self::FULL_DAY_AFTER.' = potong cuti 1 hari.</p>'
+            .'</body></html>';
+
+        $filename = 'rekap-absensi-'.$r['period'].'.xls';
+
+        return response($doc, 200, [
+            'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
+    }
+
+    /**
+     * Build the period matrix (dates + per-employee cells & summaries).
+     *
+     * @return array{period: string, periodLabel: string, dates: array<int, array<string, mixed>>, employees: array<int, array<string, mixed>>}
+     */
+    private function hoursReport(?string $periodInput): array
+    {
+        // Attendance period: 20th of the start month .. 19th of the next month.
+        $today = Carbon::today();
+        $defaultStart = $today->day >= 20 ? $today->copy()->startOfMonth() : $today->copy()->subMonthNoOverflow()->startOfMonth();
+
+        $period = (string) ($periodInput ?: $defaultStart->format('Y-m'));
+        try {
+            $startMonth = Carbon::createFromFormat('Y-m', $period)->startOfMonth();
+        } catch (\Throwable) {
+            $startMonth = $defaultStart;
+            $period = $defaultStart->format('Y-m');
+        }
+        $from = $startMonth->copy()->day(20);
+        $to = $startMonth->copy()->addMonthNoOverflow()->day(19);
+
+        $dowLabel = [1 => 'S', 2 => 'S', 3 => 'R', 4 => 'K', 5 => 'J', 6 => 'S', 7 => 'M'];
+        $dates = [];
+        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
+            $dates[] = [
+                'date' => $d->toDateString(),
+                'day' => $d->day,
+                'dow' => $dowLabel[$d->isoWeekday()],
+                'weekend' => $d->isoWeekday() >= 6,
+            ];
+        }
+
+        $roster = DB::table('hadirr_employees as he')
+            ->leftJoin('employees as e', 'e.id', '=', 'he.employee_id')
+            ->leftJoin('positions as p', 'p.id', '=', 'e.current_position_id')
+            ->orderBy(DB::raw('COALESCE(e.full_name, he.name)'))
+            ->get([
+                'he.nik', 'he.name as hadirr_name', 'he.employee_id',
+                'e.full_name as employee_name', 'e.employee_code', 'p.name as position',
+            ]);
+
+        $att = DB::table('hadirr_attendances')
+            ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
+            ->get(['nik', 'date', 'clock_in', 'clock_out', 'overtime_in', 'overtime_out']);
+
+        $byNik = [];
+        foreach ($att as $a) {
+            $byNik[$a->nik][$a->date] = $this->computeCell($a);
+        }
+
+        $employees = $roster->map(function ($r) use ($byNik, $dates) {
+            $cells = [];
+            $lateCount = 0;
+            $lateMinutes = 0;
+            $alDeduction = 0.0;
+            $overtimeMinutes = 0;
+
+            foreach ($dates as $dt) {
+                $cell = $byNik[$r->nik][$dt['date']] ?? null;
+                $cells[$dt['date']] = $cell ? ['t' => $cell['time'], 'o' => $cell['out'], 'late' => $cell['late']] : null;
+                if ($cell) {
+                    if ($cell['late']) {
+                        $lateCount++;
+                        $lateMinutes += $cell['late_minutes'];
+                        $alDeduction += $cell['al'];
+                    }
+                    $overtimeMinutes += $cell['overtime_minutes'];
+                }
+            }
+
+            return [
+                'nik' => $r->nik,
+                'name' => $r->employee_name ?? $r->hadirr_name,
+                'code' => $r->employee_code,
+                'position' => $r->position,
+                'matched' => (bool) $r->employee_id,
+                'cells' => $cells,
+                'late_count' => $lateCount,
+                'late_label' => $this->hm($lateMinutes),
+                'al_deduction' => $alDeduction,
+                'overtime_label' => $overtimeMinutes > 0 ? $this->hm($overtimeMinutes) : '-',
+                'keterangan' => $alDeduction > 0 ? 'Potong cuti '.rtrim(rtrim(number_format($alDeduction, 1), '0'), '.').' hari' : '',
+            ];
+        })->values()->all();
+
+        return [
+            'period' => $period,
+            'periodLabel' => $from->translatedFormat('d M Y').' – '.$to->translatedFormat('d M Y'),
+            'dates' => $dates,
+            'employees' => $employees,
+        ];
+    }
+
+    /**
+     * Compute one day's cell: clock-in time, lateness, and annual-leave deduction.
+     *
+     * @return array{time: string|null, out: string|null, late: bool, late_minutes: int, al: float, overtime_minutes: int}
+     */
+    private function computeCell(object $a): array
+    {
+        $result = ['time' => null, 'out' => null, 'late' => false, 'late_minutes' => 0, 'al' => 0.0, 'overtime_minutes' => 0];
+
+        if (filled($a->clock_out)) {
+            $result['out'] = Carbon::parse($a->clock_out)->format('H:i');
+        }
+
+        if (filled($a->clock_in)) {
+            $in = Carbon::parse($a->clock_in);
+            $result['time'] = $in->format('H:i');
+            $deadline = $in->copy()->setTimeFromTimeString(self::DEADLINE);
+
+            if ($in->gt($deadline)) {
+                $result['late'] = true;
+                $result['late_minutes'] = (int) $deadline->diffInMinutes($in);
+                $noon = $in->copy()->setTimeFromTimeString(self::FULL_DAY_AFTER);
+                $result['al'] = $in->gt($noon) ? 1.0 : 0.5;
+            }
+        }
+
+        if (filled($a->overtime_in) && filled($a->overtime_out)) {
+            $result['overtime_minutes'] = (int) Carbon::parse($a->overtime_in)->diffInMinutes(Carbon::parse($a->overtime_out));
+        }
+
+        return $result;
+    }
+
+    /** Minutes → "Xj Ym" (or "Ym"). */
+    private function hm(int $minutes): string
+    {
+        $h = intdiv($minutes, 60);
+        $m = $minutes % 60;
+
+        return $h > 0 ? "{$h}j {$m}m" : "{$m}m";
     }
 
     /** Sync employees + attendances for a date range (web-triggered, max 31 days). */

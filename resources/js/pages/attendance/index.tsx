@@ -14,7 +14,8 @@ import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
-    { title: 'Data Absensi', href: '/attendance' },
+    { title: 'Data Absensi', href: '#' },
+    { title: 'Tarikan Hadirr', href: '/attendance' },
 ];
 
 interface Row {
@@ -88,17 +89,17 @@ export default function AttendanceIndex({
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Data Absensi" />
+            <Head title="Tarikan Hadirr" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-xl font-semibold">Data Absensi</h1>
+                        <h1 className="text-xl font-semibold">Tarikan Hadirr</h1>
                         <p className="text-sm text-muted-foreground">
-                            Sumber: Hadirr. {stats.total.toLocaleString('id-ID')} baris tersimpan
+                            Data absensi mentah dari Hadirr. {stats.total.toLocaleString('id-ID')} baris tersimpan
                             {stats.last_sync ? ` — sinkron terakhir ${stats.last_sync}` : ''}.
                         </p>
                     </div>
-                    <Can on="attendance" do="edit">
+                    <Can on="attendance-raw" do="edit">
                         <div className="flex flex-wrap items-end gap-2">
                             <div className="grid gap-1">
                                 <Label htmlFor="sync_from" className="text-xs">Sinkron dari</Label>
@@ -136,12 +137,12 @@ export default function AttendanceIndex({
                 <Card>
                     <CardContent className="flex flex-wrap items-end gap-3 pt-6">
                         <div className="grid gap-1.5">
-                            <Label htmlFor="from">Dari</Label>
-                            <Input id="from" type="date" className="w-40" value={from} onChange={(e) => setFrom(e.target.value)} />
+                            <Label htmlFor="filter_from">Dari</Label>
+                            <Input id="filter_from" type="date" className="w-40" value={from} onChange={(e) => setFrom(e.target.value)} />
                         </div>
                         <div className="grid gap-1.5">
-                            <Label htmlFor="to">Sampai</Label>
-                            <Input id="to" type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} />
+                            <Label htmlFor="filter_to">Sampai</Label>
+                            <Input id="filter_to" type="date" className="w-40" value={to} onChange={(e) => setTo(e.target.value)} />
                         </div>
                         <div className="grid gap-1.5">
                             <Label htmlFor="search">Cari</Label>
@@ -193,14 +194,8 @@ export default function AttendanceIndex({
                                                         <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-400">belum terpetakan</Badge>
                                                     )}
                                                 </TableCell>
-                                                <TableCell className="text-center whitespace-nowrap">
-                                                    {time(r.clock_in)}
-                                                    {r.clock_in_spot && <div className="text-xs text-muted-foreground">{r.clock_in_spot}</div>}
-                                                </TableCell>
-                                                <TableCell className="text-center whitespace-nowrap">
-                                                    {time(r.clock_out)}
-                                                    {r.clock_out_spot && <div className="text-xs text-muted-foreground">{r.clock_out_spot}</div>}
-                                                </TableCell>
+                                                <TableCell className="text-center whitespace-nowrap">{time(r.clock_in)}</TableCell>
+                                                <TableCell className="text-center whitespace-nowrap">{time(r.clock_out)}</TableCell>
                                                 <TableCell className="text-center whitespace-nowrap">
                                                     {r.overtime_in ? `${time(r.overtime_in)} - ${time(r.overtime_out)}` : '-'}
                                                 </TableCell>

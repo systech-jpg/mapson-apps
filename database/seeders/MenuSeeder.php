@@ -62,7 +62,23 @@ class MenuSeeder extends Seeder
             'sort_order' => 5,
         ]);
         $this->menu(['key' => 'employees', 'title' => 'Employees', 'route' => 'employees.index', 'icon' => 'IdCard', 'sort_order' => 1], $hr->id);
-        $this->menu(['key' => 'attendance', 'title' => 'Data Absensi', 'route' => 'attendance.index', 'icon' => 'CalendarCheck', 'sort_order' => 2], $hr->id);
+
+        // Sub-module: Data Absensi (3 views).
+        $attendance = $this->menu(['key' => 'attendance', 'title' => 'Data Absensi', 'route' => null, 'icon' => 'CalendarCheck', 'sort_order' => 2], $hr->id);
+        $this->menu(['key' => 'attendance-raw', 'title' => 'Tarikan Hadirr', 'route' => 'attendance.index', 'icon' => 'Download', 'sort_order' => 1], $attendance->id);
+        $this->menu(['key' => 'attendance-hours', 'title' => 'Rekap per Jam', 'route' => 'attendance.hours', 'icon' => 'Clock', 'sort_order' => 2], $attendance->id);
+
+        // Sub-module: Cuti (Leave Management).
+        $leave = $this->menu(['key' => 'leave', 'title' => 'Cuti', 'route' => null, 'icon' => 'CalendarDays', 'sort_order' => 3], $hr->id);
+        $this->menu(['key' => 'leave-mine', 'title' => 'Cuti Saya', 'route' => 'leave.index', 'icon' => 'CalendarDays', 'sort_order' => 1], $leave->id);
+        $this->menu(['key' => 'leave-approvals', 'title' => 'Persetujuan Cuti', 'route' => 'leave.approvals.index', 'icon' => 'Inbox', 'sort_order' => 2], $leave->id);
+
+        // Sub-module: Kelola Cuti (Admin/HR).
+        $leaveAdmin = $this->menu(['key' => 'leave-admin', 'title' => 'Kelola Cuti', 'route' => null, 'icon' => 'Settings', 'sort_order' => 4], $hr->id);
+        $this->menu(['key' => 'leave-admin-requests', 'title' => 'Semua Pengajuan', 'route' => 'leave.admin.requests', 'icon' => 'Inbox', 'sort_order' => 1], $leaveAdmin->id);
+        $this->menu(['key' => 'leave-admin-balances', 'title' => 'Saldo Karyawan', 'route' => 'leave.admin.balances', 'icon' => 'Wallet', 'sort_order' => 2], $leaveAdmin->id);
+        $this->menu(['key' => 'leave-types', 'title' => 'Jenis Cuti', 'route' => 'leave-types.index', 'icon' => 'Settings', 'sort_order' => 3], $leaveAdmin->id);
+        $this->menu(['key' => 'leave-holidays', 'title' => 'Hari Libur', 'route' => 'leave-holidays.index', 'icon' => 'CalendarCheck', 'sort_order' => 4], $leaveAdmin->id);
 
         // Module: Integrasi Data.
         $integrasi = $this->menu([

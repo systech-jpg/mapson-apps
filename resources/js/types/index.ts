@@ -140,6 +140,10 @@ export interface Employee {
     emergency_contacts?: unknown[];
     educations?: unknown[];
     bank_accounts?: unknown[];
+    families?: unknown[];
+    experiences?: unknown[];
+    trainings?: unknown[];
+    documents?: unknown[];
     audit_logs?: AuditLog[];
     // Legacy fields (retired in Phase 5 cleanup) — kept optional for the User Management module.
     department_id?: number | null;
@@ -164,6 +168,10 @@ export interface SharedData {
     canBackend: boolean;
     backendLanding: string | null;
     flash: { success?: string | null; error?: string | null };
+    notifications: {
+        unread: number;
+        items: { id: string; data: Record<string, unknown>; read: boolean; at: string | null }[];
+    } | null;
     [key: string]: unknown;
 }
 

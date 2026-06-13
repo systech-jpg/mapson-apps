@@ -16,6 +16,8 @@ class DatabaseSeeder extends Seeder
             MenuSeeder::class,
             HrMasterSeeder::class,
             UserSeeder::class,
+            LeaveTypeSeeder::class,
+            LeaveHolidaySeeder::class,
         ]);
     }
 }

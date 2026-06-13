@@ -4,11 +4,15 @@ import {
     Briefcase,
     Building2,
     CalendarCheck,
+    CalendarDays,
     Circle,
+    Clock,
     Contact,
     Database,
     DatabaseZap,
+    Download,
     FileBadge,
+    Inbox,
     Fingerprint,
     IdCard,
     Layers,
@@ -56,6 +60,10 @@ export const menuIcons: Record<string, LucideIcon> = {
     Fingerprint,
     ShoppingCart,
     CalendarCheck,
+    CalendarDays,
+    Clock,
+    Download,
+    Inbox,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

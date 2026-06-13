@@ -9,6 +9,13 @@ use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\EmployeeSubDataController;
+use App\Http\Controllers\Admin\LeaveAdminController;
+use App\Http\Controllers\Admin\LeaveApprovalController;
+use App\Http\Controllers\Admin\LeaveBalanceAdminController;
+use App\Http\Controllers\Admin\LeaveHolidayController;
+use App\Http\Controllers\Admin\LeaveRequestController;
+use App\Http\Controllers\Admin\LeaveTypeController;
+use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\MenuController;
 use App\Http\Controllers\Admin\OrgUnitController;
 use App\Http\Controllers\Admin\PositionController;
@@ -18,6 +25,10 @@ use App\Http\Controllers\Admin\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
+    // In-app notifications (no menu gate — available to all authenticated users).
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::post('notifications/{id}/read', [NotificationController::class, 'read'])->name('notifications.read');
+
     // Analytics (reporting)
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('menu.access:analytics,view')->name('analytics.index');
 
@@ -44,8 +55,38 @@ Route::middleware(['auth'])->group(function () {
     Route::post('integration/hadirr/test', [HadirrController::class, 'test'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.test');
 
     // Human Resources → Data Absensi (fed from Hadirr staging)
-    Route::get('attendance', [AttendanceController::class, 'index'])->middleware('menu.access:attendance,view')->name('attendance.index');
-    Route::post('attendance/sync', [AttendanceController::class, 'sync'])->middleware('menu.access:attendance,edit')->name('attendance.sync');
+    Route::get('attendance', [AttendanceController::class, 'index'])->middleware('menu.access:attendance-raw,view')->name('attendance.index');
+    Route::post('attendance/sync', [AttendanceController::class, 'sync'])->middleware('menu.access:attendance-raw,edit')->name('attendance.sync');
+    Route::get('attendance/hours', [AttendanceController::class, 'hours'])->middleware('menu.access:attendance-hours,view')->name('attendance.hours');
+    Route::get('attendance/hours/export', [AttendanceController::class, 'exportHours'])->middleware('menu.access:attendance-hours,view')->name('attendance.hours.export');
+
+    // Leave Management — Cuti Saya
+    Route::get('leave', [LeaveRequestController::class, 'index'])->middleware('menu.access:leave-mine,view')->name('leave.index');
+    Route::post('leave', [LeaveRequestController::class, 'store'])->middleware('menu.access:leave-mine,create')->name('leave.store');
+    Route::get('leave/{leave}', [LeaveRequestController::class, 'show'])->middleware('menu.access:leave-mine,view')->name('leave.show');
+    Route::post('leave/{leave}/withdraw', [LeaveRequestController::class, 'withdraw'])->middleware('menu.access:leave-mine,view')->name('leave.withdraw');
+    Route::post('leave/{leave}/cancel', [LeaveRequestController::class, 'cancel'])->middleware('menu.access:leave-mine,view')->name('leave.cancel');
+    Route::get('leave/{leave}/attachments/{attachment}', [LeaveRequestController::class, 'downloadAttachment'])->whereNumber('attachment')->middleware('menu.access:leave-mine,view')->name('leave.attachments.download');
+
+    // Leave Management — Persetujuan Cuti (approver inbox)
+    Route::get('leave-approvals', [LeaveApprovalController::class, 'index'])->middleware('menu.access:leave-approvals,view')->name('leave.approvals.index');
+    Route::post('leave-approvals/{leave}/approve', [LeaveApprovalController::class, 'approve'])->middleware('menu.access:leave-approvals,edit')->name('leave.approvals.approve');
+    Route::post('leave-approvals/{leave}/reject', [LeaveApprovalController::class, 'reject'])->middleware('menu.access:leave-approvals,edit')->name('leave.approvals.reject');
+
+    // Leave Management — Admin/HR
+    Route::get('leave-admin/requests', [LeaveAdminController::class, 'index'])->middleware('menu.access:leave-admin-requests,view')->name('leave.admin.requests');
+    Route::post('leave-admin/requests/{leave}/cancel', [LeaveAdminController::class, 'cancel'])->middleware('menu.access:leave-admin-requests,edit')->name('leave.admin.cancel');
+    Route::get('leave-admin/balances', [LeaveBalanceAdminController::class, 'index'])->middleware('menu.access:leave-admin-balances,view')->name('leave.admin.balances');
+    Route::post('leave-admin/balances/adjust', [LeaveBalanceAdminController::class, 'adjust'])->middleware('menu.access:leave-admin-balances,edit')->name('leave.admin.balances.adjust');
+    Route::post('leave-admin/balances/accrue', [LeaveBalanceAdminController::class, 'accrue'])->middleware('menu.access:leave-admin-balances,edit')->name('leave.admin.balances.accrue');
+    Route::get('leave-types', [LeaveTypeController::class, 'index'])->middleware('menu.access:leave-types,view')->name('leave-types.index');
+    Route::post('leave-types', [LeaveTypeController::class, 'store'])->middleware('menu.access:leave-types,create')->name('leave-types.store');
+    Route::put('leave-types/{leave_type}', [LeaveTypeController::class, 'update'])->middleware('menu.access:leave-types,edit')->name('leave-types.update');
+    Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])->middleware('menu.access:leave-types,delete')->name('leave-types.destroy');
+    Route::get('leave-holidays', [LeaveHolidayController::class, 'index'])->middleware('menu.access:leave-holidays,view')->name('leave-holidays.index');
+    Route::post('leave-holidays', [LeaveHolidayController::class, 'store'])->middleware('menu.access:leave-holidays,create')->name('leave-holidays.store');
+    Route::put('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'update'])->middleware('menu.access:leave-holidays,edit')->name('leave-holidays.update');
+    Route::delete('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'destroy'])->middleware('menu.access:leave-holidays,delete')->name('leave-holidays.destroy');
 
     // Users
     Route::get('users', [UserController::class, 'index'])->middleware('menu.access:users,view')->name('users.index');
@@ -112,5 +153,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('employees/{employee}/sub/{type}', [EmployeeSubDataController::class, 'store'])->middleware('menu.access:employees,edit')->whereIn('type', EmployeeSubDataController::TYPES)->name('employees.sub.store');
     Route::put('employees/{employee}/sub/{type}/{record}', [EmployeeSubDataController::class, 'update'])->middleware('menu.access:employees,edit')->whereIn('type', EmployeeSubDataController::TYPES)->whereNumber('record')->name('employees.sub.update');
     Route::delete('employees/{employee}/sub/{type}/{record}', [EmployeeSubDataController::class, 'destroy'])->middleware('menu.access:employees,delete')->whereIn('type', EmployeeSubDataController::TYPES)->whereNumber('record')->name('employees.sub.destroy');
+    Route::post('employees/{employee}/documents', [EmployeeController::class, 'storeDocument'])->middleware('menu.access:employees,edit')->name('employees.documents.store');
+    Route::put('employees/{employee}/documents/{document}', [EmployeeController::class, 'updateDocument'])->middleware('menu.access:employees,edit')->name('employees.documents.update');
+    Route::get('employees/{employee}/documents/{document}/download', [EmployeeController::class, 'downloadDocument'])->middleware('menu.access:employees,view')->name('employees.documents.download');
+    Route::delete('employees/{employee}/documents/{document}', [EmployeeController::class, 'destroyDocument'])->middleware('menu.access:employees,delete')->name('employees.documents.destroy');
     Route::get('employees/{employee}/photo', [EmployeeController::class, 'photo'])->middleware('menu.access:employees,view')->name('employees.photo');
 });

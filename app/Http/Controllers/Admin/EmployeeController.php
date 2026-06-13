@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\CostCenter;
 use App\Models\Employee;
 use App\Models\EmployeeContract;
+use App\Models\EmployeeDocument;
 use App\Models\EmployeeGroup;
 use App\Models\EmployeeSubgroup;
 use App\Models\EmploymentType;
@@ -239,6 +240,70 @@ class EmployeeController extends Controller
         $contract->delete();
 
         return back()->with('success', 'Kontrak berhasil dihapus.');
+    }
+
+    public function storeDocument(Request $request, Employee $employee): RedirectResponse
+    {
+        $data = $request->validate([
+            'category' => ['required', 'in:ktp,npwp,ijazah,contract,bpjs,photo,certificate,other'],
+            'title' => ['required', 'string', 'max:255'],
+            'file' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
+            'issued_date' => ['nullable', 'date'],
+            'expiry_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $file = $request->file('file');
+
+        $employee->documents()->create([
+            'category' => $data['category'],
+            'title' => $data['title'],
+            'original_name' => $file->getClientOriginalName(),
+            'path' => $file->store("employees/{$employee->id}/documents", 'local'),
+            'mime' => $file->getMimeType(),
+            'size' => $file->getSize(),
+            'issued_date' => $data['issued_date'] ?? null,
+            'expiry_date' => $data['expiry_date'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'uploaded_by' => $request->user()?->id,
+        ]);
+
+        return back()->with('success', 'Dokumen berhasil diunggah.');
+    }
+
+    public function updateDocument(Request $request, Employee $employee, EmployeeDocument $document): RedirectResponse
+    {
+        abort_unless($document->employee_id === $employee->id, 404);
+
+        $data = $request->validate([
+            'category' => ['required', 'in:ktp,npwp,ijazah,contract,bpjs,photo,certificate,other'],
+            'title' => ['required', 'string', 'max:255'],
+            'issued_date' => ['nullable', 'date'],
+            'expiry_date' => ['nullable', 'date'],
+            'notes' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $document->update($data);
+
+        return back()->with('success', 'Dokumen berhasil diperbarui.');
+    }
+
+    public function downloadDocument(Employee $employee, EmployeeDocument $document): StreamedResponse
+    {
+        abort_unless($document->employee_id === $employee->id, 404);
+        abort_unless(Storage::disk('local')->exists($document->path), 404);
+
+        return Storage::disk('local')->download($document->path, $document->original_name ?? basename($document->path));
+    }
+
+    public function destroyDocument(Employee $employee, EmployeeDocument $document): RedirectResponse
+    {
+        abort_unless($document->employee_id === $employee->id, 404);
+
+        Storage::disk('local')->delete($document->path);
+        $document->forceDelete();
+
+        return back()->with('success', 'Dokumen berhasil dihapus.');
     }
 
     public function photo(Employee $employee): StreamedResponse

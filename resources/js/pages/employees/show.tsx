@@ -10,12 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type AuditLog, type BreadcrumbItem, type Employee, type Lookup } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
-import { History } from 'lucide-react';
+import { FileSignature, FolderArchive, GraduationCap, History, Landmark, MapPin, Network, ScrollText, User, Users } from 'lucide-react';
 import { type FormEventHandler } from 'react';
 import AssignmentTimeline from './partials/assignment-timeline';
 import ChangeAssignmentDialog from './partials/change-assignment-dialog';
 import { type AssignmentOptions } from './partials/assignment-fields';
 import ContractsTab, { type EmployeeContractRow } from './partials/contracts-tab';
+import DocumentsTab, { type EmployeeDocumentRow } from './partials/documents-tab';
 import PersonalFields from './partials/personal-fields';
 import RecordsTab from './partials/records-tab';
 
@@ -33,6 +34,18 @@ const ADDRESS_TYPES = [
     { v: 'other', l: 'Lainnya' },
 ];
 const EDUCATION_LEVELS = ['sd', 'smp', 'sma', 'smk', 'd1', 'd2', 'd3', 'd4', 's1', 's2', 's3', 'other'].map((v) => ({ v, l: v.toUpperCase() }));
+const FAMILY_RELATIONSHIPS = [
+    { v: 'spouse', l: 'Pasangan (Suami/Istri)' },
+    { v: 'child', l: 'Anak' },
+    { v: 'parent', l: 'Orang Tua' },
+    { v: 'sibling', l: 'Saudara' },
+    { v: 'other', l: 'Lainnya' },
+];
+const FAMILY_REL_LABEL: Record<string, string> = { spouse: 'Pasangan', child: 'Anak', parent: 'Orang Tua', sibling: 'Saudara', other: 'Lainnya' };
+const TRAINING_TYPES = [
+    { v: 'training', l: 'Training' },
+    { v: 'certification', l: 'Sertifikasi' },
+];
 
 interface Props extends AssignmentOptions {
     employee: Employee;
@@ -48,17 +61,21 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
     );
 }
 
-function SideRow({ label, value }: { label: string; value?: string | null }) {
+function HeaderStat({ label, value }: { label: string; value?: string | null }) {
     return (
-        <div className="flex justify-between gap-3 py-1.5 text-xs">
+        <div className="flex min-w-0 items-baseline justify-between gap-3 border-b py-1 text-xs last:border-0 sm:border-0 sm:py-0.5">
             <span className="shrink-0 text-muted-foreground">{label}</span>
             <span className="truncate text-right font-medium" title={value ?? ''}>{value || '-'}</span>
         </div>
     );
 }
 
-const TAB_TRIGGER =
-    'rounded-none border-b-2 border-transparent px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none';
+const NAV_ITEM =
+    'w-full justify-start gap-2 rounded-md px-3 py-2 text-sm font-normal text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-none';
+
+function NavGroup({ label }: { label: string }) {
+    return <p className="px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground/70 uppercase first:pt-1">{label}</p>;
+}
 
 function tenure(from?: string | null): string | null {
     if (!from) return null;
@@ -73,8 +90,9 @@ function tenure(from?: string | null): string | null {
 
 export default function ShowEmployee({ employee, linkableUsers, ...options }: Props) {
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Employees', href: '/employees' },
-        { title: employee.full_name ?? employee.employee_code ?? 'Detail', href: '#' },
+        { title: 'Human Resources', href: route('employees.index') },
+        { title: 'Karyawan', href: route('employees.index') },
+        { title: employee.full_name ?? employee.employee_code ?? 'Detail', href: route('employees.show', employee.id) },
     ];
 
     const { data, setData, post, processing, errors } = useForm<Record<string, string | boolean | File | null>>({
@@ -112,47 +130,63 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={employee.full_name ?? 'Employee'} />
-            <div className="flex flex-1 flex-col gap-4 p-4 lg:flex-row lg:items-start">
-                {/* Profile panel (corporate object-page pattern) */}
-                <Card className="w-full shrink-0 lg:sticky lg:top-4 lg:w-72">
-                    <CardContent className="flex flex-col items-center gap-3 pt-6 text-center">
-                        <Avatar className="size-24 border">
-                            {employee.photo_path && <AvatarImage src={route('employees.photo', employee.id)} alt={employee.full_name ?? ''} />}
-                            <AvatarFallback className="text-xl">{(employee.full_name ?? '?').substring(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                            <h1 className="truncate text-lg font-semibold">{employee.full_name}</h1>
-                            <p className="text-sm text-muted-foreground">{employee.current_position?.name ?? 'Tanpa posisi'}</p>
-                            <p className="text-xs text-muted-foreground">{employee.employee_code}</p>
+            <div className="flex flex-1 flex-col gap-4 p-4">
+                {/* Full-width profile header (always visible) */}
+                <Card>
+                    <CardContent className="flex flex-col gap-4 py-4 md:flex-row md:items-center lg:gap-4">
+                        <div className="flex items-center gap-3 md:w-[232px] md:shrink-0">
+                            <Avatar className="size-16 border">
+                                {employee.photo_path && <AvatarImage src={route('employees.photo', employee.id)} alt={employee.full_name ?? ''} />}
+                                <AvatarFallback className="text-lg">{(employee.full_name ?? '?').substring(0, 2).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                                <h1 className="truncate text-lg font-semibold">{employee.full_name}</h1>
+                                <p className="truncate text-sm text-muted-foreground">{employee.current_position?.name ?? 'Tanpa posisi'}</p>
+                                <div className="mt-1 flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">{employee.employee_code}</span>
+                                    <Badge variant={employee.current_employment_status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                                        {employee.current_employment_status}
+                                    </Badge>
+                                </div>
+                            </div>
                         </div>
-                        <Badge variant={employee.current_employment_status === 'active' ? 'default' : 'secondary'} className="capitalize">
-                            {employee.current_employment_status}
-                        </Badge>
-                        <div className="w-full border-t pt-2 text-left">
-                            <SideRow label="Company" value={employee.current_company?.name} />
-                            <SideRow label="Unit" value={employee.current_org_unit?.name} />
-                            <SideRow label="Tipe" value={employee.current_employment_type?.name} />
-                            <SideRow label="Atasan" value={employee.reports_to?.full_name} />
-                            <SideRow label="Bergabung" value={employee.hire_date ? employee.hire_date.substring(0, 10) : null} />
-                            <SideRow label="Masa Kerja" value={tenure(employee.hire_date)} />
-                            <SideRow label="NIK" value={employee.nik_ktp} />
-                            <SideRow label="NPWP" value={employee.npwp} />
+                        <div className="grid flex-1 gap-x-12 gap-y-1.5 sm:grid-cols-2 md:border-l md:pl-6 lg:grid-cols-3">
+                            <HeaderStat label="Company" value={employee.current_company?.name} />
+                            <HeaderStat label="Unit" value={employee.current_org_unit?.name} />
+                            <HeaderStat label="Tipe" value={employee.current_employment_type?.name} />
+                            <HeaderStat label="Atasan" value={employee.reports_to?.full_name} />
+                            <HeaderStat label="Bergabung" value={employee.hire_date ? employee.hire_date.substring(0, 10) : null} />
+                            <HeaderStat label="Masa Kerja" value={tenure(employee.hire_date)} />
+                            <HeaderStat label="NIK" value={employee.nik_ktp} />
+                            <HeaderStat label="NPWP" value={employee.npwp} />
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Tabbed content */}
-                <div className="min-w-0 flex-1">
-                <Tabs defaultValue="personal">
-                    <TabsList className="mb-3 h-auto w-full justify-start gap-0 overflow-x-auto rounded-none border-b bg-transparent p-0">
-                        <TabsTrigger className={TAB_TRIGGER} value="personal">Data Pribadi</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="organization">Organisasi</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="contact">Kontak & Alamat</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="education">Pendidikan</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="bank">Bank</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="contracts">Kontrak</TabsTrigger>
-                        <TabsTrigger className={TAB_TRIGGER} value="audit">Audit Log</TabsTrigger>
-                    </TabsList>
+                {/* Body: section nav (left) + content (right) */}
+                <Tabs defaultValue="personal" orientation="vertical" className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                    <Card className="w-full shrink-0 lg:sticky lg:top-4 lg:w-64">
+                        <CardContent className="p-2">
+                            <TabsList className="flex h-auto w-full flex-col items-stretch gap-0.5 bg-transparent p-0">
+                                <NavGroup label="Profil" />
+                                <TabsTrigger className={NAV_ITEM} value="personal"><User className="size-4" /> Data Pribadi</TabsTrigger>
+                                <TabsTrigger className={NAV_ITEM} value="contact"><MapPin className="size-4" /> Kontak & Alamat</TabsTrigger>
+                                <TabsTrigger className={NAV_ITEM} value="family"><Users className="size-4" /> Keluarga</TabsTrigger>
+                                <NavGroup label="Kepegawaian" />
+                                <TabsTrigger className={NAV_ITEM} value="organization"><Network className="size-4" /> Organisasi</TabsTrigger>
+                                <TabsTrigger className={NAV_ITEM} value="contracts"><FileSignature className="size-4" /> Kontrak</TabsTrigger>
+                                <TabsTrigger className={NAV_ITEM} value="education"><GraduationCap className="size-4" /> Pendidikan & Karier</TabsTrigger>
+                                <NavGroup label="Keuangan & Berkas" />
+                                <TabsTrigger className={NAV_ITEM} value="bank"><Landmark className="size-4" /> Bank</TabsTrigger>
+                                <TabsTrigger className={NAV_ITEM} value="documents"><FolderArchive className="size-4" /> Dokumen</TabsTrigger>
+                                <NavGroup label="Sistem" />
+                                <TabsTrigger className={NAV_ITEM} value="audit"><ScrollText className="size-4" /> Audit Log</TabsTrigger>
+                            </TabsList>
+                        </CardContent>
+                    </Card>
+
+                    {/* Section content */}
+                    <div className="min-w-0 flex-1 [&>[role=tabpanel]]:mt-0">
 
                     <TabsContent value="personal">
                         <Card>
@@ -284,7 +318,34 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
                         </div>
                     </TabsContent>
 
+                    <TabsContent value="family">
+                        <RecordsTab
+                            title="Anggota Keluarga"
+                            addLabel="Tambah Anggota"
+                            employeeId={employee.id}
+                            type="families"
+                            records={(employee.families ?? []) as Rec}
+                            fields={[
+                                { key: 'name', label: 'Nama', required: true },
+                                { key: 'relationship', label: 'Hubungan', input: 'select', options: FAMILY_RELATIONSHIPS, required: true },
+                                { key: 'gender', label: 'Jenis Kelamin', input: 'select', options: [{ v: 'male', l: 'Laki-laki' }, { v: 'female', l: 'Perempuan' }] },
+                                { key: 'birth_date', label: 'Tanggal Lahir', input: 'date' },
+                                { key: 'nik', label: 'NIK' },
+                                { key: 'occupation', label: 'Pekerjaan' },
+                                { key: 'is_dependent', label: 'Tanggungan (BPJS/pajak)', input: 'switch' },
+                            ]}
+                            columns={[
+                                { key: 'name', label: 'Nama' },
+                                { key: 'relationship', label: 'Hubungan', render: (r) => FAMILY_REL_LABEL[String(r.relationship)] ?? String(r.relationship) },
+                                { key: 'birth_date', label: 'Tgl Lahir', render: (r) => (r.birth_date ? String(r.birth_date).substring(0, 10) : '-') },
+                                { key: 'nik', label: 'NIK' },
+                                { key: 'is_dependent', label: 'Tanggungan' },
+                            ]}
+                        />
+                    </TabsContent>
+
                     <TabsContent value="education">
+                        <div className="grid gap-4">
                         <RecordsTab
                             title="Pendidikan"
                             addLabel="Tambah Pendidikan"
@@ -308,6 +369,51 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
                                 { key: 'is_highest', label: 'Terakhir' },
                             ]}
                         />
+                        <RecordsTab
+                            title="Pengalaman Kerja"
+                            addLabel="Tambah Pengalaman"
+                            employeeId={employee.id}
+                            type="experiences"
+                            records={(employee.experiences ?? []) as Rec}
+                            fields={[
+                                { key: 'company_name', label: 'Perusahaan', required: true },
+                                { key: 'position', label: 'Posisi' },
+                                { key: 'start_date', label: 'Mulai', input: 'date' },
+                                { key: 'end_date', label: 'Selesai', input: 'date' },
+                                { key: 'last_salary', label: 'Gaji Terakhir', input: 'number' },
+                                { key: 'description', label: 'Deskripsi', wide: true },
+                            ]}
+                            columns={[
+                                { key: 'company_name', label: 'Perusahaan' },
+                                { key: 'position', label: 'Posisi' },
+                                { key: 'start_date', label: 'Mulai', render: (r) => (r.start_date ? String(r.start_date).substring(0, 10) : '-') },
+                                { key: 'end_date', label: 'Selesai', render: (r) => (r.end_date ? String(r.end_date).substring(0, 10) : '-') },
+                            ]}
+                        />
+                        <RecordsTab
+                            title="Training & Sertifikasi"
+                            addLabel="Tambah"
+                            employeeId={employee.id}
+                            type="trainings"
+                            records={(employee.trainings ?? []) as Rec}
+                            fields={[
+                                { key: 'type', label: 'Jenis', input: 'select', options: TRAINING_TYPES, required: true },
+                                { key: 'name', label: 'Nama Training/Sertifikat', required: true },
+                                { key: 'provider', label: 'Penyelenggara' },
+                                { key: 'certificate_no', label: 'No Sertifikat' },
+                                { key: 'issued_date', label: 'Tanggal Terbit', input: 'date' },
+                                { key: 'expiry_date', label: 'Kedaluwarsa', input: 'date' },
+                                { key: 'notes', label: 'Catatan', wide: true },
+                            ]}
+                            columns={[
+                                { key: 'type', label: 'Jenis', render: (r) => (String(r.type) === 'certification' ? 'Sertifikasi' : 'Training') },
+                                { key: 'name', label: 'Nama' },
+                                { key: 'provider', label: 'Penyelenggara' },
+                                { key: 'certificate_no', label: 'No Sertifikat' },
+                                { key: 'expiry_date', label: 'Kedaluwarsa', render: (r) => (r.expiry_date ? String(r.expiry_date).substring(0, 10) : '-') },
+                            ]}
+                        />
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="bank">
@@ -335,6 +441,10 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
 
                     <TabsContent value="contracts">
                         <ContractsTab employeeId={employee.id} contracts={(employee.contracts ?? []) as EmployeeContractRow[]} />
+                    </TabsContent>
+
+                    <TabsContent value="documents">
+                        <DocumentsTab employeeId={employee.id} documents={(employee.documents ?? []) as EmployeeDocumentRow[]} />
                     </TabsContent>
 
                     <TabsContent value="audit">
@@ -372,8 +482,8 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
                             </CardContent>
                         </Card>
                     </TabsContent>
+                    </div>
                 </Tabs>
-                </div>
             </div>
         </AppLayout>
     );
