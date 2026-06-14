@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AccurateController;
 use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\HadirrController;
+use App\Http\Controllers\Admin\HrSettingController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\IntegrationController;
@@ -17,7 +18,12 @@ use App\Http\Controllers\Admin\LeaveRequestController;
 use App\Http\Controllers\Admin\LeaveTypeController;
 use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\MenuController;
+use App\Http\Controllers\Admin\MyDashboardController;
 use App\Http\Controllers\Admin\OrgUnitController;
+use App\Http\Controllers\Admin\OvertimeAdminController;
+use App\Http\Controllers\Admin\OvertimeApprovalController;
+use App\Http\Controllers\Admin\OvertimeController;
+use App\Http\Controllers\Admin\OvertimeSettingController;
 use App\Http\Controllers\Admin\PositionController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\RoleController;
@@ -25,6 +31,10 @@ use App\Http\Controllers\Admin\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
+    // Personal self-service dashboard (Beranda).
+    Route::get('beranda', [MyDashboardController::class, 'index'])->middleware('menu.access:my-dashboard,view')->name('beranda');
+    Route::get('beranda/photo', [MyDashboardController::class, 'photo'])->middleware('menu.access:my-dashboard,view')->name('beranda.photo');
+
     // In-app notifications (no menu gate — available to all authenticated users).
     Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
     Route::post('notifications/{id}/read', [NotificationController::class, 'read'])->name('notifications.read');
@@ -82,14 +92,35 @@ Route::middleware(['auth'])->group(function () {
     Route::get('leave-admin/balances', [LeaveBalanceAdminController::class, 'index'])->middleware('menu.access:leave-admin-balances,view')->name('leave.admin.balances');
     Route::post('leave-admin/balances/adjust', [LeaveBalanceAdminController::class, 'adjust'])->middleware('menu.access:leave-admin-balances,edit')->name('leave.admin.balances.adjust');
     Route::post('leave-admin/balances/accrue', [LeaveBalanceAdminController::class, 'accrue'])->middleware('menu.access:leave-admin-balances,edit')->name('leave.admin.balances.accrue');
-    Route::get('leave-types', [LeaveTypeController::class, 'index'])->middleware('menu.access:leave-types,view')->name('leave-types.index');
-    Route::post('leave-types', [LeaveTypeController::class, 'store'])->middleware('menu.access:leave-types,create')->name('leave-types.store');
-    Route::put('leave-types/{leave_type}', [LeaveTypeController::class, 'update'])->middleware('menu.access:leave-types,edit')->name('leave-types.update');
-    Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])->middleware('menu.access:leave-types,delete')->name('leave-types.destroy');
-    Route::get('leave-holidays', [LeaveHolidayController::class, 'index'])->middleware('menu.access:leave-holidays,view')->name('leave-holidays.index');
-    Route::post('leave-holidays', [LeaveHolidayController::class, 'store'])->middleware('menu.access:leave-holidays,create')->name('leave-holidays.store');
-    Route::put('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'update'])->middleware('menu.access:leave-holidays,edit')->name('leave-holidays.update');
-    Route::delete('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'destroy'])->middleware('menu.access:leave-holidays,delete')->name('leave-holidays.destroy');
+    // Jenis Cuti & Hari Libur — CRUD now lives in the consolidated Pengaturan page (hr-settings).
+    Route::post('leave-types', [LeaveTypeController::class, 'store'])->middleware('menu.access:hr-settings,create')->name('leave-types.store');
+    Route::put('leave-types/{leave_type}', [LeaveTypeController::class, 'update'])->middleware('menu.access:hr-settings,edit')->name('leave-types.update');
+    Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])->middleware('menu.access:hr-settings,delete')->name('leave-types.destroy');
+    Route::post('leave-holidays', [LeaveHolidayController::class, 'store'])->middleware('menu.access:hr-settings,create')->name('leave-holidays.store');
+    Route::put('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'update'])->middleware('menu.access:hr-settings,edit')->name('leave-holidays.update');
+    Route::delete('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'destroy'])->middleware('menu.access:hr-settings,delete')->name('leave-holidays.destroy');
+
+    // Pengaturan Kepegawaian (consolidated: absensi, lembur, jenis cuti, hari libur).
+    Route::get('hr-settings', [HrSettingController::class, 'index'])->middleware('menu.access:hr-settings,view')->name('hr-settings.index');
+    Route::put('hr-settings/attendance', [HrSettingController::class, 'updateAttendance'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attendance');
+
+    // Overtime — Lembur Saya (employee)
+    Route::get('overtime', [OvertimeController::class, 'index'])->middleware('menu.access:overtime-mine,view')->name('overtime.index');
+    Route::post('overtime/entries', [OvertimeController::class, 'storeEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.store');
+    Route::put('overtime/entries/{entry}', [OvertimeController::class, 'updateEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.update');
+    Route::delete('overtime/entries/{entry}', [OvertimeController::class, 'destroyEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.destroy');
+    Route::post('overtime/{overtime}/submit', [OvertimeController::class, 'submit'])->middleware('menu.access:overtime-mine,create')->name('overtime.submit');
+
+    // Overtime — Persetujuan Lembur (supervisor per-row + HR per-period)
+    Route::get('overtime-approvals', [OvertimeApprovalController::class, 'index'])->middleware('menu.access:overtime-approvals,view')->name('overtime.approvals.index');
+    Route::post('overtime-approvals/entries/{entry}/decide', [OvertimeApprovalController::class, 'decideEntry'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.entry');
+    Route::post('overtime-approvals/{overtime}/approve', [OvertimeApprovalController::class, 'approve'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.approve');
+    Route::post('overtime-approvals/{overtime}/reject', [OvertimeApprovalController::class, 'reject'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.reject');
+
+    // Overtime — Admin/HR
+    Route::get('overtime-admin', [OvertimeAdminController::class, 'index'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.index');
+    Route::get('overtime-admin/{overtime}', [OvertimeAdminController::class, 'show'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.show');
+    Route::put('overtime-setting', [OvertimeSettingController::class, 'update'])->middleware('menu.access:hr-settings,edit')->name('overtime.settings.update');
 
     // Users
     Route::get('users', [UserController::class, 'index'])->middleware('menu.access:users,view')->name('users.index');

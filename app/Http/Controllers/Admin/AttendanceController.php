@@ -18,10 +18,22 @@ class AttendanceController extends Controller
     {
     }
 
-    /** On-time deadline; later = late + annual-leave deduction. */
+    /** On-time deadline; later = late + annual-leave deduction. Defaults; overridden by AttendanceSetting. */
     private const DEADLINE = '09:00';
 
     private const FULL_DAY_AFTER = '12:00';   // > 12:00 → potong AL 1 hari (else 0.5)
+
+    /** Resolved lateness rules (loaded once per report from AttendanceSetting). */
+    private string $deadline = self::DEADLINE;
+
+    private string $fullDayAfter = self::FULL_DAY_AFTER;
+
+    private function loadRules(): void
+    {
+        $s = \App\Models\AttendanceSetting::current();
+        $this->deadline = $s->deadline ?: self::DEADLINE;
+        $this->fullDayAfter = $s->full_day_after ?: self::FULL_DAY_AFTER;
+    }
 
     /** Short tags shown in the attendance-recap matrix (fallback: first 3 letters of code). */
     private const LEAVE_ABBR = [
@@ -81,7 +93,7 @@ class AttendanceController extends Controller
             'periodLabel' => $r['periodLabel'],
             'dates' => $r['dates'],
             'employees' => $r['employees'],
-            'rules' => ['deadline' => self::DEADLINE, 'full' => self::FULL_DAY_AFTER],
+            'rules' => ['deadline' => $this->deadline, 'full' => $this->fullDayAfter],
             'leaveTypes' => $this->leaveTypeOptions(),
             'stats' => [
                 'unmatched_employees' => DB::table('hadirr_employees')->whereNull('employee_id')->count(),
@@ -180,7 +192,7 @@ class AttendanceController extends Controller
         $doc = '<html><head><meta charset="UTF-8"></head><body>'
             .'<h3>Rekap Absensi per Jam — '.$esc($r['periodLabel']).'</h3>'
             .$html
-            .'<p style="font-size:10px;color:#666;">Aturan: masuk &gt; '.self::DEADLINE.' = telat (potong cuti ½ hari); &gt; '.self::FULL_DAY_AFTER.' = potong cuti 1 hari.</p>'
+            .'<p style="font-size:10px;color:#666;">Aturan: masuk &gt; '.$this->deadline.' = telat (potong cuti ½ hari); &gt; '.$this->fullDayAfter.' = potong cuti 1 hari.</p>'
             .'</body></html>';
 
         $filename = 'rekap-absensi-'.$r['period'].'.xls';
@@ -198,18 +210,7 @@ class AttendanceController extends Controller
      */
     private function resolvePeriod(?string $periodInput): array
     {
-        $today = Carbon::today();
-        $defaultStart = $today->day >= 20 ? $today->copy()->startOfMonth() : $today->copy()->subMonthNoOverflow()->startOfMonth();
-
-        $period = (string) ($periodInput ?: $defaultStart->format('Y-m'));
-        try {
-            $startMonth = Carbon::createFromFormat('Y-m', $period)->startOfMonth();
-        } catch (\Throwable) {
-            $startMonth = $defaultStart;
-            $period = $defaultStart->format('Y-m');
-        }
-
-        return [$period, $startMonth->copy()->day(20), $startMonth->copy()->addMonthNoOverflow()->day(19)];
+        return \App\Support\AttendancePeriod::resolve($periodInput);
     }
 
     /** Page 3: attendance recap for payroll (presence marks + leave categories + balance). */
@@ -536,6 +537,7 @@ class AttendanceController extends Controller
      */
     private function hoursReport(?string $periodInput): array
     {
+        $this->loadRules();
         [$period, $from, $to] = $this->resolvePeriod($periodInput);
 
         $dowLabel = [1 => 'S', 2 => 'S', 3 => 'R', 4 => 'K', 5 => 'J', 6 => 'S', 7 => 'M'];
@@ -627,12 +629,12 @@ class AttendanceController extends Controller
         if (filled($a->clock_in)) {
             $in = Carbon::parse($a->clock_in);
             $result['time'] = $in->format('H:i');
-            $deadline = $in->copy()->setTimeFromTimeString(self::DEADLINE);
+            $deadline = $in->copy()->setTimeFromTimeString($this->deadline);
 
             if ($in->gt($deadline)) {
                 $result['late'] = true;
                 $result['late_minutes'] = (int) $deadline->diffInMinutes($in);
-                $noon = $in->copy()->setTimeFromTimeString(self::FULL_DAY_AFTER);
+                $noon = $in->copy()->setTimeFromTimeString($this->fullDayAfter);
                 $result['al'] = $in->gt($noon) ? 1.0 : 0.5;
             }
         }

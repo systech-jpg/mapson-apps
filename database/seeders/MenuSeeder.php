@@ -10,7 +10,7 @@ class MenuSeeder extends Seeder
 {
     public function run(): void
     {
-        // Reporting area.
+        // Reporting area (front dashboard — BOD only).
         $dashboard = $this->menu([
             'key' => 'dashboard',
             'title' => 'Dashboard',
@@ -27,6 +27,16 @@ class MenuSeeder extends Seeder
             'icon' => 'BarChart3',
             'area' => 'reporting',
             'sort_order' => 2,
+        ]);
+
+        // Beranda (self-service) lives in the BACKEND area, not the BOD front dashboard.
+        $this->menu([
+            'key' => 'my-dashboard',
+            'title' => 'Beranda',
+            'route' => 'beranda',
+            'icon' => 'House',
+            'area' => 'backend',
+            'sort_order' => 1,
         ]);
 
         // Module: User Management.
@@ -78,8 +88,21 @@ class MenuSeeder extends Seeder
         $leaveAdmin = $this->menu(['key' => 'leave-admin', 'title' => 'Kelola Cuti', 'route' => null, 'icon' => 'Settings', 'sort_order' => 4], $hr->id);
         $this->menu(['key' => 'leave-admin-requests', 'title' => 'Semua Pengajuan', 'route' => 'leave.admin.requests', 'icon' => 'Inbox', 'sort_order' => 1], $leaveAdmin->id);
         $this->menu(['key' => 'leave-admin-balances', 'title' => 'Saldo Karyawan', 'route' => 'leave.admin.balances', 'icon' => 'Wallet', 'sort_order' => 2], $leaveAdmin->id);
-        $this->menu(['key' => 'leave-types', 'title' => 'Jenis Cuti', 'route' => 'leave-types.index', 'icon' => 'Settings', 'sort_order' => 3], $leaveAdmin->id);
-        $this->menu(['key' => 'leave-holidays', 'title' => 'Hari Libur', 'route' => 'leave-holidays.index', 'icon' => 'CalendarCheck', 'sort_order' => 4], $leaveAdmin->id);
+
+        // Sub-module: Lembur (Overtime).
+        $overtime = $this->menu(['key' => 'overtime', 'title' => 'Lembur', 'route' => null, 'icon' => 'Timer', 'sort_order' => 5], $hr->id);
+        $this->menu(['key' => 'overtime-mine', 'title' => 'Lembur Saya', 'route' => 'overtime.index', 'icon' => 'Timer', 'sort_order' => 1], $overtime->id);
+        $this->menu(['key' => 'overtime-approvals', 'title' => 'Persetujuan Lembur', 'route' => 'overtime.approvals.index', 'icon' => 'Inbox', 'sort_order' => 2], $overtime->id);
+
+        // Sub-module: Kelola Lembur (Admin/HR).
+        $overtimeAdmin = $this->menu(['key' => 'overtime-manage', 'title' => 'Kelola Lembur', 'route' => null, 'icon' => 'Wallet', 'sort_order' => 6], $hr->id);
+        $this->menu(['key' => 'overtime-admin', 'title' => 'Pengajuan Lembur', 'route' => 'overtime.admin.index', 'icon' => 'Inbox', 'sort_order' => 1], $overtimeAdmin->id);
+
+        // Consolidated settings page (absensi, lembur, jenis cuti, hari libur).
+        $this->menu(['key' => 'hr-settings', 'title' => 'Pengaturan Kepegawaian', 'route' => 'hr-settings.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 7], $hr->id);
+
+        // Retire menus superseded by the consolidated Pengaturan page (cascades role_menu).
+        Menu::whereIn('key', ['leave-types', 'leave-holidays', 'overtime-setting'])->delete();
 
         // Module: Integrasi Data.
         $integrasi = $this->menu([

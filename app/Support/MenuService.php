@@ -33,11 +33,12 @@ class MenuService
      */
     public function landingRoute(User $user): string
     {
-        if ($user->isSuperAdmin() || $this->firstRoute($user, 'reporting')) {
+        if ($user->isSuperAdmin()) {
             return 'dashboard';
         }
 
-        return $this->firstRoute($user, 'backend') ?? 'dashboard';
+        // First reachable reporting menu (e.g. Beranda for staff), then backend, then dashboard.
+        return $this->firstRoute($user, 'reporting') ?? $this->firstRoute($user, 'backend') ?? 'dashboard';
     }
 
     /**

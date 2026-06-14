@@ -5,27 +5,29 @@ import { cn } from '@/lib/utils';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
 
-const sidebarNavItems: NavItem[] = [
+// Use route() so URLs include the app base path (e.g. /mapson-apps on MAMP).
+const sidebarNavItems: (NavItem & { routeName: string })[] = [
     {
         title: 'Profile',
-        url: '/settings/profile',
+        url: route('profile.edit'),
+        routeName: 'profile.edit',
         icon: null,
     },
     {
         title: 'Password',
-        url: '/settings/password',
+        url: route('password.edit'),
+        routeName: 'password.edit',
         icon: null,
     },
     {
         title: 'Appearance',
-        url: '/settings/appearance',
+        url: route('appearance'),
+        routeName: 'appearance',
         icon: null,
     },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
-    const currentPath = window.location.pathname;
-
     return (
         <div className="px-4 py-6">
             <Heading title="Settings" description="Manage your profile and account settings" />
@@ -40,7 +42,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
                                 variant="ghost"
                                 asChild
                                 className={cn('w-full justify-start', {
-                                    'bg-muted': currentPath === item.url,
+                                    'bg-muted': route().current(item.routeName),
                                 })}
                             >
                                 <Link href={item.url} prefetch>

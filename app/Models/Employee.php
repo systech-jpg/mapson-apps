@@ -222,6 +222,11 @@ class Employee extends Model
         return $this->hasMany(LeaveBalance::class);
     }
 
+    public function overtimePeriods(): HasMany
+    {
+        return $this->hasMany(OvertimePeriod::class)->orderByDesc('period');
+    }
+
     public function auditLogs(): MorphMany
     {
         return $this->morphMany(AuditLog::class, 'auditable')->latest();

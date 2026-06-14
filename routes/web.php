@@ -17,8 +17,9 @@ Route::get('/', function () {
 })->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('dashboard/drilldown', [DashboardController::class, 'drilldown'])->name('dashboard.drilldown');
+    // Front dashboard (sales analytics) — BOD only; gate direct-URL access too.
+    Route::get('dashboard', [DashboardController::class, 'index'])->middleware('menu.access:dashboard,view')->name('dashboard');
+    Route::get('dashboard/drilldown', [DashboardController::class, 'drilldown'])->middleware('menu.access:dashboard,view')->name('dashboard.drilldown');
 });
 
 require __DIR__.'/admin.php';

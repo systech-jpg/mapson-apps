@@ -15,6 +15,7 @@ import {
     FileBadge,
     Inbox,
     Fingerprint,
+    House,
     IdCard,
     Layers,
     LayoutGrid,
@@ -25,6 +26,8 @@ import {
     Settings,
     ShoppingCart,
     Shield,
+    SlidersHorizontal,
+    Timer,
     UserCog,
     Users,
     UsersRound,
@@ -65,7 +68,10 @@ export const menuIcons: Record<string, LucideIcon> = {
     ClipboardCheck,
     Clock,
     Download,
+    House,
     Inbox,
+    SlidersHorizontal,
+    Timer,
 };
 
 export const menuIconNames = Object.keys(menuIcons);
