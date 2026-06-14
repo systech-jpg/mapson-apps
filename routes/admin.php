@@ -106,7 +106,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('hr-settings/attendance', [HrSettingController::class, 'updateAttendance'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attendance');
     Route::put('hr-settings/attend-fees', [HrSettingController::class, 'updateAttendFees'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-fees');
 
-    // Attend Case (read from Dolibarr/ERP).
+    // Attend Case (read from ERP).
     Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');
     Route::get('attend-case-admin', [AttendCaseController::class, 'index'])->middleware('menu.access:attend-admin,view')->name('attend-case.admin');
 

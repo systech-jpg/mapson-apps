@@ -50,7 +50,7 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-xl font-semibold">Rekap Attend Case</h1>
-                        <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari Dolibarr (ERP).</p>
+                        <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari ERP.</p>
                     </div>
                     <div className="flex items-center rounded-md border">
                         <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>

@@ -377,7 +377,7 @@ class AccurateService
             ])->all();
 
             // Enrich with the real Delivery Order (Surat Jalan) date, fetched once per
-            // unique DO id. Used for Dolibarr↔Accurate reconciliation.
+            // unique DO id. Used for ERP↔Accurate reconciliation.
             $doDates = $this->deliveryOrderDates($s, $headers, collect($lines)->pluck('do_id')->filter()->unique()->all());
             $lines = array_map(function ($l) use ($doDates) {
                 $l['do_date'] = $l['do_id'] !== null ? ($doDates[$l['do_id']] ?? null) : null;

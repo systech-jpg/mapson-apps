@@ -8,8 +8,8 @@ use App\Support\AttendancePeriod;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Reads "attend case" data (medical actions) from the Dolibarr ERP table
- * `{prefix}tindakan`. The attending employee is `nama_ts` (a Dolibarr user id,
+ * Reads "attend case" data (medical actions) from the ERP table
+ * `{prefix}tindakan`. The attending employee is `nama_ts` (an ERP user id,
  * matched to employees via `erp_user_id`). Fee = cases × the employee's tier fee.
  */
 class AttendCaseService

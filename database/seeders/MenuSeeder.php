@@ -98,7 +98,7 @@ class MenuSeeder extends Seeder
         $overtimeAdmin = $this->menu(['key' => 'overtime-manage', 'title' => 'Kelola Lembur', 'route' => null, 'icon' => 'Wallet', 'sort_order' => 6], $hr->id);
         $this->menu(['key' => 'overtime-admin', 'title' => 'Pengajuan Lembur', 'route' => 'overtime.admin.index', 'icon' => 'Inbox', 'sort_order' => 1], $overtimeAdmin->id);
 
-        // Sub-module: Attend Case (read from Dolibarr/ERP).
+        // Sub-module: Attend Case (read from ERP).
         $attendCase = $this->menu(['key' => 'attend-case', 'title' => 'Attend Case', 'route' => null, 'icon' => 'Stethoscope', 'sort_order' => 7], $hr->id);
         $this->menu(['key' => 'attend-mine', 'title' => 'Attend Case Saya', 'route' => 'attend-case.mine', 'icon' => 'Stethoscope', 'sort_order' => 1], $attendCase->id);
         $this->menu(['key' => 'attend-admin', 'title' => 'Rekap Attend Case', 'route' => 'attend-case.admin', 'icon' => 'Inbox', 'sort_order' => 2], $attendCase->id);
@@ -117,7 +117,7 @@ class MenuSeeder extends Seeder
             'icon' => 'DatabaseZap',
             'sort_order' => 6,
         ]);
-        $this->menu(['key' => 'data-integration', 'title' => 'ERP (Dolibarr)', 'route' => 'integration.index', 'icon' => 'Database', 'sort_order' => 1], $integrasi->id);
+        $this->menu(['key' => 'data-integration', 'title' => 'ERP', 'route' => 'integration.index', 'icon' => 'Database', 'sort_order' => 1], $integrasi->id);
 
         // Sub-module: Accurate (menu lain menyusul).
         $accurate = $this->menu(['key' => 'accurate', 'title' => 'Accurate', 'route' => null, 'icon' => 'Plug', 'sort_order' => 2], $integrasi->id);

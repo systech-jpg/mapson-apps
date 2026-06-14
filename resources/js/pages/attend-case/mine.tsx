@@ -45,7 +45,7 @@ export default function AttendCaseMine({ employeeLinked, period, periodLabel, ma
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-xl font-semibold">Attend Case Saya</h1>
-                        <p className="text-sm text-muted-foreground">{periodLabel ? `Periode ${periodLabel}` : period} · data tindakan dari Dolibarr.</p>
+                        <p className="text-sm text-muted-foreground">{periodLabel ? `Periode ${periodLabel}` : period} · data tindakan dari ERP.</p>
                     </div>
                     <div className="flex items-center rounded-md border">
                         <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>

@@ -211,8 +211,8 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
             <div className="grid gap-3 rounded-md border p-3 md:grid-cols-3">
                 <div className="md:col-span-3 text-sm font-medium text-muted-foreground">Integrasi ERP & Attend Case</div>
                 <div className="grid gap-2">
-                    <Label htmlFor="erp_user_id">ERP User ID (Dolibarr)</Label>
-                    <Input id="erp_user_id" type="number" min="0" value={str('erp_user_id')} onChange={(e) => setData('erp_user_id', e.target.value)} placeholder="rowid user Dolibarr (nama_ts)" />
+                    <Label htmlFor="erp_user_id">ERP User ID</Label>
+                    <Input id="erp_user_id" type="number" min="0" value={str('erp_user_id')} onChange={(e) => setData('erp_user_id', e.target.value)} placeholder="ID user di ERP (nama_ts)" />
                     <InputError message={errors.erp_user_id} />
                 </div>
                 <div className="grid gap-2">

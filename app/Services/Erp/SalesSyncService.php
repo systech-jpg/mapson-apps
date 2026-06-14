@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 class SalesSyncService
 {
     /**
-     * Pull validated + paid invoice lines from the ERP (Dolibarr) and refresh the
+     * Pull validated + paid invoice lines from the ERP and refresh the
      * local sales_facts table (full truncate + insert).
      *
      * @return int Number of rows loaded.

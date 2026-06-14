@@ -62,7 +62,7 @@ return [
             ]) : [],
         ],
 
-        // Read-only source connection to the ERP (Dolibarr) database.
+        // Read-only source connection to the ERP database.
         'erp' => [
             'driver' => 'mysql',
             'host' => env('ERP_DB_HOST', '127.0.0.1'),

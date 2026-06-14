@@ -10,7 +10,7 @@ class AnalyticsController extends Controller
 {
     public function index(): Response
     {
-        // Placeholder metrics — replaced by the Dolibarr ETL feeder later.
+        // Placeholder metrics — replaced by the ERP ETL feeder later.
         return Inertia::render('analytics/index', [
             'metrics' => [],
         ]);
