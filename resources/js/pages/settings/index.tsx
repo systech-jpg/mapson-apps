@@ -3,8 +3,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
-import { CalendarCheck, CalendarDays, Clock, Timer } from 'lucide-react';
+import { CalendarCheck, CalendarDays, Clock, Stethoscope, Timer } from 'lucide-react';
 import AttendanceSection from './partials/attendance-section';
+import AttendFeesSection from './partials/attend-fees-section';
 import HolidaysSection from './partials/holidays-section';
 import LeaveTypesSection from './partials/leave-types-section';
 import OvertimeSection from './partials/overtime-section';
@@ -29,6 +30,7 @@ interface LeaveType {
 }
 
 interface Holiday { id: number; date: string; name: string; type: string; is_workday_override: boolean }
+interface AttendFee { tier: number; label: string; fee: string | number }
 
 interface Props {
     attendance: { deadline: string; full_day_after: string };
@@ -36,9 +38,10 @@ interface Props {
     leaveTypes: LeaveType[];
     holidayYear: number;
     holidays: Holiday[];
+    attendFees: AttendFee[];
 }
 
-export default function HrSettings({ attendance, overtime, leaveTypes, holidayYear, holidays }: Props) {
+export default function HrSettings({ attendance, overtime, leaveTypes, holidayYear, holidays, attendFees }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Pengaturan Kepegawaian" />
@@ -58,6 +61,8 @@ export default function HrSettings({ attendance, overtime, leaveTypes, holidayYe
                                 <NavGroup label="Cuti" />
                                 <TabsTrigger className={NAV_ITEM} value="types"><CalendarDays className="size-4" /> Jenis Cuti</TabsTrigger>
                                 <TabsTrigger className={NAV_ITEM} value="holidays"><CalendarCheck className="size-4" /> Hari Libur</TabsTrigger>
+                                <NavGroup label="Attend Case" />
+                                <TabsTrigger className={NAV_ITEM} value="attend-fees"><Stethoscope className="size-4" /> Fee Attend Case</TabsTrigger>
                             </TabsList>
                         </CardContent>
                     </Card>
@@ -67,6 +72,7 @@ export default function HrSettings({ attendance, overtime, leaveTypes, holidayYe
                         <TabsContent value="overtime"><OvertimeSection overtime={overtime} /></TabsContent>
                         <TabsContent value="types"><LeaveTypesSection types={leaveTypes} /></TabsContent>
                         <TabsContent value="holidays"><HolidaysSection year={holidayYear} holidays={holidays} /></TabsContent>
+                        <TabsContent value="attend-fees"><AttendFeesSection fees={attendFees} /></TabsContent>
                     </div>
                 </Tabs>
             </div>

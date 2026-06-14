@@ -27,6 +27,7 @@ import {
     ShoppingCart,
     Shield,
     SlidersHorizontal,
+    Stethoscope,
     Timer,
     UserCog,
     Users,
@@ -71,6 +72,7 @@ export const menuIcons: Record<string, LucideIcon> = {
     House,
     Inbox,
     SlidersHorizontal,
+    Stethoscope,
     Timer,
 };
 

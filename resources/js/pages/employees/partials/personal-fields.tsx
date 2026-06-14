@@ -208,6 +208,30 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                 </div>
             </div>
 
+            <div className="grid gap-3 rounded-md border p-3 md:grid-cols-3">
+                <div className="md:col-span-3 text-sm font-medium text-muted-foreground">Integrasi ERP & Attend Case</div>
+                <div className="grid gap-2">
+                    <Label htmlFor="erp_user_id">ERP User ID (Dolibarr)</Label>
+                    <Input id="erp_user_id" type="number" min="0" value={str('erp_user_id')} onChange={(e) => setData('erp_user_id', e.target.value)} placeholder="rowid user Dolibarr (nama_ts)" />
+                    <InputError message={errors.erp_user_id} />
+                </div>
+                <div className="grid gap-2">
+                    <Label htmlFor="attend_tier">Tier Attend Case</Label>
+                    <Select value={str('attend_tier') || NONE} onValueChange={(v) => setData('attend_tier', v === NONE ? '' : v)}>
+                        <SelectTrigger id="attend_tier">
+                            <SelectValue placeholder="Pilih tier" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={NONE}>- Tidak diisi -</SelectItem>
+                            <SelectItem value="1">Tier 1 — Manager</SelectItem>
+                            <SelectItem value="2">Tier 2 — Supervisor</SelectItem>
+                            <SelectItem value="3">Tier 3 — Staff</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <InputError message={errors.attend_tier} />
+                </div>
+            </div>
+
             <div className="flex items-center gap-3">
                 <Switch id="is_active" checked={Boolean(data.is_active)} onCheckedChange={(v) => setData('is_active', v)} />
                 <Label htmlFor="is_active">Employee aktif</Label>

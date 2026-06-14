@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AttendanceSetting;
+use App\Models\AttendCaseFee;
 use App\Models\LeaveHoliday;
 use App\Models\LeaveType;
 use App\Models\OvertimeSetting;
@@ -38,7 +39,23 @@ class HrSettingController extends Controller
             'leaveTypes' => LeaveType::orderBy('sort_order')->get(),
             'holidayYear' => $year,
             'holidays' => LeaveHoliday::whereYear('date', $year)->orderBy('date')->get(),
+            'attendFees' => AttendCaseFee::orderBy('tier')->get(['tier', 'label', 'fee']),
         ]);
+    }
+
+    public function updateAttendFees(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'fees' => ['required', 'array'],
+            'fees.*.tier' => ['required', 'integer', 'exists:attend_case_fees,tier'],
+            'fees.*.fee' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        foreach ($data['fees'] as $row) {
+            AttendCaseFee::where('tier', $row['tier'])->update(['fee' => $row['fee']]);
+        }
+
+        return back()->with('success', 'Fee attend case disimpan.');
     }
 
     public function updateAttendance(Request $request): RedirectResponse

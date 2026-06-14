@@ -1,1 +1,0 @@
-import{K as u}from"./app-Dm902umt.js";function c(){const{permissions:r,isSuperAdmin:n}=u().props;return{can:(o,t="view")=>{var e;return n?!0:!!((e=r==null?void 0:r[o])!=null&&e[t])},isSuperAdmin:n}}export{c as u};

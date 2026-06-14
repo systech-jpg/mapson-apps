@@ -37,6 +37,8 @@ export default function CreateEmployee(props: Props) {
         blood_type: '',
         has_meal_allowance: true,
         has_transport_allowance: true,
+        erp_user_id: '',
+        attend_tier: '',
         bpjs_kesehatan_no: '',
         bpjs_kesehatan_notes: '',
         bpjs_ketenagakerjaan_no: '',

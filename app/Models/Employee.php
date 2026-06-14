@@ -34,7 +34,7 @@ class Employee extends Model
         // Personal
         'first_name', 'last_name', 'full_name', 'nik_ktp', 'kk_number', 'npwp', 'gender', 'birth_place', 'birth_date',
         'religion', 'marital_status', 'ptkp_status', 'nationality', 'blood_type',
-        'has_meal_allowance', 'has_transport_allowance',
+        'has_meal_allowance', 'has_transport_allowance', 'erp_user_id', 'attend_tier',
         'bpjs_kesehatan_no', 'bpjs_kesehatan_notes', 'bpjs_ketenagakerjaan_no', 'bpjs_ketenagakerjaan_notes', 'photo_path',
         // Snapshot (written by AssignmentService)
         'current_company_id', 'current_org_unit_id', 'current_position_id', 'current_job_catalog_id', 'current_job_grade_id',
@@ -54,6 +54,8 @@ class Employee extends Model
             'is_active' => 'boolean',
             'has_meal_allowance' => 'boolean',
             'has_transport_allowance' => 'boolean',
+            'erp_user_id' => 'integer',
+            'attend_tier' => 'integer',
         ];
     }
 

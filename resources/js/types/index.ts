@@ -111,6 +111,8 @@ export interface Employee {
     blood_type: string | null;
     has_meal_allowance: boolean;
     has_transport_allowance: boolean;
+    erp_user_id: number | null;
+    attend_tier: number | null;
     bpjs_kesehatan_no: string | null;
     bpjs_kesehatan_notes: string | null;
     bpjs_ketenagakerjaan_no: string | null;

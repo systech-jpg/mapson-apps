@@ -113,6 +113,8 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
         blood_type: employee.blood_type ?? '',
         has_meal_allowance: Boolean(employee.has_meal_allowance),
         has_transport_allowance: Boolean(employee.has_transport_allowance),
+        erp_user_id: employee.erp_user_id != null ? String(employee.erp_user_id) : '',
+        attend_tier: employee.attend_tier != null ? String(employee.attend_tier) : '',
         bpjs_kesehatan_no: employee.bpjs_kesehatan_no ?? '',
         bpjs_kesehatan_notes: employee.bpjs_kesehatan_notes ?? '',
         bpjs_ketenagakerjaan_no: employee.bpjs_ketenagakerjaan_no ?? '',

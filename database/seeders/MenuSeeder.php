@@ -98,8 +98,13 @@ class MenuSeeder extends Seeder
         $overtimeAdmin = $this->menu(['key' => 'overtime-manage', 'title' => 'Kelola Lembur', 'route' => null, 'icon' => 'Wallet', 'sort_order' => 6], $hr->id);
         $this->menu(['key' => 'overtime-admin', 'title' => 'Pengajuan Lembur', 'route' => 'overtime.admin.index', 'icon' => 'Inbox', 'sort_order' => 1], $overtimeAdmin->id);
 
-        // Consolidated settings page (absensi, lembur, jenis cuti, hari libur).
-        $this->menu(['key' => 'hr-settings', 'title' => 'Pengaturan Kepegawaian', 'route' => 'hr-settings.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 7], $hr->id);
+        // Sub-module: Attend Case (read from Dolibarr/ERP).
+        $attendCase = $this->menu(['key' => 'attend-case', 'title' => 'Attend Case', 'route' => null, 'icon' => 'Stethoscope', 'sort_order' => 7], $hr->id);
+        $this->menu(['key' => 'attend-mine', 'title' => 'Attend Case Saya', 'route' => 'attend-case.mine', 'icon' => 'Stethoscope', 'sort_order' => 1], $attendCase->id);
+        $this->menu(['key' => 'attend-admin', 'title' => 'Rekap Attend Case', 'route' => 'attend-case.admin', 'icon' => 'Inbox', 'sort_order' => 2], $attendCase->id);
+
+        // Consolidated settings page (absensi, lembur, jenis cuti, hari libur, fee attend case).
+        $this->menu(['key' => 'hr-settings', 'title' => 'Pengaturan Kepegawaian', 'route' => 'hr-settings.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 8], $hr->id);
 
         // Retire menus superseded by the consolidated Pengaturan page (cascades role_menu).
         Menu::whereIn('key', ['leave-types', 'leave-holidays', 'overtime-setting'])->delete();

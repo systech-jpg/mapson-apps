@@ -1,6 +1,0 @@
-import{j as e}from"./app-Dm902umt.js";import{C as r,a as n}from"./card-Dt6RDIMV.js";import t from"./general-body-Cf2TsQHL.js";import{c as i}from"./createLucideIcon-CDC8YNqH.js";import"./utils-BRMhMjhB.js";import"./leave-status-badge-Dy7nY6a5.js";import"./badge-olMxQh_p.js";import"./button-BbSv-rAd.js";import"./index-BWMQMZeP.js";import"./table-Bu32ALI3.js";import"./timer-Hsh5nAqE.js";/**
- * @license lucide-react v0.475.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const s=[["polyline",{points:"22 7 13.5 15.5 8.5 10.5 2 17",key:"126l90"}],["polyline",{points:"16 7 22 7 22 13",key:"kwv8wd"}]],o=i("TrendingUp",s);function u(a){return e.jsxs(e.Fragment,{children:[e.jsx(r,{className:"border-dashed",children:e.jsxs(n,{className:"flex items-center gap-3 py-5 text-sm text-muted-foreground",children:[e.jsx(o,{className:"size-5 text-emerald-600"}),e.jsxs("span",{children:[e.jsx("b",{className:"text-foreground",children:"Dashboard Sales"})," — area metrik penjualan (target, pencapaian, pipeline) akan ditambahkan di sini. Sementara menampilkan ringkasan kepegawaian Anda di bawah."]})]})}),e.jsx(t,{...a})]})}export{u as default};

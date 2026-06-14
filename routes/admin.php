@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccurateController;
+use App\Http\Controllers\Admin\AttendCaseController;
 use App\Http\Controllers\Admin\AttendanceController;
 use App\Http\Controllers\Admin\HadirrController;
 use App\Http\Controllers\Admin\HrSettingController;
@@ -100,9 +101,14 @@ Route::middleware(['auth'])->group(function () {
     Route::put('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'update'])->middleware('menu.access:hr-settings,edit')->name('leave-holidays.update');
     Route::delete('leave-holidays/{leave_holiday}', [LeaveHolidayController::class, 'destroy'])->middleware('menu.access:hr-settings,delete')->name('leave-holidays.destroy');
 
-    // Pengaturan Kepegawaian (consolidated: absensi, lembur, jenis cuti, hari libur).
+    // Pengaturan Kepegawaian (consolidated: absensi, lembur, jenis cuti, hari libur, fee attend case).
     Route::get('hr-settings', [HrSettingController::class, 'index'])->middleware('menu.access:hr-settings,view')->name('hr-settings.index');
     Route::put('hr-settings/attendance', [HrSettingController::class, 'updateAttendance'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attendance');
+    Route::put('hr-settings/attend-fees', [HrSettingController::class, 'updateAttendFees'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-fees');
+
+    // Attend Case (read from Dolibarr/ERP).
+    Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');
+    Route::get('attend-case-admin', [AttendCaseController::class, 'index'])->middleware('menu.access:attend-admin,view')->name('attend-case.admin');
 
     // Overtime — Lembur Saya (employee)
     Route::get('overtime', [OvertimeController::class, 'index'])->middleware('menu.access:overtime-mine,view')->name('overtime.index');
