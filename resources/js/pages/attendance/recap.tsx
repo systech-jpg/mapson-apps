@@ -5,7 +5,7 @@ import { usePermissions } from '@/hooks/use-permissions';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, FileSpreadsheet } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, FileText } from 'lucide-react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -121,6 +121,11 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                         <Button variant="outline" size="sm" asChild>
                             <a href={route('attendance.recap.export', { period })}>
                                 <FileSpreadsheet className="size-4" /> Export Excel
+                            </a>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                            <a href={route('attendance.recap.pdf', { period })} target="_blank" rel="noopener">
+                                <FileText className="size-4" /> Export PDF
                             </a>
                         </Button>
                     </div>

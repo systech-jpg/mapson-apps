@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\HadirrSetting;
 use App\Services\Hadirr\HadirrSyncService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -357,6 +358,51 @@ class AttendanceController extends Controller
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="rekap-kehadiran-'.$r['period'].'.xls"',
         ]);
+    }
+
+    /** One-page PDF report (Form Absensi Bulanan) of the attendance recap. */
+    public function exportPdf(Request $request): \Symfony\Component\HttpFoundation\Response
+    {
+        $r = $this->attendanceReport($request->input('period'));
+
+        $bulanID = [1 => 'JANUARI', 2 => 'FEBRUARI', 3 => 'MARET', 4 => 'APRIL', 5 => 'MEI', 6 => 'JUNI', 7 => 'JULI', 8 => 'AGUSTUS', 9 => 'SEPTEMBER', 10 => 'OKTOBER', 11 => 'NOVEMBER', 12 => 'DESEMBER'];
+
+        // Group consecutive dates by month for the top header row.
+        $monthGroups = [];
+        foreach ($r['dates'] as $d) {
+            $c = Carbon::parse($d['date']);
+            $label = $bulanID[$c->month].' '.$c->year;
+            $n = count($monthGroups);
+            if ($n > 0 && $monthGroups[$n - 1]['label'] === $label) {
+                $monthGroups[$n - 1]['count']++;
+            } else {
+                $monthGroups[] = ['label' => $label, 'count' => 1];
+            }
+        }
+
+        $start = Carbon::parse($r['dates'][0]['date']);
+        $logoPath = public_path('images/logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode((string) file_get_contents($logoPath)) : null;
+
+        $pdf = Pdf::loadView('reports.attendance-recap', [
+            'r' => $r,
+            'monthGroups' => $monthGroups,
+            'periodLabel' => $r['periodLabel'],
+            'salaryLabel' => $bulanID[$start->month].' '.$start->year,
+            'logo' => $logo,
+            'meta' => [
+                'no_formulir' => '002/03/HRGA-MP/F-01',
+                'revisi' => '00',
+                'lampiran' => '002/03/HRGA-MAP/12/2024',
+                'halaman' => '1 dari 1',
+            ],
+            'signers' => [
+                'prepared' => ['name' => 'Marisa Syarifah', 'role' => 'HRGA'],
+                'verified' => ['name' => 'Dian Tika Mardhan', 'role' => 'Finance Manager'],
+            ],
+        ])->setPaper('a4', 'landscape'); // A4 landscape (842 × 595 pt)
+
+        return $pdf->download('rekap-kehadiran-'.$r['period'].'.pdf');
     }
 
     /**
