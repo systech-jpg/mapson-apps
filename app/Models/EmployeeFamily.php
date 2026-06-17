@@ -15,7 +15,7 @@ class EmployeeFamily extends Model
 
     protected function casts(): array
     {
-        return ['birth_date' => 'date', 'is_dependent' => 'boolean'];
+        return ['birth_date' => 'date:Y-m-d', 'is_dependent' => 'boolean'];
     }
 
     public function employee(): BelongsTo

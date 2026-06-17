@@ -18,7 +18,7 @@ class EmployeeDocument extends Model
 
     protected function casts(): array
     {
-        return ['issued_date' => 'date', 'expiry_date' => 'date', 'size' => 'integer'];
+        return ['issued_date' => 'date:Y-m-d', 'expiry_date' => 'date:Y-m-d', 'size' => 'integer'];
     }
 
     public function employee(): BelongsTo

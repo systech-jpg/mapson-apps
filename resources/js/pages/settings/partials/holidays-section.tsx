@@ -1,5 +1,4 @@
 import { Can } from '@/components/can';
-import { ConfirmDelete } from '@/components/confirm-delete';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { router, useForm } from '@inertiajs/react';
-import { Pencil, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 interface Holiday { id: number; date: string; name: string; type: string; is_workday_override: boolean }
@@ -23,16 +22,23 @@ export default function HolidaysSection({ year, holidays }: { year: number; holi
         date: '', name: '', type: 'national', is_workday_override: false,
     });
 
-    const openCreate = () => { reset(); clearErrors(); setEditing(null); setOpen(true); };
+    // Always re-fetch the holiday list for the currently viewed year (the list is year-scoped).
+    const refresh = (y: number = year) =>
+        router.get(route('hr-settings.index'), { year: y }, { only: ['holidays', 'holidayYear'], preserveState: true, preserveScroll: true, replace: true });
+
+    const openCreate = () => { reset(); clearErrors(); setData({ date: `${year}-01-01`, name: '', type: 'national', is_workday_override: false }); setEditing(null); setOpen(true); };
     const openEdit = (h: Holiday) => { clearErrors(); setEditing(h); setData({ date: h.date.substring(0, 10), name: h.name, type: h.type, is_workday_override: h.is_workday_override }); setOpen(true); };
+
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
-        const opts = { preserveScroll: true, onSuccess: () => setOpen(false) };
+        const opts = { preserveScroll: true, onSuccess: () => { setOpen(false); refresh(); } };
         editing ? put(route('leave-holidays.update', editing.id), opts) : post(route('leave-holidays.store'), opts);
     };
 
-    const changeYear = (y: string) => {
-        router.get(route('hr-settings.index'), { year: y }, { preserveState: true, preserveScroll: true, replace: true, only: ['holidays', 'holidayYear'] });
+    const remove = (h: Holiday) => {
+        if (confirm(`Hapus hari libur "${h.name}" (${h.date.substring(0, 10)})?`)) {
+            router.delete(route('leave-holidays.destroy', h.id), { preserveScroll: true, onSuccess: () => refresh() });
+        }
     };
 
     return (
@@ -44,7 +50,11 @@ export default function HolidaysSection({ year, holidays }: { year: number; holi
                         <p className="text-sm text-muted-foreground">Kalender libur nasional/cuti bersama/perusahaan (dipakai perhitungan cuti & lembur).</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Input type="number" className="w-24" value={year} onChange={(e) => changeYear(e.target.value)} />
+                        <div className="flex items-center rounded-md border">
+                            <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => refresh(year - 1)} title="Tahun sebelumnya"><ChevronLeft className="size-4" /></Button>
+                            <span className="px-2 text-sm font-medium">{year}</span>
+                            <Button variant="ghost" size="icon" className="size-8 rounded-l-none" onClick={() => refresh(year + 1)} title="Tahun berikutnya"><ChevronRight className="size-4" /></Button>
+                        </div>
                         <Can on="hr-settings" do="create"><Button onClick={openCreate}><Plus className="size-4" /> Tambah</Button></Can>
                     </div>
                 </div>
@@ -65,7 +75,7 @@ export default function HolidaysSection({ year, holidays }: { year: number; holi
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <Can on="hr-settings" do="edit"><Button variant="ghost" size="icon" onClick={() => openEdit(h)}><Pencil className="size-4" /></Button></Can>
-                                            <Can on="hr-settings" do="delete"><ConfirmDelete url={route('leave-holidays.destroy', h.id)} title={`Hapus ${h.name}?`} /></Can>
+                                            <Can on="hr-settings" do="delete"><Button variant="ghost" size="icon" className="text-rose-600" onClick={() => remove(h)}><Trash2 className="size-4" /></Button></Can>
                                         </div>
                                     </TableCell>
                                 </TableRow>

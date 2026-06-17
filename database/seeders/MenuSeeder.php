@@ -109,6 +109,12 @@ class MenuSeeder extends Seeder
         // Retire menus superseded by the consolidated Pengaturan page (cascades role_menu).
         Menu::whereIn('key', ['leave-types', 'leave-holidays', 'overtime-setting'])->delete();
 
+        // Module: Finance.
+        $finance = $this->menu(['key' => 'finance', 'title' => 'Finance', 'route' => null, 'icon' => 'Landmark', 'sort_order' => 5]);
+        $this->menu(['key' => 'pricing-engine', 'title' => 'Pricing Engine', 'route' => 'pricing.index', 'icon' => 'Calculator', 'sort_order' => 1], $finance->id);
+        $this->menu(['key' => 'pricing-approvals', 'title' => 'Persetujuan Harga', 'route' => 'pricing.approvals', 'icon' => 'Inbox', 'sort_order' => 2], $finance->id);
+        $this->menu(['key' => 'finance-products', 'title' => 'Data Produk', 'route' => 'finance.products.index', 'icon' => 'Package', 'sort_order' => 3], $finance->id);
+
         // Module: Integrasi Data.
         $integrasi = $this->menu([
             'key' => 'integrasi-data',

@@ -34,7 +34,7 @@ class HrSettingController extends Controller
             'overtime' => [
                 'rate_per_hour' => (float) $ot->rate_per_hour,
                 'multiplier_workday' => (float) $ot->multiplier_workday,
-                'multiplier_holiday' => (float) $ot->multiplier_holiday,
+                'holiday_flat_rate' => (float) $ot->holiday_flat_rate,
             ],
             'leaveTypes' => LeaveType::orderBy('sort_order')->get(),
             'holidayYear' => $year,

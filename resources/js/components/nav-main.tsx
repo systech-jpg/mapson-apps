@@ -37,7 +37,7 @@ function TopNode({ node }: { node: MenuNode }) {
         return (
             <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isCurrent(node.route)} tooltip={{ children: node.title }}>
-                    <Link href={node.route ? route(node.route) : '#'} prefetch>
+                    <Link href={node.route ? route(node.route) : '#'}>
                         <Icon />
                         <span>{node.title}</span>
                     </Link>
@@ -74,7 +74,7 @@ function SubNode({ node }: { node: MenuNode }) {
         return (
             <SidebarMenuSubItem>
                 <SidebarMenuSubButton asChild isActive={isCurrent(node.route)}>
-                    <Link href={node.route ? route(node.route) : '#'} prefetch>
+                    <Link href={node.route ? route(node.route) : '#'}>
                         <span>{node.title}</span>
                     </Link>
                 </SidebarMenuSubButton>

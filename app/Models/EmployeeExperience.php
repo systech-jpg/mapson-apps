@@ -15,7 +15,7 @@ class EmployeeExperience extends Model
 
     protected function casts(): array
     {
-        return ['start_date' => 'date', 'end_date' => 'date', 'last_salary' => 'decimal:2'];
+        return ['start_date' => 'date:Y-m-d', 'end_date' => 'date:Y-m-d', 'last_salary' => 'decimal:2'];
     }
 
     public function employee(): BelongsTo

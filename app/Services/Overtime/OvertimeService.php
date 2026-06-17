@@ -21,6 +21,10 @@ use RuntimeException;
  */
 class OvertimeService
 {
+    public function __construct(private OvertimeNotificationService $notifier)
+    {
+    }
+
     /** Get-or-create the employee's draft header for a period. */
     public function openPeriod(Employee $employee, ?string $periodInput = null, ?User $actor = null): OvertimePeriod
     {
@@ -49,6 +53,7 @@ class OvertimeService
         $this->assertEditable($period);
         $date = Carbon::parse($data['date'])->startOfDay();
         $this->assertWithinPeriod($period, $date);
+        $this->assertUniqueDate($period, $date);
 
         $entry = $period->entries()->create([
             'date' => $date->toDateString(),
@@ -72,6 +77,7 @@ class OvertimeService
         $this->assertEditable($period);
         $date = Carbon::parse($data['date'])->startOfDay();
         $this->assertWithinPeriod($period, $date);
+        $this->assertUniqueDate($period, $date, $entry->id);
 
         $entry->update([
             'date' => $date->toDateString(),
@@ -104,7 +110,7 @@ class OvertimeService
             throw new RuntimeException('Belum ada entri lembur untuk diajukan.');
         }
 
-        return DB::transaction(function () use ($period) {
+        $period = DB::transaction(function () use ($period) {
             $period->approvals()->delete();                                  // reset on resubmit
             $period->entries()->update(['status' => OvertimeEntry::STATUS_PENDING, 'decided_by' => null, 'decided_at' => null]);
 
@@ -131,6 +137,39 @@ class OvertimeService
 
             return $period->fresh(['approvals', 'entries']);
         });
+
+        $this->notifier->notifyPendingApprovers($period);
+
+        return $period;
+    }
+
+    /**
+     * Pull a submitted period back to Draft for revision — allowed only while still
+     * pending AND no approver has approved yet. Once an approver has signed off, they
+     * must reject/cancel it first before the employee can revise.
+     */
+    public function backToDraft(OvertimePeriod $period): OvertimePeriod
+    {
+        if (! $period->isPending()) {
+            throw new RuntimeException('Hanya pengajuan yang masih menunggu yang bisa direvisi.');
+        }
+        if ($period->approvals()->where('status', OvertimeApproval::STATUS_APPROVED)->exists()) {
+            throw new RuntimeException('Sudah ada persetujuan atasan; minta atasan membatalkan/menolak dulu sebelum direvisi.');
+        }
+
+        return DB::transaction(function () use ($period) {
+            $period->approvals()->delete();
+            $period->entries()->update(['status' => OvertimeEntry::STATUS_PENDING, 'decided_by' => null, 'decided_at' => null]);
+            $period->update([
+                'status' => OvertimePeriod::STATUS_DRAFT,
+                'current_level' => 0,
+                'submitted_at' => null,
+                'decided_at' => null,
+                'decision_note' => null,
+            ]);
+
+            return $period->fresh(['approvals', 'entries']);
+        });
     }
 
     /** Supervisor decision on a single detail row (approve/reject the activity). */
@@ -153,7 +192,7 @@ class OvertimeService
     /** Approve the active period step; advance, or finalize + snapshot rate at HR. */
     public function approve(OvertimePeriod $period, User $actor, ?string $notes = null): OvertimePeriod
     {
-        return DB::transaction(function () use ($period, $actor, $notes) {
+        $period = DB::transaction(function () use ($period, $actor, $notes) {
             $step = $this->activeApproval($period);
             $approverEmpId = $step->approver_employee_id ?? optional($actor->employee)->id;
 
@@ -182,6 +221,7 @@ class OvertimeService
                     'rate_per_hour' => $s->rate_per_hour,
                     'multiplier_workday' => $s->multiplier_workday,
                     'multiplier_holiday' => $s->multiplier_holiday,
+                    'holiday_flat_rate' => $s->holiday_flat_rate,
                 ]);
             }
 
@@ -189,12 +229,20 @@ class OvertimeService
 
             return $period->fresh(['approvals', 'entries']);
         });
+
+        if ($period->status === OvertimePeriod::STATUS_APPROVED) {
+            $this->notifier->notifyRequester($period, 'approved');
+        } else {
+            $this->notifier->notifyPendingApprovers($period);
+        }
+
+        return $period;
     }
 
     /** Reject the active step → period rejected (employee may revise & resubmit). */
     public function reject(OvertimePeriod $period, User $actor, ?string $notes = null): OvertimePeriod
     {
-        return DB::transaction(function () use ($period, $actor, $notes) {
+        $period = DB::transaction(function () use ($period, $actor, $notes) {
             $step = $this->activeApproval($period);
             $step->update([
                 'status' => OvertimeApproval::STATUS_REJECTED,
@@ -211,6 +259,10 @@ class OvertimeService
 
             return $period->fresh(['approvals', 'entries']);
         });
+
+        $this->notifier->notifyRequester($period, 'rejected');
+
+        return $period;
     }
 
     /** Recalculate header totals from non-rejected entries (uses snapshot rate once approved). */
@@ -220,13 +272,14 @@ class OvertimeService
         $s = OvertimeSetting::current();
         $rate = (float) ($snapshot ? $period->rate_per_hour : $s->rate_per_hour);
         $mw = (float) ($snapshot ? $period->multiplier_workday : $s->multiplier_workday);
-        $mh = (float) ($snapshot ? $period->multiplier_holiday : $s->multiplier_holiday);
+        $flat = (float) ($snapshot ? $period->holiday_flat_rate : $s->holiday_flat_rate);
 
         $hours = 0.0;
         $amount = 0.0;
         foreach ($period->entries()->where('status', '!=', OvertimeEntry::STATUS_REJECTED)->get() as $e) {
             $hours += (float) $e->hours;
-            $amount += (float) $e->hours * $rate * ($e->is_holiday ? $mh : $mw);
+            // Holiday/weekend = flat fee per day (regardless of hours); workday = hours × rate × multiplier.
+            $amount += $e->is_holiday ? $flat : ((float) $e->hours * $rate * $mw);
         }
 
         $period->update(['total_hours' => $hours, 'total_amount' => $amount]);
@@ -278,6 +331,19 @@ class OvertimeService
     {
         if ($date->lt($period->period_start) || $date->gt($period->period_end)) {
             throw new RuntimeException('Tanggal di luar rentang periode ('.$period->period_start->format('d M').' – '.$period->period_end->format('d M Y').').');
+        }
+    }
+
+    /** One overtime entry per date — block a second row on the same day. */
+    private function assertUniqueDate(OvertimePeriod $period, Carbon $date, ?int $exceptId = null): void
+    {
+        $exists = $period->entries()
+            ->where('date', $date->toDateString())
+            ->when($exceptId, fn ($q) => $q->whereKeyNot($exceptId))
+            ->exists();
+
+        if ($exists) {
+            throw new RuntimeException('Sudah ada entri lembur pada tanggal '.$date->format('d M Y').'. Satu tanggal hanya boleh satu entri.');
         }
     }
 

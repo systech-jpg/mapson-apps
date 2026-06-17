@@ -3,6 +3,7 @@ import {
     BarChart3,
     Briefcase,
     Building2,
+    Calculator,
     CalendarCheck,
     CalendarDays,
     Circle,
@@ -17,11 +18,13 @@ import {
     Fingerprint,
     House,
     IdCard,
+    Landmark,
     Layers,
     LayoutGrid,
     ListTree,
     MapPin,
     Network,
+    Package,
     Plug,
     Settings,
     ShoppingCart,
@@ -74,6 +77,9 @@ export const menuIcons: Record<string, LucideIcon> = {
     SlidersHorizontal,
     Stethoscope,
     Timer,
+    Calculator,
+    Landmark,
+    Package,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

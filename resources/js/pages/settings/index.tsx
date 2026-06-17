@@ -34,7 +34,7 @@ interface AttendFee { tier: number; label: string; fee: string | number }
 
 interface Props {
     attendance: { deadline: string; full_day_after: string };
-    overtime: { rate_per_hour: number; multiplier_workday: number; multiplier_holiday: number };
+    overtime: { rate_per_hour: number; multiplier_workday: number; holiday_flat_rate: number };
     leaveTypes: LeaveType[];
     holidayYear: number;
     holidays: Holiday[];

@@ -93,7 +93,19 @@ class LeaveRequestController extends Controller
             'approvals.approver:id,full_name', 'attachments', 'creator:id,name',
         ]);
 
-        return Inertia::render('leave/show', ['leave' => $leave]);
+        $user = request()->user();
+        // Call the policy directly (not Gate) so button visibility reflects the actual
+        // role even for super-admins (whose Gate::before bypass would allow everything).
+        $policy = app(\App\Policies\LeaveRequestPolicy::class);
+
+        return Inertia::render('leave/show', [
+            'leave' => $leave,
+            'can' => [
+                'approve' => $policy->approve($user, $leave),    // active approver (atasan/HR)
+                'withdraw' => $policy->withdraw($user, $leave),  // owner only, while pending
+                'cancel' => $policy->cancel($user, $leave),      // owner (pending) or HR
+            ],
+        ]);
     }
 
     public function withdraw(LeaveRequest $leave): RedirectResponse

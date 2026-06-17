@@ -21,8 +21,8 @@ class EmployeeAssignment extends Model
     protected function casts(): array
     {
         return [
-            'valid_from' => 'date',
-            'valid_to' => 'date',
+            'valid_from' => 'date:Y-m-d',
+            'valid_to' => 'date:Y-m-d',
             'is_current' => 'boolean',
         ];
     }

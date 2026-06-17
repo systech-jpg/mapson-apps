@@ -26,6 +26,8 @@ use App\Http\Controllers\Admin\OvertimeApprovalController;
 use App\Http\Controllers\Admin\OvertimeController;
 use App\Http\Controllers\Admin\OvertimeSettingController;
 use App\Http\Controllers\Admin\PositionController;
+use App\Http\Controllers\Admin\PricingController;
+use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
@@ -107,6 +109,18 @@ Route::middleware(['auth'])->group(function () {
     Route::put('hr-settings/attendance', [HrSettingController::class, 'updateAttendance'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attendance');
     Route::put('hr-settings/attend-fees', [HrSettingController::class, 'updateAttendFees'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-fees');
 
+    // Finance — Pricing Engine
+    Route::get('finance/pricing', [PricingController::class, 'index'])->middleware('menu.access:pricing-engine,view')->name('pricing.index');
+    Route::post('finance/pricing/approval', [PricingController::class, 'storeApproval'])->middleware('menu.access:pricing-engine,create')->name('pricing.storeApproval');
+    Route::get('finance/pricing/approvals', [PricingController::class, 'approvals'])->middleware('menu.access:pricing-approvals,view')->name('pricing.approvals');
+    Route::post('finance/pricing/approvals/{approval}/approve', [PricingController::class, 'approve'])->middleware('menu.access:pricing-approvals,edit')->name('pricing.approve');
+    Route::post('finance/pricing/approvals/{approval}/reject', [PricingController::class, 'reject'])->middleware('menu.access:pricing-approvals,edit')->name('pricing.reject');
+
+    // Finance — Data Produk
+    Route::get('finance/products', [ProductController::class, 'index'])->middleware('menu.access:finance-products,view')->name('finance.products.index');
+    Route::post('finance/products', [ProductController::class, 'store'])->middleware('menu.access:finance-products,create')->name('finance.products.store');
+    Route::delete('finance/products/{product}', [ProductController::class, 'destroy'])->middleware('menu.access:finance-products,delete')->name('finance.products.destroy');
+
     // Attend Case (read from ERP).
     Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');
     Route::get('attend-case-admin', [AttendCaseController::class, 'index'])->middleware('menu.access:attend-admin,view')->name('attend-case.admin');
@@ -117,6 +131,7 @@ Route::middleware(['auth'])->group(function () {
     Route::put('overtime/entries/{entry}', [OvertimeController::class, 'updateEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.update');
     Route::delete('overtime/entries/{entry}', [OvertimeController::class, 'destroyEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.destroy');
     Route::post('overtime/{overtime}/submit', [OvertimeController::class, 'submit'])->middleware('menu.access:overtime-mine,create')->name('overtime.submit');
+    Route::post('overtime/{overtime}/back-to-draft', [OvertimeController::class, 'backToDraft'])->middleware('menu.access:overtime-mine,create')->name('overtime.back-to-draft');
 
     // Overtime — Persetujuan Lembur (supervisor per-row + HR per-period)
     Route::get('overtime-approvals', [OvertimeApprovalController::class, 'index'])->middleware('menu.access:overtime-approvals,view')->name('overtime.approvals.index');

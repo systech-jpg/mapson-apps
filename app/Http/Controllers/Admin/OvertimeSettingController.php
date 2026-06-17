@@ -29,7 +29,8 @@ class OvertimeSettingController extends Controller
         $data = $request->validate([
             'rate_per_hour' => ['required', 'numeric', 'min:0'],
             'multiplier_workday' => ['required', 'numeric', 'min:0', 'max:99'],
-            'multiplier_holiday' => ['required', 'numeric', 'min:0', 'max:99'],
+            'multiplier_holiday' => ['nullable', 'numeric', 'min:0', 'max:99'],
+            'holiday_flat_rate' => ['required', 'numeric', 'min:0'],
         ]);
 
         OvertimeSetting::current()->update($data);

@@ -34,7 +34,7 @@ interface Overtime {
     total_amount: string | number;
     rate_per_hour: string | number | null;
     multiplier_workday: string | number | null;
-    multiplier_holiday: string | number | null;
+    holiday_flat_rate: string | number | null;
     period_start: string;
     period_end: string;
     employee?: { full_name: string; employee_code: string } | null;
@@ -82,7 +82,7 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                 <div className="grid gap-3 sm:grid-cols-3">
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Total Jam</div><div className="text-2xl font-semibold">{Number(overtime.total_hours).toLocaleString('id-ID')}</div></CardContent></Card>
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Nominal</div><div className="text-2xl font-semibold">{rupiah(overtime.total_amount)}</div></CardContent></Card>
-                    <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Tarif {overtime.rate_per_hour ? '(terkunci)' : '(berjalan)'}</div><div className="text-sm">{rupiah(overtime.rate_per_hour)}/jam · ×{overtime.multiplier_workday ?? '-'} / ×{overtime.multiplier_holiday ?? '-'}</div></CardContent></Card>
+                    <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Tarif {overtime.rate_per_hour ? '(terkunci)' : '(berjalan)'}</div><div className="text-sm">Kerja {rupiah(overtime.rate_per_hour)}/jam ×{overtime.multiplier_workday ?? '-'} · Libur {rupiah(overtime.holiday_flat_rate)}/hari</div></CardContent></Card>
                 </div>
 
                 <Card>

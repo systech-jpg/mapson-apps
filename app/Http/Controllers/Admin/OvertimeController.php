@@ -48,7 +48,7 @@ class OvertimeController extends Controller
             'settings' => [
                 'rate_per_hour' => (float) $settings->rate_per_hour,
                 'multiplier_workday' => (float) $settings->multiplier_workday,
-                'multiplier_holiday' => (float) $settings->multiplier_holiday,
+                'holiday_flat_rate' => (float) $settings->holiday_flat_rate,
             ],
         ]);
     }
@@ -105,6 +105,19 @@ class OvertimeController extends Controller
         }
 
         return back()->with('success', 'Lembur periode ini diajukan untuk persetujuan.');
+    }
+
+    public function backToDraft(Request $request, OvertimePeriod $overtime): RedirectResponse
+    {
+        $this->authorizeOwner($request, $overtime);
+
+        try {
+            $this->service->backToDraft($overtime);
+        } catch (Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Lembur dikembalikan ke draf untuk direvisi.');
     }
 
     private function authorizeOwner(Request $request, OvertimePeriod $period): void

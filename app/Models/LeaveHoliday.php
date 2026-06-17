@@ -11,7 +11,7 @@ class LeaveHoliday extends Model
     protected function casts(): array
     {
         return [
-            'date' => 'date',
+            'date' => 'date:Y-m-d',
             'is_workday_override' => 'boolean',
         ];
     }

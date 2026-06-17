@@ -57,15 +57,32 @@ function StepIcon({ status }: { status: string }) {
     return <Clock className="size-5 text-amber-500" />;
 }
 
-export default function LeaveShow({ leave }: { leave: Leave }) {
+interface Can {
+    approve: boolean;
+    withdraw: boolean;
+    cancel: boolean;
+}
+
+export default function LeaveShow({ leave, can }: { leave: Leave; can: Can }) {
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Cuti', href: '#' },
         { title: 'Cuti Saya', href: '/leave' },
         { title: leave.request_number, href: '#' },
     ];
 
-    const pending = leave.status.startsWith('pending');
     const approvals = leave.approvals ?? [];
+
+    const approve = () => {
+        if (confirm('Setujui pengajuan cuti ini?')) {
+            router.post(route('leave.approvals.approve', leave.id), {}, { preserveScroll: true });
+        }
+    };
+    const reject = () => {
+        const note = window.prompt('Alasan penolakan:');
+        if (note) {
+            router.post(route('leave.approvals.reject', leave.id), { note }, { preserveScroll: true });
+        }
+    };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -102,14 +119,28 @@ export default function LeaveShow({ leave }: { leave: Leave }) {
                         </Card>
                     )}
 
-                    {pending && (
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={() => router.post(route('leave.withdraw', leave.id), {}, { preserveScroll: true })}>
-                                Tarik Pengajuan
-                            </Button>
-                            <Button variant="outline" className="text-rose-600" onClick={() => router.post(route('leave.cancel', leave.id), {}, { preserveScroll: true })}>
-                                Batalkan
-                            </Button>
+                    {(can.approve || can.withdraw || can.cancel) && (
+                        <div className="flex flex-wrap gap-2">
+                            {can.approve && (
+                                <>
+                                    <Button onClick={approve}>
+                                        <CheckCircle2 className="size-4" /> Setujui
+                                    </Button>
+                                    <Button variant="outline" className="text-rose-600" onClick={reject}>
+                                        <XCircle className="size-4" /> Tolak
+                                    </Button>
+                                </>
+                            )}
+                            {can.withdraw && (
+                                <Button variant="outline" onClick={() => router.post(route('leave.withdraw', leave.id), {}, { preserveScroll: true })}>
+                                    Tarik Pengajuan
+                                </Button>
+                            )}
+                            {can.cancel && (
+                                <Button variant="outline" className="text-rose-600" onClick={() => router.post(route('leave.cancel', leave.id), {}, { preserveScroll: true })}>
+                                    Batalkan
+                                </Button>
+                            )}
                         </div>
                     )}
                 </div>

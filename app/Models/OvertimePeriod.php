@@ -26,20 +26,21 @@ class OvertimePeriod extends Model
 
     protected $fillable = [
         'request_number', 'employee_id', 'period', 'period_start', 'period_end', 'status', 'current_level',
-        'total_hours', 'total_amount', 'rate_per_hour', 'multiplier_workday', 'multiplier_holiday',
+        'total_hours', 'total_amount', 'rate_per_hour', 'multiplier_workday', 'multiplier_holiday', 'holiday_flat_rate',
         'submitted_at', 'decided_at', 'decision_note', 'created_by',
     ];
 
     protected function casts(): array
     {
         return [
-            'period_start' => 'date',
-            'period_end' => 'date',
+            'period_start' => 'date:Y-m-d',
+            'period_end' => 'date:Y-m-d',
             'total_hours' => 'decimal:2',
             'total_amount' => 'decimal:2',
             'rate_per_hour' => 'decimal:2',
             'multiplier_workday' => 'decimal:2',
             'multiplier_holiday' => 'decimal:2',
+            'holiday_flat_rate' => 'decimal:2',
             'submitted_at' => 'datetime',
             'decided_at' => 'datetime',
         ];

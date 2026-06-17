@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             LeaveTypeSeeder::class,
             LeaveHolidaySeeder::class,
+            PricingSeeder::class,
         ]);
     }
 }

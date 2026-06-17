@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Send, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Send, Trash2, Undo2 } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -57,7 +57,7 @@ interface Props {
     periodEnd: string;
     overtime: OvertimePeriod | null;
     periods: { id: number; period: string; status: string; total_hours: string | number; total_amount: string | number }[];
-    settings: { rate_per_hour: number; multiplier_workday: number; multiplier_holiday: number };
+    settings: { rate_per_hour: number; multiplier_workday: number; holiday_flat_rate: number };
 }
 
 const rupiah = (n: number | string) => 'Rp ' + Number(n).toLocaleString('id-ID');
@@ -119,6 +119,14 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
     const submitPeriod = () => {
         if (overtime && confirm('Ajukan lembur periode ini untuk persetujuan?')) {
             router.post(route('overtime.submit', overtime.id), {}, { preserveScroll: true });
+        }
+    };
+
+    // Can be pulled back to Draft only while pending and no approver has approved yet.
+    const canRevise = !!overtime && overtime.status.startsWith('pending') && !overtime.approvals.some((a) => a.status === 'approved');
+    const revise = () => {
+        if (overtime && confirm('Kembalikan lembur ini ke draf untuk direvisi?')) {
+            router.post(route('overtime.back-to-draft', overtime.id), {}, { preserveScroll: true });
         }
     };
 
@@ -236,6 +244,15 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                     </div>
                 )}
 
+                {canRevise && (
+                    <div className="flex items-center gap-3">
+                        <Button variant="outline" onClick={revise}>
+                            <Undo2 className="size-4" /> Revisi (Kembali ke Draf)
+                        </Button>
+                        <span className="text-xs text-muted-foreground">Hanya bisa selama atasan belum menyetujui. Jika sudah disetujui, minta atasan membatalkan dulu.</span>
+                    </div>
+                )}
+
                 {overtime && overtime.approvals.length > 0 && (
                     <Card>
                         <CardContent className="py-4">
@@ -256,7 +273,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                    Tarif berlaku: <b>{rupiah(settings.rate_per_hour)}</b>/jam · pengali hari kerja ×{settings.multiplier_workday}, hari libur ×{settings.multiplier_holiday}.
+                    Tarif berlaku: hari kerja <b>{rupiah(settings.rate_per_hour)}</b>/jam × {settings.multiplier_workday}; hari libur/akhir pekan <b>{rupiah(settings.holiday_flat_rate)}</b>/hari (tetap, berapa pun jamnya).
                     Nominal final dikunci saat disetujui HR.
                 </p>
             </div>

@@ -24,7 +24,7 @@ class OvertimeEntry extends Model
     protected function casts(): array
     {
         return [
-            'date' => 'date',
+            'date' => 'date:Y-m-d',
             'hours' => 'decimal:2',
             'is_holiday' => 'boolean',
             'decided_at' => 'datetime',

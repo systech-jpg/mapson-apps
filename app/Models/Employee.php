@@ -47,10 +47,10 @@ class Employee extends Model
     protected function casts(): array
     {
         return [
-            'hire_date' => 'date',
-            'birth_date' => 'date',
-            'current_effective_date' => 'date',
-            'termination_date' => 'date',
+            'hire_date' => 'date:Y-m-d',
+            'birth_date' => 'date:Y-m-d',
+            'current_effective_date' => 'date:Y-m-d',
+            'termination_date' => 'date:Y-m-d',
             'is_active' => 'boolean',
             'has_meal_allowance' => 'boolean',
             'has_transport_allowance' => 'boolean',

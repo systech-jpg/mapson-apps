@@ -15,7 +15,7 @@ class EmployeeTraining extends Model
 
     protected function casts(): array
     {
-        return ['issued_date' => 'date', 'expiry_date' => 'date'];
+        return ['issued_date' => 'date:Y-m-d', 'expiry_date' => 'date:Y-m-d'];
     }
 
     public function employee(): BelongsTo
