@@ -126,6 +126,7 @@ Route::middleware(['auth'])->group(function () {
     // Attend Case (read from ERP).
     Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');
     Route::get('attend-case-admin', [AttendCaseController::class, 'index'])->middleware('menu.access:attend-admin,view')->name('attend-case.admin');
+    Route::get('attend-case-admin/breakdown/{erpUserId}', [AttendCaseController::class, 'breakdown'])->whereNumber('erpUserId')->middleware('menu.access:attend-admin,view')->name('attend-case.breakdown');
 
     // Overtime — Lembur Saya (employee)
     Route::get('overtime', [OvertimeController::class, 'index'])->middleware('menu.access:overtime-mine,view')->name('overtime.index');

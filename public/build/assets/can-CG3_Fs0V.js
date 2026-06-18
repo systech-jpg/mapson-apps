@@ -1,1 +1,0 @@
-import{j as n}from"./app-B9MSt_n9.js";import{u as i}from"./use-permissions-Bp83eYPt.js";function u({on:r,do:s="view",children:o,fallback:t=null}){const{can:e}=i();return n.jsx(n.Fragment,{children:e(r,s)?o:t})}export{u as C};

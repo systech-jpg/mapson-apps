@@ -20,6 +20,12 @@ class AttendCaseController extends Controller
         return Inertia::render('attend-case/admin', $this->service->recap($request->input('period')));
     }
 
+    /** Admin: per-attender tindakan breakdown (drill-down from the recap). */
+    public function breakdown(Request $request, int $erpUserId): Response
+    {
+        return Inertia::render('attend-case/breakdown', $this->service->breakdown($erpUserId, $request->input('period')));
+    }
+
     /** Employee self-service: my own attend cases for a period. */
     public function mine(Request $request): Response
     {

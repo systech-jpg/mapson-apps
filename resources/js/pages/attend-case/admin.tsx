@@ -4,8 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -55,10 +55,15 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                         <h1 className="text-xl font-semibold">Rekap Attend Case</h1>
                         <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari ERP. Fee dibedakan hari kerja vs tanggal merah.</p>
                     </div>
-                    <div className="flex items-center rounded-md border">
-                        <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>
-                        <span className="px-2 text-sm font-medium">{period}</span>
-                        <Button variant="ghost" size="icon" className="size-8 rounded-l-none" onClick={() => shiftPeriod(1)}><ChevronRight className="size-4" /></Button>
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" className="h-8" onClick={() => router.reload({ preserveScroll: true })}>
+                            <RefreshCw className="size-4" /> Muat Ulang dari ERP
+                        </Button>
+                        <div className="flex items-center rounded-md border">
+                            <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>
+                            <span className="px-2 text-sm font-medium">{period}</span>
+                            <Button variant="ghost" size="icon" className="size-8 rounded-l-none" onClick={() => shiftPeriod(1)}><ChevronRight className="size-4" /></Button>
+                        </div>
                     </div>
                 </div>
 
@@ -96,7 +101,7 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                                     <TableRow key={r.erp_user_id}>
                                         <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                                         <TableCell>
-                                            <div className="font-medium">{r.name}</div>
+                                            <Link href={route('attend-case.breakdown', { erpUserId: r.erp_user_id, period })} className="font-medium text-primary hover:underline">{r.name}</Link>
                                             <div className="text-xs text-muted-foreground">{r.position ?? (r.matched ? '—' : <span className="text-amber-600">belum terpetakan (ERP #{r.erp_user_id})</span>)}</div>
                                         </TableCell>
                                         <TableCell>
