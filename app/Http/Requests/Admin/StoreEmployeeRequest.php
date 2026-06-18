@@ -35,7 +35,7 @@ class StoreEmployeeRequest extends FormRequest
             'has_meal_allowance' => ['boolean'],
             'has_transport_allowance' => ['boolean'],
             'erp_user_id' => ['nullable', 'integer', 'min:0'],
-            'attend_tier' => ['nullable', 'integer', 'in:1,2,3'],
+            'attend_tier' => ['nullable', 'integer', 'exists:attend_case_fees,tier'],
             'bpjs_kesehatan_no' => ['nullable', 'string', 'max:255'],
             'bpjs_kesehatan_notes' => ['nullable', 'string', 'max:500'],
             'bpjs_ketenagakerjaan_no' => ['nullable', 'string', 'max:255'],

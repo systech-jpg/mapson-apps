@@ -107,7 +107,9 @@ Route::middleware(['auth'])->group(function () {
     // Pengaturan Kepegawaian (consolidated: absensi, lembur, jenis cuti, hari libur, fee attend case).
     Route::get('hr-settings', [HrSettingController::class, 'index'])->middleware('menu.access:hr-settings,view')->name('hr-settings.index');
     Route::put('hr-settings/attendance', [HrSettingController::class, 'updateAttendance'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attendance');
-    Route::put('hr-settings/attend-fees', [HrSettingController::class, 'updateAttendFees'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-fees');
+    Route::post('hr-settings/attend-tiers', [HrSettingController::class, 'storeAttendTier'])->middleware('menu.access:hr-settings,create')->name('hr-settings.attend-tiers.store');
+    Route::put('hr-settings/attend-tiers/{tier}', [HrSettingController::class, 'updateAttendTier'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-tiers.update');
+    Route::delete('hr-settings/attend-tiers/{tier}', [HrSettingController::class, 'destroyAttendTier'])->middleware('menu.access:hr-settings,delete')->name('hr-settings.attend-tiers.destroy');
 
     // Finance — Pricing Engine
     Route::get('finance/pricing', [PricingController::class, 'index'])->middleware('menu.access:pricing-engine,view')->name('pricing.index');

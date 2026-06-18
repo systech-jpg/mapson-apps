@@ -21,9 +21,10 @@ interface Props {
     setData: (key: string, value: string | boolean) => void;
     errors: Partial<Record<string, string>>;
     linkableUsers?: (Lookup & { email?: string })[];
+    attendTiers?: { tier: number; label: string }[];
 }
 
-export default function PersonalFields({ data, setData, errors, linkableUsers }: Props) {
+export default function PersonalFields({ data, setData, errors, linkableUsers, attendTiers = [] }: Props) {
     const str = (k: string) => (data[k] as string) ?? '';
 
     return (
@@ -223,9 +224,9 @@ export default function PersonalFields({ data, setData, errors, linkableUsers }:
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value={NONE}>- Tidak diisi -</SelectItem>
-                            <SelectItem value="1">Tier 1 — Manager</SelectItem>
-                            <SelectItem value="2">Tier 2 — Supervisor</SelectItem>
-                            <SelectItem value="3">Tier 3 — Staff</SelectItem>
+                            {attendTiers.map((t) => (
+                                <SelectItem key={t.tier} value={String(t.tier)}>Tier {t.tier} — {t.label}</SelectItem>
+                            ))}
                         </SelectContent>
                     </Select>
                     <InputError message={errors.attend_tier} />

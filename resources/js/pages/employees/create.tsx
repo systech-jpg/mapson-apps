@@ -17,6 +17,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 interface Props extends AssignmentOptions {
     linkableUsers: (Lookup & { email?: string })[];
+    attendTiers?: { tier: number; label: string }[];
 }
 
 export default function CreateEmployee(props: Props) {
@@ -79,7 +80,7 @@ export default function CreateEmployee(props: Props) {
                             <CardTitle className="text-base">Data Pribadi</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <PersonalFields data={data} setData={setData} errors={errors} linkableUsers={props.linkableUsers} />
+                            <PersonalFields data={data} setData={setData} errors={errors} linkableUsers={props.linkableUsers} attendTiers={props.attendTiers} />
                         </CardContent>
                     </Card>
 

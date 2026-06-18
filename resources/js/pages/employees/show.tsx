@@ -50,6 +50,7 @@ const TRAINING_TYPES = [
 interface Props extends AssignmentOptions {
     employee: Employee;
     linkableUsers: (Lookup & { email?: string })[];
+    attendTiers?: { tier: number; label: string }[];
 }
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
@@ -196,7 +197,7 @@ export default function ShowEmployee({ employee, linkableUsers, ...options }: Pr
                         <Card>
                             <CardContent className="pt-6">
                                 <form onSubmit={submitPersonal} className="grid gap-4">
-                                    <PersonalFields data={data} setData={setData} errors={errors} linkableUsers={linkableUsers} />
+                                    <PersonalFields data={data} setData={setData} errors={errors} linkableUsers={linkableUsers} attendTiers={options.attendTiers} />
                                     <div className="grid gap-2 md:w-1/3">
                                         <Label htmlFor="photo">Foto</Label>
                                         <Input id="photo" type="file" accept="image/*" onChange={(e) => setData('photo', e.target.files?.[0] ?? null)} />

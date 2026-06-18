@@ -30,7 +30,7 @@ interface LeaveType {
 }
 
 interface Holiday { id: number; date: string; name: string; type: string; is_workday_override: boolean }
-interface AttendFee { tier: number; label: string; fee: string | number }
+interface AttendTier { id: number; tier: number; label: string; fee_workday: string | number; fee_holiday: string | number; basis: 'tindakan' | 'invoice'; is_active: boolean }
 
 interface Props {
     attendance: { deadline: string; full_day_after: string };
@@ -38,10 +38,10 @@ interface Props {
     leaveTypes: LeaveType[];
     holidayYear: number;
     holidays: Holiday[];
-    attendFees: AttendFee[];
+    attendTiers: AttendTier[];
 }
 
-export default function HrSettings({ attendance, overtime, leaveTypes, holidayYear, holidays, attendFees }: Props) {
+export default function HrSettings({ attendance, overtime, leaveTypes, holidayYear, holidays, attendTiers }: Props) {
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Pengaturan Kepegawaian" />
@@ -72,7 +72,7 @@ export default function HrSettings({ attendance, overtime, leaveTypes, holidayYe
                         <TabsContent value="overtime"><OvertimeSection overtime={overtime} /></TabsContent>
                         <TabsContent value="types"><LeaveTypesSection types={leaveTypes} /></TabsContent>
                         <TabsContent value="holidays"><HolidaysSection year={holidayYear} holidays={holidays} /></TabsContent>
-                        <TabsContent value="attend-fees"><AttendFeesSection fees={attendFees} /></TabsContent>
+                        <TabsContent value="attend-fees"><AttendFeesSection tiers={attendTiers} /></TabsContent>
                     </div>
                 </Tabs>
             </div>

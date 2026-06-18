@@ -5,12 +5,15 @@ namespace App\Services\Erp;
 use App\Models\AttendCaseFee;
 use App\Models\Employee;
 use App\Support\AttendancePeriod;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Reads "attend case" data (medical actions) from the ERP table
- * `{prefix}tindakan`. The attending employee is `nama_ts` (an ERP user id,
- * matched to employees via `erp_user_id`). Fee = cases × the employee's tier fee.
+ * Reads "attend case" data (medical actions) from the ERP table `{prefix}tindakan`.
+ * The attending employee is `nama_ts` (an ERP user id, matched to employees via
+ * `erp_user_id`). Fee = per-case tier fee, split between workday and "tanggal merah"
+ * (Sat/Sun + national holidays). Tiers are parameterized (attend_case_fees). Tiers with
+ * basis = 'invoice' are computed separately (handled later) → fee shown as not-computed.
  */
 class AttendCaseService
 {
@@ -30,14 +33,33 @@ class AttendCaseService
             ->map(fn ($e) => (int) trim($e))->filter(fn ($e) => $e >= 0)->implode(',') ?: '1';
     }
 
-    /** Admin recap: all attenders in the period, mapped to employees + fee by tier. */
+    /** SQL fragment: TRUE when tanggal is a "tanggal merah" (Sat/Sun or a national holiday). */
+    private function redDateSql(string $col, array $holidayDates): string
+    {
+        $in = $holidayDates ? "OR DATE({$col}) IN ('".implode("','", $holidayDates)."')" : '';
+
+        return "(DAYOFWEEK({$col}) IN (1, 7) {$in})"; // 1=Sunday, 7=Saturday
+    }
+
+    /** @return array<int, string> Y-m-d national-holiday dates within the range. */
+    private function holidayDates(string $from, string $to): array
+    {
+        return DB::table('leave_holidays')->whereBetween('date', [$from, $to])
+            ->pluck('date')->map(fn ($d) => Carbon::parse($d)->toDateString())->values()->all();
+    }
+
+    /** Admin recap: all attenders, cases split workday vs tanggal merah, fee by tier. */
     public function recap(?string $periodInput): array
     {
         [$period, $from, $to] = AttendancePeriod::resolve($periodInput);
         $p = $this->prefix();
+        $red = $this->redDateSql('t.tanggal', $this->holidayDates($from->toDateString(), $to->toDateString()));
 
         $rows = DB::connection($this->conn())->select(
-            "SELECT t.nama_ts AS erp_user_id, COUNT(*) AS cases,
+            "SELECT t.nama_ts AS erp_user_id,
+                    SUM(CASE WHEN {$red} THEN 1 ELSE 0 END) AS holiday_cases,
+                    SUM(CASE WHEN {$red} THEN 0 ELSE 1 END) AS workday_cases,
+                    COUNT(*) AS cases,
                     TRIM(CONCAT(u.firstname, ' ', COALESCE(u.lastname, ''))) AS erp_name
                FROM {$p}tindakan t
                LEFT JOIN {$p}user u ON u.rowid = t.nama_ts
@@ -51,9 +73,7 @@ class AttendCaseService
 
         $ids = array_map(fn ($r) => (int) $r->erp_user_id, $rows);
         $employees = Employee::whereIn('erp_user_id', $ids)->with('currentPosition:id,name')->get()->keyBy('erp_user_id');
-        $fees = AttendCaseFee::all();
-        $feeByTier = $fees->pluck('fee', 'tier')->map(fn ($f) => (float) $f)->all();
-        $labelByTier = $fees->pluck('label', 'tier')->all();
+        $tiers = AttendCaseFee::all()->keyBy('tier');
 
         $out = [];
         $totalCases = 0;
@@ -61,10 +81,15 @@ class AttendCaseService
         foreach ($rows as $r) {
             $erpId = (int) $r->erp_user_id;
             $emp = $employees->get($erpId);
-            $tier = $emp?->attend_tier;
-            $feePer = $tier ? ($feeByTier[$tier] ?? 0) : 0;
+            $tier = $emp ? $tiers->get($emp->attend_tier) : null;
+            $basis = $tier?->basis ?? AttendCaseFee::BASIS_TINDAKAN;
+            $wc = (int) $r->workday_cases;
+            $hc = (int) $r->holiday_cases;
             $cases = (int) $r->cases;
-            $fee = $cases * $feePer;
+
+            $computed = $tier && $basis === AttendCaseFee::BASIS_TINDAKAN;
+            $fee = $computed ? ($wc * (float) $tier->fee_workday + $hc * (float) $tier->fee_holiday) : 0.0;
+
             $totalCases += $cases;
             $totalFee += $fee;
 
@@ -74,11 +99,14 @@ class AttendCaseService
                 'name' => $emp?->full_name ?: ($r->erp_name ?: 'User #'.$erpId),
                 'position' => $emp?->currentPosition?->name,
                 'matched' => (bool) $emp,
-                'tier' => $tier,
-                'tier_label' => $tier ? ($labelByTier[$tier] ?? null) : null,
+                'tier' => $emp?->attend_tier,
+                'tier_label' => $tier?->label,
+                'basis' => $tier ? $basis : null,
+                'workday_cases' => $wc,
+                'holiday_cases' => $hc,
                 'cases' => $cases,
-                'fee_per_case' => $feePer,
-                'total_fee' => $fee,
+                'fee' => $fee,
+                'fee_computed' => $computed,
             ];
         }
 
@@ -95,28 +123,24 @@ class AttendCaseService
         ];
     }
 
-    /** Employee self view: their own attend cases (detail) + fee in the period. */
+    /** Employee self view: own attend cases (detail) split workday/holiday + fee. */
     public function mine(Employee $employee, ?string $periodInput): array
     {
         [$period, $from, $to] = AttendancePeriod::resolve($periodInput);
 
+        $base = [
+            'period' => $period,
+            'periodLabel' => AttendancePeriod::label($from, $to),
+        ];
+
         if (! $employee->erp_user_id) {
-            return [
-                'period' => $period,
-                'periodLabel' => AttendancePeriod::label($from, $to),
-                'mapped' => false,
-                'entries' => [],
-                'cases' => 0,
-                'tier' => $employee->attend_tier,
-                'tier_label' => null,
-                'fee_per_case' => 0,
-                'total_fee' => 0,
-            ];
+            return $base + ['mapped' => false, 'entries' => [], 'cases' => 0, 'workday_cases' => 0, 'holiday_cases' => 0,
+                'tier' => $employee->attend_tier, 'tier_label' => null, 'basis' => null, 'fee_computed' => false, 'total_fee' => 0];
         }
 
         $p = $this->prefix();
         $entries = DB::connection($this->conn())->select(
-            "SELECT t.id, t.ref, t.tanggal, t.waktu, t.jenis_tindakan, t.pasien, t.status
+            "SELECT t.id, t.ref, t.tanggal, t.waktu, t.jenis_tindakan, t.pasien
                FROM {$p}tindakan t
               WHERE t.nama_ts = ?
                 AND t.tanggal BETWEEN ? AND ?
@@ -125,20 +149,41 @@ class AttendCaseService
             [$employee->erp_user_id, $from->toDateString(), $to->toDateString()]
         );
 
-        $tier = $employee->attend_tier;
-        $fee = AttendCaseFee::query()->where('tier', $tier)->first();
-        $feePer = $tier && $fee ? (float) $fee->fee : 0;
+        $holidaySet = array_flip($this->holidayDates($from->toDateString(), $to->toDateString()));
+        $tier = AttendCaseFee::where('tier', $employee->attend_tier)->first();
+        $basis = $tier?->basis ?? AttendCaseFee::BASIS_TINDAKAN;
+        $computed = $tier && $basis === AttendCaseFee::BASIS_TINDAKAN;
 
-        return [
-            'period' => $period,
-            'periodLabel' => AttendancePeriod::label($from, $to),
+        $list = [];
+        $wc = 0;
+        $hc = 0;
+        $total = 0.0;
+        foreach ($entries as $e) {
+            $d = Carbon::parse($e->tanggal);
+            $isRed = $d->isoWeekday() >= 6 || isset($holidaySet[$d->toDateString()]);
+            $isRed ? $hc++ : $wc++;
+            $fee = $computed ? (float) ($isRed ? $tier->fee_holiday : $tier->fee_workday) : 0.0;
+            $total += $fee;
+            $list[] = [
+                'id' => $e->id, 'ref' => $e->ref, 'tanggal' => $d->toDateString(), 'waktu' => $e->waktu,
+                'jenis_tindakan' => $e->jenis_tindakan, 'pasien' => $e->pasien,
+                'is_holiday' => $isRed, 'fee' => $fee,
+            ];
+        }
+
+        return $base + [
             'mapped' => true,
-            'entries' => array_map(fn ($e) => (array) $e, $entries),
-            'cases' => count($entries),
-            'tier' => $tier,
-            'tier_label' => $fee?->label,
-            'fee_per_case' => $feePer,
-            'total_fee' => count($entries) * $feePer,
+            'entries' => $list,
+            'cases' => count($list),
+            'workday_cases' => $wc,
+            'holiday_cases' => $hc,
+            'tier' => $employee->attend_tier,
+            'tier_label' => $tier?->label,
+            'basis' => $tier ? $basis : null,
+            'fee_workday' => $tier ? (float) $tier->fee_workday : 0,
+            'fee_holiday' => $tier ? (float) $tier->fee_holiday : 0,
+            'fee_computed' => $computed,
+            'total_fee' => $total,
         ];
     }
 }

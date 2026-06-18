@@ -13,6 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Behind an HTTPS reverse proxy (Nginx/Apache/Cloudflare): trust forwarded headers
+        // so Laravel detects https and generates https asset/route URLs (no mixed content).
+        $middleware->trustProxies(at: '*');
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
         ]);

@@ -21,9 +21,12 @@ interface Row {
     matched: boolean;
     tier: number | null;
     tier_label: string | null;
+    basis: 'tindakan' | 'invoice' | null;
+    workday_cases: number;
+    holiday_cases: number;
     cases: number;
-    fee_per_case: number;
-    total_fee: number;
+    fee: number;
+    fee_computed: boolean;
 }
 
 interface Props {
@@ -50,7 +53,7 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-xl font-semibold">Rekap Attend Case</h1>
-                        <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari ERP.</p>
+                        <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari ERP. Fee dibedakan hari kerja vs tanggal merah.</p>
                     </div>
                     <div className="flex items-center rounded-md border">
                         <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>
@@ -61,17 +64,15 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
 
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Total Case</div><div className="text-2xl font-semibold">{totals.cases.toLocaleString('id-ID')}</div></CardContent></Card>
-                    <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Total Fee</div><div className="text-2xl font-semibold">{rupiah(totals.fee)}</div></CardContent></Card>
+                    <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Total Fee (Per Tindakan)</div><div className="text-2xl font-semibold">{rupiah(totals.fee)}</div></CardContent></Card>
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Jumlah Attender</div><div className="text-2xl font-semibold">{totals.attenders}</div></CardContent></Card>
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Belum Terpetakan</div><div className={`text-2xl font-semibold ${totals.unmapped > 0 ? 'text-amber-600' : ''}`}>{totals.unmapped}</div></CardContent></Card>
                 </div>
 
                 {totals.unmapped > 0 && (
-                    <Card>
-                        <CardContent className="py-3 text-sm text-amber-700 dark:text-amber-400">
-                            {totals.unmapped} attender belum terpetakan ke master Employee. Isi <b>ERP User ID</b> & <b>Tier Attend Case</b> di data karyawan agar fee terhitung.
-                        </CardContent>
-                    </Card>
+                    <Card><CardContent className="py-3 text-sm text-amber-700 dark:text-amber-400">
+                        {totals.unmapped} attender belum terpetakan ke master Employee. Isi <b>ERP User ID</b> & <b>Tier</b> di data karyawan agar fee terhitung.
+                    </CardContent></Card>
                 )}
 
                 <Card>
@@ -82,33 +83,43 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                                     <TableHead className="w-10">#</TableHead>
                                     <TableHead>Nama</TableHead>
                                     <TableHead>Tier</TableHead>
-                                    <TableHead className="text-right">Case</TableHead>
-                                    <TableHead className="text-right">Fee/Case</TableHead>
-                                    <TableHead className="text-right">Total Fee</TableHead>
+                                    <TableHead className="text-right">Hari Kerja</TableHead>
+                                    <TableHead className="text-right">Tgl Merah</TableHead>
+                                    <TableHead className="text-right">Total Case</TableHead>
+                                    <TableHead className="text-right">Fee</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {rows.length === 0 ? (
-                                    <TableRow><TableCell colSpan={6} className="py-10 text-center text-muted-foreground">Tidak ada attend case pada periode ini.</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">Tidak ada attend case pada periode ini.</TableCell></TableRow>
                                 ) : rows.map((r, i) => (
                                     <TableRow key={r.erp_user_id}>
                                         <TableCell className="text-muted-foreground">{i + 1}</TableCell>
                                         <TableCell>
                                             <div className="font-medium">{r.name}</div>
-                                            <div className="text-xs text-muted-foreground">
-                                                {r.position ?? (r.matched ? '—' : <span className="text-amber-600">belum terpetakan (ERP #{r.erp_user_id})</span>)}
-                                            </div>
+                                            <div className="text-xs text-muted-foreground">{r.position ?? (r.matched ? '—' : <span className="text-amber-600">belum terpetakan (ERP #{r.erp_user_id})</span>)}</div>
                                         </TableCell>
-                                        <TableCell>{r.tier_label ? <Badge variant="secondary">{r.tier_label}</Badge> : <span className="text-xs text-amber-600">tier kosong</span>}</TableCell>
-                                        <TableCell className="text-right font-medium">{r.cases.toLocaleString('id-ID')}</TableCell>
-                                        <TableCell className="text-right">{r.fee_per_case > 0 ? rupiah(r.fee_per_case) : '-'}</TableCell>
-                                        <TableCell className="text-right font-semibold">{r.total_fee > 0 ? rupiah(r.total_fee) : '-'}</TableCell>
+                                        <TableCell>
+                                            {r.tier_label ? (
+                                                <div className="flex flex-col gap-0.5">
+                                                    <Badge variant="secondary" className="w-fit">{r.tier_label}</Badge>
+                                                    {r.basis && <span className="text-[10px] text-muted-foreground">{r.basis === 'invoice' ? 'per invoice' : 'per tindakan'}</span>}
+                                                </div>
+                                            ) : <span className="text-xs text-amber-600">tier kosong</span>}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono">{r.workday_cases.toLocaleString('id-ID')}</TableCell>
+                                        <TableCell className="text-right font-mono text-rose-600">{r.holiday_cases.toLocaleString('id-ID')}</TableCell>
+                                        <TableCell className="text-right font-mono font-medium">{r.cases.toLocaleString('id-ID')}</TableCell>
+                                        <TableCell className="text-right font-semibold">
+                                            {r.fee_computed ? rupiah(r.fee) : <span className="text-xs font-normal text-muted-foreground">{r.basis === 'invoice' ? 'via invoice' : '-'}</span>}
+                                        </TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
                         </Table>
                     </CardContent>
                 </Card>
+                <p className="text-xs text-muted-foreground">Tanggal merah = Sabtu, Minggu, & libur nasional. Tier basis <b>per invoice</b> dihitung terpisah (menyusul).</p>
             </div>
         </AppLayout>
     );

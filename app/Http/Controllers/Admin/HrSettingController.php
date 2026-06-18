@@ -39,23 +39,46 @@ class HrSettingController extends Controller
             'leaveTypes' => LeaveType::orderBy('sort_order')->get(),
             'holidayYear' => $year,
             'holidays' => LeaveHoliday::whereYear('date', $year)->orderBy('date')->get(),
-            'attendFees' => AttendCaseFee::orderBy('tier')->get(['tier', 'label', 'fee']),
+            'attendTiers' => AttendCaseFee::orderBy('sort_order')->orderBy('tier')->get(),
         ]);
     }
 
-    public function updateAttendFees(Request $request): RedirectResponse
+    /**
+     * @return array<string, mixed>
+     */
+    private function tierRules(?int $id = null): array
     {
-        $data = $request->validate([
-            'fees' => ['required', 'array'],
-            'fees.*.tier' => ['required', 'integer', 'exists:attend_case_fees,tier'],
-            'fees.*.fee' => ['required', 'numeric', 'min:0'],
-        ]);
+        return [
+            'tier' => ['required', 'integer', 'min:1', 'max:255', \Illuminate\Validation\Rule::unique('attend_case_fees', 'tier')->ignore($id)],
+            'label' => ['required', 'string', 'max:255'],
+            'fee_workday' => ['required', 'numeric', 'min:0'],
+            'fee_holiday' => ['required', 'numeric', 'min:0'],
+            'basis' => ['required', 'in:tindakan,invoice'],
+            'is_active' => ['boolean'],
+        ];
+    }
 
-        foreach ($data['fees'] as $row) {
-            AttendCaseFee::where('tier', $row['tier'])->update(['fee' => $row['fee']]);
-        }
+    public function storeAttendTier(Request $request): RedirectResponse
+    {
+        $data = $request->validate($this->tierRules());
+        AttendCaseFee::create($data + ['sort_order' => $data['tier']]);
 
-        return back()->with('success', 'Fee attend case disimpan.');
+        return back()->with('success', 'Tier attend case ditambahkan.');
+    }
+
+    public function updateAttendTier(Request $request, AttendCaseFee $tier): RedirectResponse
+    {
+        $data = $request->validate($this->tierRules($tier->id));
+        $tier->update($data + ['sort_order' => $data['tier']]);
+
+        return back()->with('success', 'Tier attend case diperbarui.');
+    }
+
+    public function destroyAttendTier(AttendCaseFee $tier): RedirectResponse
+    {
+        $tier->delete();
+
+        return back()->with('success', 'Tier attend case dihapus.');
     }
 
     public function updateAttendance(Request $request): RedirectResponse

@@ -364,6 +364,7 @@ class EmployeeController extends Controller
             'employmentTypes' => EmploymentType::where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'managers' => Employee::orderBy('full_name')->get(['id', 'full_name', 'employee_code']),
             'linkableUsers' => User::whereDoesntHave('employee')->orderBy('name')->get(['id', 'name', 'email']),
+            'attendTiers' => \App\Models\AttendCaseFee::orderBy('sort_order')->orderBy('tier')->get(['tier', 'label']),
         ];
     }
 }
