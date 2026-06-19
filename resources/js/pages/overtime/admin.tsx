@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { Eye } from 'lucide-react';
+import { Eye, Printer } from 'lucide-react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -112,9 +112,14 @@ export default function OvertimeAdmin({ periods, filters, statuses }: Props) {
                                             <TableCell className="text-right">{Number(r.total_hours).toLocaleString('id-ID')}</TableCell>
                                             <TableCell className="text-right">{rupiah(r.total_amount)}</TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="ghost" size="icon" asChild>
-                                                    <Link href={route('overtime.admin.show', r.id)}><Eye className="size-4" /></Link>
-                                                </Button>
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Button variant="ghost" size="icon" title="Cetak PDF" asChild>
+                                                        <a href={route('overtime.pdf', r.id)} target="_blank" rel="noopener"><Printer className="size-4" /></a>
+                                                    </Button>
+                                                    <Button variant="ghost" size="icon" title="Detail" asChild>
+                                                        <Link href={route('overtime.admin.show', r.id)}><Eye className="size-4" /></Link>
+                                                    </Button>
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     ))

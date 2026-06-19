@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { Check, X } from 'lucide-react';
+import { Check, Printer, X } from 'lucide-react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -127,12 +127,17 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                                 </span>
                                             ))}
                                         </div>
-                                        {p.can_act && (
-                                            <div className="flex gap-2">
-                                                <Button size="sm" variant="outline" className="text-rose-600" onClick={() => reject(p)}>Tolak</Button>
-                                                <Button size="sm" onClick={() => approve(p)}>{isSupervisorStep ? 'Setujui & Teruskan ke HR' : 'Setujui (Final)'}</Button>
-                                            </div>
-                                        )}
+                                        <div className="flex gap-2">
+                                            <Button size="sm" variant="outline" asChild>
+                                                <a href={route('overtime.pdf', p.id)} target="_blank" rel="noopener"><Printer className="size-4" /> Cetak PDF</a>
+                                            </Button>
+                                            {p.can_act && (
+                                                <>
+                                                    <Button size="sm" variant="outline" className="text-rose-600" onClick={() => reject(p)}>Tolak</Button>
+                                                    <Button size="sm" onClick={() => approve(p)}>{isSupervisorStep ? 'Setujui & Teruskan ke HR' : 'Setujui (Final)'}</Button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardContent>
                             </Card>
