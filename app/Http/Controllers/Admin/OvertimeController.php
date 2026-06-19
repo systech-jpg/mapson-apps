@@ -9,6 +9,7 @@ use App\Models\OvertimePeriod;
 use App\Models\OvertimeSetting;
 use App\Services\Overtime\OvertimeService;
 use App\Support\AttendancePeriod;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -123,5 +124,32 @@ class OvertimeController extends Controller
     private function authorizeOwner(Request $request, OvertimePeriod $period): void
     {
         abort_unless($period->employee_id === optional($request->user()->employee)->id, 403);
+    }
+
+    /** Printable PDF of one overtime period (owner or HR/admin), with the 3-way approval block. */
+    public function pdf(Request $request, OvertimePeriod $overtime): \Symfony\Component\HttpFoundation\Response
+    {
+        $user = $request->user();
+        $isOwner = $overtime->employee_id === optional($user->employee)->id;
+        $canManage = $user->hasMenuAccess('overtime-approvals', 'view') || $user->hasMenuAccess('overtime-admin', 'view');
+        abort_unless($isOwner || $canManage, 403);
+
+        $overtime->load(['employee:id,full_name,employee_code,current_position_id', 'employee.currentPosition:id,name', 'entries']);
+
+        $logoPath = public_path('images/logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode((string) file_get_contents($logoPath)) : null;
+
+        $pdf = Pdf::loadView('reports.overtime', [
+            'ot' => $overtime,
+            'logo' => $logo,
+            'periodLabel' => AttendancePeriod::label($overtime->period_start, $overtime->period_end),
+            'signers' => [
+                ['role' => 'HR', 'name' => 'Marisa Syarifah'],
+                ['role' => 'Finance', 'name' => 'Dian Tika Mardhan'],
+                ['role' => 'Operation', 'name' => 'Mohammad Ridhuan'],
+            ],
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download('lembur-'.$overtime->request_number.'.pdf');
     }
 }

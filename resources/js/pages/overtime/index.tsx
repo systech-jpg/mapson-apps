@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, Pencil, Plus, Send, Trash2, Undo2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Printer, Send, Trash2, Undo2 } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -151,6 +151,13 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                                 <ChevronRight className="size-4" />
                             </Button>
                         </div>
+                        {overtime && (
+                            <Button variant="outline" asChild>
+                                <a href={route('overtime.pdf', overtime.id)} target="_blank" rel="noopener">
+                                    <Printer className="size-4" /> Cetak PDF
+                                </a>
+                            </Button>
+                        )}
                         {employeeLinked && editable && (
                             <Button onClick={openAdd}>
                                 <Plus className="size-4" /> Tambah Entri

@@ -5,6 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
+import { Printer } from 'lucide-react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -70,6 +71,9 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                     </div>
                     <div className="flex items-center gap-2">
                         <LeaveStatusBadge status={overtime.status} />
+                        <Button size="sm" variant="outline" asChild>
+                            <a href={route('overtime.pdf', overtime.id)} target="_blank" rel="noopener"><Printer className="size-4" /> Cetak PDF</a>
+                        </Button>
                         {overtime.can_act && (
                             <>
                                 <Button size="sm" variant="outline" className="text-rose-600" onClick={reject}>Tolak</Button>

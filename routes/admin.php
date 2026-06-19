@@ -135,6 +135,7 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('overtime/entries/{entry}', [OvertimeController::class, 'destroyEntry'])->middleware('menu.access:overtime-mine,create')->name('overtime.entries.destroy');
     Route::post('overtime/{overtime}/submit', [OvertimeController::class, 'submit'])->middleware('menu.access:overtime-mine,create')->name('overtime.submit');
     Route::post('overtime/{overtime}/back-to-draft', [OvertimeController::class, 'backToDraft'])->middleware('menu.access:overtime-mine,create')->name('overtime.back-to-draft');
+    Route::get('overtime/{overtime}/pdf', [OvertimeController::class, 'pdf'])->name('overtime.pdf'); // owner OR HR/admin (checked in controller)
 
     // Overtime — Persetujuan Lembur (supervisor per-row + HR per-period)
     Route::get('overtime-approvals', [OvertimeApprovalController::class, 'index'])->middleware('menu.access:overtime-approvals,view')->name('overtime.approvals.index');
