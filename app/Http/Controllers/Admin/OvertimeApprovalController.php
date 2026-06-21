@@ -84,4 +84,19 @@ class OvertimeApprovalController extends Controller
 
         return back()->with('success', 'Lembur ditolak.');
     }
+
+    /** Send a pending period back to Draft so the employee can revise it. */
+    public function returnToDraft(Request $request, OvertimePeriod $overtime): RedirectResponse
+    {
+        $data = $request->validate(['note' => ['nullable', 'string', 'max:500']]);
+        abort_unless($this->service->canReturnToDraft($overtime, $request->user()), 403);
+
+        try {
+            $this->service->returnToDraft($overtime, $request->user(), $data['note'] ?? null);
+        } catch (Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Lembur dikembalikan ke draf untuk direvisi karyawan.');
+    }
 }

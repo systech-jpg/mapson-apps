@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
+import { hm, hmLong, minutesBetween } from '@/lib/time';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Printer, Send, Trash2, Undo2 } from 'lucide-react';
@@ -25,6 +26,8 @@ interface Entry {
     start_time: string;
     end_time: string;
     hours: string | number;
+    minutes: number;
+    amount: string | number;
     is_holiday: boolean;
     status: string;
     note: string | null;
@@ -44,6 +47,7 @@ interface OvertimePeriod {
     request_number: string;
     status: string;
     total_hours: string | number;
+    total_minutes: number;
     total_amount: string | number;
     entries: Entry[];
     approvals: Approval[];
@@ -67,7 +71,9 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
     const [open, setOpen] = useState(false);
     const [editingId, setEditingId] = useState<number | null>(null);
 
-    const editable = !overtime || overtime.status === 'draft' || overtime.status === 'rejected';
+    // Entries (incl. susulan) editable until HR's final approval; "Ajukan" only from draft/rejected.
+    const editable = !overtime || overtime.status !== 'approved';
+    const isDraft = !overtime || overtime.status === 'draft' || overtime.status === 'rejected';
 
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         period,
@@ -183,8 +189,9 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                     </Card>
                     <Card>
                         <CardContent className="py-4">
-                            <div className="text-xs text-muted-foreground">Total Jam (disetujui/diajukan)</div>
-                            <div className="text-2xl font-semibold">{Number(overtime?.total_hours ?? 0).toLocaleString('id-ID')} jam</div>
+                            <div className="text-xs text-muted-foreground">Total Jam (jam:menit)</div>
+                            <div className="text-2xl font-semibold">{hm(overtime?.total_minutes ?? 0)}</div>
+                            <div className="text-[11px] text-muted-foreground">{hmLong(overtime?.total_minutes ?? 0)}</div>
                         </CardContent>
                     </Card>
                     <Card>
@@ -205,6 +212,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                                     <TableHead className="text-center">Mulai</TableHead>
                                     <TableHead className="text-center">Selesai</TableHead>
                                     <TableHead className="text-right">Jam</TableHead>
+                                    <TableHead className="text-right">Nominal</TableHead>
                                     <TableHead>Status</TableHead>
                                     {editable && <TableHead className="text-right">Aksi</TableHead>}
                                 </TableRow>
@@ -212,7 +220,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                             <TableBody>
                                 {entries.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={editable ? 7 : 6} className="py-10 text-center text-muted-foreground">
+                                        <TableCell colSpan={editable ? 8 : 7} className="py-10 text-center text-muted-foreground">
                                             Belum ada entri lembur untuk periode ini.
                                         </TableCell>
                                     </TableRow>
@@ -225,7 +233,8 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                                             <TableCell>{e.activity}</TableCell>
                                             <TableCell className="text-center">{e.start_time.substring(0, 5)}</TableCell>
                                             <TableCell className="text-center">{e.end_time.substring(0, 5)}</TableCell>
-                                            <TableCell className="text-right font-medium">{Number(e.hours).toLocaleString('id-ID')}</TableCell>
+                                            <TableCell className="text-right font-mono font-medium">{hm(e.minutes)}</TableCell>
+                                            <TableCell className="text-right whitespace-nowrap">{e.status === 'rejected' ? '—' : rupiah(e.amount)}</TableCell>
                                             <TableCell><LeaveStatusBadge status={e.status} /></TableCell>
                                             {editable && (
                                                 <TableCell className="text-right">
@@ -243,12 +252,17 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                     </CardContent>
                 </Card>
 
-                {editable && entries.length > 0 && (
+                {isDraft && entries.length > 0 && (
                     <div>
                         <Button onClick={submitPeriod}>
                             <Send className="size-4" /> Ajukan Periode Ini
                         </Button>
                     </div>
+                )}
+                {overtime && overtime.status.startsWith('pending') && (
+                    <p className="text-xs text-muted-foreground">
+                        Periode sudah diajukan namun belum disetujui HR — Anda masih bisa menambahkan entri lembur susulan di atas.
+                    </p>
                 )}
 
                 {canRevise && (
@@ -312,6 +326,10 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                                 <Input id="ot_end" type="time" value={data.end_time} onChange={(e) => setData('end_time', e.target.value)} required />
                                 <InputError message={errors.end_time} />
                             </div>
+                        </div>
+                        <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                            Durasi: <b className="font-mono">{hm(minutesBetween(data.start_time, data.end_time))}</b>
+                            <span className="text-muted-foreground"> ({hmLong(minutesBetween(data.start_time, data.end_time))})</span>
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="ot_note">Catatan</Label>

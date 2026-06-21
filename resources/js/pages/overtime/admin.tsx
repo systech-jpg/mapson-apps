@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
+import { hm } from '@/lib/time';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { Eye, Printer } from 'lucide-react';
+import { Eye, FileSpreadsheet, Printer } from 'lucide-react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -23,6 +24,7 @@ interface Row {
     period: string;
     status: string;
     total_hours: string | number;
+    total_minutes: number;
     total_amount: string | number;
     submitted_at: string | null;
     employee?: { full_name: string; employee_code: string } | null;
@@ -78,6 +80,18 @@ export default function OvertimeAdmin({ periods, filters, statuses }: Props) {
                             ))}
                         </SelectContent>
                     </Select>
+                    <div className="ml-auto flex gap-2">
+                        <Button variant="outline" asChild>
+                            <a href={route('overtime.admin.recap-pdf', Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '' && v !== ALL)))} target="_blank" rel="noopener">
+                                <Printer className="size-4" /> Cetak PDF
+                            </a>
+                        </Button>
+                        <Button variant="outline" asChild>
+                            <a href={route('overtime.admin.export', Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '' && v !== ALL)))}>
+                                <FileSpreadsheet className="size-4" /> Export Excel
+                            </a>
+                        </Button>
+                    </div>
                 </div>
 
                 <Card>
@@ -109,7 +123,7 @@ export default function OvertimeAdmin({ periods, filters, statuses }: Props) {
                                             <TableCell className="whitespace-nowrap">{r.request_number}</TableCell>
                                             <TableCell>{r.period}</TableCell>
                                             <TableCell><LeaveStatusBadge status={r.status} /></TableCell>
-                                            <TableCell className="text-right">{Number(r.total_hours).toLocaleString('id-ID')}</TableCell>
+                                            <TableCell className="text-right font-mono">{hm(r.total_minutes)}</TableCell>
                                             <TableCell className="text-right">{rupiah(r.total_amount)}</TableCell>
                                             <TableCell className="text-right">
                                                 <div className="flex items-center justify-end gap-1">

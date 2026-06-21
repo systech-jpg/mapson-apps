@@ -142,10 +142,16 @@ Route::middleware(['auth'])->group(function () {
     Route::post('overtime-approvals/entries/{entry}/decide', [OvertimeApprovalController::class, 'decideEntry'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.entry');
     Route::post('overtime-approvals/{overtime}/approve', [OvertimeApprovalController::class, 'approve'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.approve');
     Route::post('overtime-approvals/{overtime}/reject', [OvertimeApprovalController::class, 'reject'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.reject');
+    Route::post('overtime-approvals/{overtime}/return', [OvertimeApprovalController::class, 'returnToDraft'])->middleware('menu.access:overtime-approvals,edit')->name('overtime.approvals.return');
 
     // Overtime — Admin/HR
     Route::get('overtime-admin', [OvertimeAdminController::class, 'index'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.index');
+    Route::get('overtime-admin/export', [OvertimeAdminController::class, 'export'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.export');
+    Route::get('overtime-admin/recap-pdf', [OvertimeAdminController::class, 'recapPdf'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.recap-pdf');
     Route::get('overtime-admin/{overtime}', [OvertimeAdminController::class, 'show'])->middleware('menu.access:overtime-admin,view')->name('overtime.admin.show');
+    Route::post('overtime-admin/{overtime}/entries', [OvertimeAdminController::class, 'storeEntry'])->middleware('menu.access:overtime-admin,edit')->name('overtime.admin.entries.store');
+    Route::put('overtime-admin/entries/{entry}', [OvertimeAdminController::class, 'updateEntry'])->middleware('menu.access:overtime-admin,edit')->name('overtime.admin.entries.update');
+    Route::delete('overtime-admin/entries/{entry}', [OvertimeAdminController::class, 'destroyEntry'])->middleware('menu.access:overtime-admin,edit')->name('overtime.admin.entries.destroy');
     Route::put('overtime-setting', [OvertimeSettingController::class, 'update'])->middleware('menu.access:hr-settings,edit')->name('overtime.settings.update');
 
     // Users

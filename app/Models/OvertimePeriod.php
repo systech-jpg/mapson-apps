@@ -26,7 +26,7 @@ class OvertimePeriod extends Model
 
     protected $fillable = [
         'request_number', 'employee_id', 'period', 'period_start', 'period_end', 'status', 'current_level',
-        'total_hours', 'total_amount', 'rate_per_hour', 'multiplier_workday', 'multiplier_holiday', 'holiday_flat_rate',
+        'total_hours', 'total_minutes', 'total_amount', 'rate_per_hour', 'multiplier_workday', 'multiplier_holiday', 'holiday_flat_rate',
         'submitted_at', 'decided_at', 'decision_note', 'created_by',
     ];
 

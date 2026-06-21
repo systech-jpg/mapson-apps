@@ -4,8 +4,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
+import { hm } from '@/lib/time';
 import { Head, router } from '@inertiajs/react';
-import { Check, Printer, X } from 'lucide-react';
+import { Check, Printer, Undo2, X } from 'lucide-react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -20,6 +21,8 @@ interface Entry {
     start_time: string;
     end_time: string;
     hours: string | number;
+    minutes: number;
+    amount: string | number;
     is_holiday: boolean;
     status: string;
     note: string | null;
@@ -30,6 +33,7 @@ interface Period {
     request_number: string;
     status: string;
     total_hours: string | number;
+    total_minutes: number;
     total_amount: string | number;
     employee?: { full_name: string; employee_code: string } | null;
     entries: Entry[];
@@ -58,13 +62,19 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
         }
     };
 
+    const returnToDraft = (p: Period) => {
+        const note = window.prompt('Kembalikan ke draf untuk direvisi karyawan. Catatan revisi (opsional):', '');
+        if (note === null) return; // cancelled
+        router.post(route('overtime.approvals.return', p.id), { note }, { preserveScroll: true });
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Persetujuan Lembur" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div>
                     <h1 className="text-xl font-semibold">Persetujuan Lembur</h1>
-                    <p className="text-sm text-muted-foreground">Periode lembur yang menunggu persetujuan Anda. Atasan menilai per baris; HR menyetujui periode.</p>
+                    <p className="text-sm text-muted-foreground">Periode lembur yang menunggu persetujuan Anda. Atasan menilai per baris lalu menyetujui periode; HR menyetujui periode. Perbaikan/penambahan baris dilakukan karyawan atau admin HR.</p>
                 </div>
 
                 {periods.length === 0 ? (
@@ -80,7 +90,7 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div>
                                             <div className="font-medium">{p.employee?.full_name ?? '-'} <span className="text-muted-foreground">· {p.request_number}</span></div>
-                                            <div className="text-xs text-muted-foreground">{Number(p.total_hours).toLocaleString('id-ID')} jam · {rupiah(p.total_amount)}</div>
+                                            <div className="text-xs text-muted-foreground">{hm(p.total_minutes)} jam · {rupiah(p.total_amount)}</div>
                                         </div>
                                         <LeaveStatusBadge status={p.status} />
                                     </div>
@@ -92,6 +102,7 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                                 <TableHead>Aktivitas</TableHead>
                                                 <TableHead className="text-center">Jam</TableHead>
                                                 <TableHead className="text-right">Durasi</TableHead>
+                                                <TableHead className="text-right">Nominal</TableHead>
                                                 <TableHead>Status</TableHead>
                                                 {p.can_act && isSupervisorStep && <TableHead className="text-right">Nilai Baris</TableHead>}
                                             </TableRow>
@@ -104,7 +115,8 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                                     </TableCell>
                                                     <TableCell>{e.activity}{e.note && <span className="block text-[11px] text-muted-foreground">{e.note}</span>}</TableCell>
                                                     <TableCell className="text-center whitespace-nowrap">{e.start_time.substring(0, 5)}–{e.end_time.substring(0, 5)}</TableCell>
-                                                    <TableCell className="text-right font-medium">{Number(e.hours).toLocaleString('id-ID')}</TableCell>
+                                                    <TableCell className="text-right font-mono font-medium">{hm(e.minutes)}</TableCell>
+                                                    <TableCell className="text-right whitespace-nowrap">{e.status === 'rejected' ? '—' : rupiah(e.amount)}</TableCell>
                                                     <TableCell><LeaveStatusBadge status={e.status} /></TableCell>
                                                     {p.can_act && isSupervisorStep && (
                                                         <TableCell className="text-right">
@@ -133,6 +145,9 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                             </Button>
                                             {p.can_act && (
                                                 <>
+                                                    <Button size="sm" variant="outline" className="text-amber-600" onClick={() => returnToDraft(p)}>
+                                                        <Undo2 className="size-4" /> Revisi (Kembalikan ke Draf)
+                                                    </Button>
                                                     <Button size="sm" variant="outline" className="text-rose-600" onClick={() => reject(p)}>Tolak</Button>
                                                     <Button size="sm" onClick={() => approve(p)}>{isSupervisorStep ? 'Setujui & Teruskan ke HR' : 'Setujui (Final)'}</Button>
                                                 </>

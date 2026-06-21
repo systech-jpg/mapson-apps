@@ -50,7 +50,7 @@ class OvertimeService
 
     public function addEntry(OvertimePeriod $period, array $data): OvertimeEntry
     {
-        $this->assertEditable($period);
+        $this->assertEntriesEditable($period);
         $date = Carbon::parse($data['date'])->startOfDay();
         $this->assertWithinPeriod($period, $date);
         $this->assertUniqueDate($period, $date);
@@ -74,7 +74,7 @@ class OvertimeService
     public function updateEntry(OvertimeEntry $entry, array $data): OvertimeEntry
     {
         $period = $entry->period;
-        $this->assertEditable($period);
+        $this->assertEntriesEditable($period);
         $date = Carbon::parse($data['date'])->startOfDay();
         $this->assertWithinPeriod($period, $date);
         $this->assertUniqueDate($period, $date, $entry->id);
@@ -97,7 +97,7 @@ class OvertimeService
     public function deleteEntry(OvertimeEntry $entry): void
     {
         $period = $entry->period;
-        $this->assertEditable($period);
+        $this->assertEntriesEditable($period);
         $entry->delete();
         $this->recomputeTotals($period->fresh());
     }
@@ -172,6 +172,35 @@ class OvertimeService
         });
     }
 
+    /**
+     * Approver (supervisor/HR) sends a still-pending period back to Draft so the
+     * employee can revise it. Resets approvals + per-row decisions; records the reason.
+     */
+    public function returnToDraft(OvertimePeriod $period, User $actor, ?string $notes = null): OvertimePeriod
+    {
+        if ($period->status === OvertimePeriod::STATUS_DRAFT) {
+            throw new RuntimeException('Pengajuan sudah berstatus draf.');
+        }
+
+        $period = DB::transaction(function () use ($period, $notes) {
+            $period->approvals()->delete();
+            $period->entries()->update(['status' => OvertimeEntry::STATUS_PENDING, 'decided_by' => null, 'decided_at' => null]);
+            $period->update([
+                'status' => OvertimePeriod::STATUS_DRAFT,
+                'current_level' => 0,
+                'submitted_at' => null,
+                'decided_at' => null,
+                'decision_note' => $notes,
+            ]);
+
+            return $period->fresh(['approvals', 'entries']);
+        });
+
+        $this->notifier->notifyRequester($period, 'returned');
+
+        return $period;
+    }
+
     /** Supervisor decision on a single detail row (approve/reject the activity). */
     public function decideEntry(OvertimeEntry $entry, string $status, User $actor): OvertimeEntry
     {
@@ -214,6 +243,10 @@ class OvertimeService
             if ($next) {
                 $period->update(['current_level' => $next->level, 'status' => 'pending_'.$next->role]);
             } else {
+                // Final (HR) approval: any still-pending rows (e.g. late "susulan" entries) count as approved.
+                $period->entries()->where('status', OvertimeEntry::STATUS_PENDING)
+                    ->update(['status' => OvertimeEntry::STATUS_APPROVED, 'decided_by' => $approverEmpId, 'decided_at' => now()]);
+
                 $s = OvertimeSetting::current();
                 $period->update([
                     'status' => OvertimePeriod::STATUS_APPROVED,
@@ -275,14 +308,24 @@ class OvertimeService
         $flat = (float) ($snapshot ? $period->holiday_flat_rate : $s->holiday_flat_rate);
 
         $hours = 0.0;
+        $minutes = 0;
         $amount = 0.0;
-        foreach ($period->entries()->where('status', '!=', OvertimeEntry::STATUS_REJECTED)->get() as $e) {
-            $hours += (float) $e->hours;
+        foreach ($period->entries()->get() as $e) {
+            $rejected = $e->status === OvertimeEntry::STATUS_REJECTED;
             // Holiday/weekend = flat fee per day (regardless of hours); workday = hours × rate × multiplier.
-            $amount += $e->is_holiday ? $flat : ((float) $e->hours * $rate * $mw);
+            $line = $rejected ? 0.0 : ($e->is_holiday ? $flat : ((float) $e->hours * $rate * $mw));
+
+            // Persist per-day nominal (raw query → no audit noise / timestamp churn).
+            DB::table('overtime_entries')->where('id', $e->id)->update(['amount' => $line]);
+
+            if (! $rejected) {
+                $hours += (float) $e->hours;
+                $minutes += $e->minutes;
+                $amount += $line;
+            }
         }
 
-        $period->update(['total_hours' => $hours, 'total_amount' => $amount]);
+        $period->update(['total_hours' => $hours, 'total_minutes' => $minutes, 'total_amount' => $amount]);
     }
 
     /** Can this user act on the period's current pending step? */
@@ -301,6 +344,23 @@ class OvertimeService
 
         // HR: any holder of an HR role, but not approving own period.
         return $this->userIsHr($user) && optional($user->employee)->id !== $period->employee_id;
+    }
+
+    /**
+     * Who may send a period back to Draft for revision:
+     * - the active approver while it's still pending (e.g. supervisor at their step), OR
+     * - HR / overtime managers — at ANY stage, including an already-approved period.
+     */
+    public function canReturnToDraft(OvertimePeriod $period, User $user): bool
+    {
+        if ($period->status === OvertimePeriod::STATUS_DRAFT) {
+            return false;
+        }
+        if ($this->canApprove($period, $user)) {
+            return true;
+        }
+
+        return $this->userIsHr($user) || $user->hasMenuAccess('overtime-admin', 'edit');
     }
 
     public function userIsHr(User $user): bool
@@ -324,6 +384,17 @@ class OvertimeService
     {
         if (! $period->isEditable()) {
             throw new RuntimeException('Periode lembur sudah diajukan/diputus dan tidak bisa diubah.');
+        }
+    }
+
+    /**
+     * Entries (incl. "susulan") may be added/edited any time BEFORE HR's final approval.
+     * Once approved, HR must cancel/return the period first (returnToDraft).
+     */
+    private function assertEntriesEditable(OvertimePeriod $period): void
+    {
+        if ($period->status === OvertimePeriod::STATUS_APPROVED) {
+            throw new RuntimeException('Lembur sudah disetujui HR. Batalkan/kembalikan persetujuan dulu sebelum menambah entri susulan.');
         }
     }
 

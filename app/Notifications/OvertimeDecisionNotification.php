@@ -11,7 +11,7 @@ class OvertimeDecisionNotification extends Notification
 {
     use Queueable;
 
-    /** @param  string  $outcome  'approved' | 'rejected' */
+    /** @param  string  $outcome  'approved' | 'rejected' | 'returned' */
     public function __construct(public OvertimePeriod $overtime, public string $outcome)
     {
     }
@@ -31,7 +31,11 @@ class OvertimeDecisionNotification extends Notification
 
     private function label(): string
     {
-        return $this->outcome === 'approved' ? 'disetujui' : 'ditolak';
+        return match ($this->outcome) {
+            'approved' => 'disetujui',
+            'returned' => 'dikembalikan untuk direvisi',
+            default => 'ditolak',
+        };
     }
 
     /**

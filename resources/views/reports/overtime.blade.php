@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 @php
     $rp = fn ($v) => 'Rp ' . number_format((float) $v, 0, ',', '.');
+    $hm = fn ($min) => intdiv((int) $min, 60) . ':' . str_pad((string) ((int) $min % 60), 2, '0', STR_PAD_LEFT);
     $statusLabel = [
         'draft' => 'Draf', 'pending_supervisor' => 'Menunggu Atasan', 'pending_hr' => 'Menunggu HR',
         'approved' => 'Disetujui', 'rejected' => 'Ditolak',
@@ -64,7 +65,7 @@
     </tr>
     <tr>
         <td class="lbl">Jabatan</td><td>{{ $ot->employee?->currentPosition?->name ?? '-' }}</td>
-        <td class="lbl">Total Jam</td><td>{{ rtrim(rtrim(number_format((float) $ot->total_hours, 1, ',', ''), '0'), ',') }} jam</td>
+        <td class="lbl">Total Jam</td><td>{{ $hm($ot->total_minutes) }} (jam:menit)</td>
     </tr>
 </table>
 
@@ -78,7 +79,8 @@
             <th style="width: 48px;">Mulai</th>
             <th style="width: 48px;">Selesai</th>
             <th style="width: 46px;">Jam</th>
-            <th style="width: 70px;">Status</th>
+            <th style="width: 80px;">Nominal</th>
+            <th style="width: 66px;">Status</th>
         </tr>
     </thead>
     <tbody>
@@ -90,22 +92,24 @@
                 <td>{{ $e->activity }}@if ($e->note)<br><span class="muted">{{ $e->note }}</span>@endif</td>
                 <td class="c">{{ \Illuminate\Support\Str::substr($e->start_time, 0, 5) }}</td>
                 <td class="c">{{ \Illuminate\Support\Str::substr($e->end_time, 0, 5) }}</td>
-                <td class="r">{{ rtrim(rtrim(number_format((float) $e->hours, 1, ',', ''), '0'), ',') }}</td>
+                <td class="r">{{ $hm($e->minutes) }}</td>
+                <td class="r">{{ $e->status === 'rejected' ? '—' : $rp($e->amount) }}</td>
                 <td class="c">{{ $entryStatus[$e->status] ?? $e->status }}</td>
             </tr>
         @empty
-            <tr><td colspan="8" class="c muted" style="padding: 16px;">Tidak ada entri lembur.</td></tr>
+            <tr><td colspan="9" class="c muted" style="padding: 16px;">Tidak ada entri lembur.</td></tr>
         @endforelse
     </tbody>
     <tfoot>
         <tr>
-            <td colspan="6" class="r">Total Jam</td>
-            <td class="r">{{ rtrim(rtrim(number_format((float) $ot->total_hours, 1, ',', ''), '0'), ',') }}</td>
-            <td></td>
+            <td colspan="6" class="r">Total Jam (jam:menit)</td>
+            <td class="r">{{ $hm($ot->total_minutes) }}</td>
+            <td colspan="2"></td>
         </tr>
         <tr>
-            <td colspan="6" class="r">Total Nominal</td>
-            <td colspan="2" class="r">{{ $rp($ot->total_amount) }}</td>
+            <td colspan="7" class="r">Total Nominal</td>
+            <td class="r">{{ $rp($ot->total_amount) }}</td>
+            <td></td>
         </tr>
     </tfoot>
 </table>
