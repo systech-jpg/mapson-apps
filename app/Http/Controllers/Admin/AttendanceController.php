@@ -464,9 +464,9 @@ class AttendanceController extends Controller
 
         // Approved leave requests overlapping the period, grouped by employee.
         $leaveByEmp = [];
-        foreach (DB::table('leave_requests')->where('status', 'approved')
+        foreach (DB::table('leave_requests')->where('status', 'approved')->whereNull('deleted_at')
             ->where('start_date', '<=', $toS)->where('end_date', '>=', $fromS)
-            ->get(['employee_id', 'leave_type_id', 'start_date', 'end_date', 'day_part']) as $lv) {
+            ->get(['id', 'employee_id', 'leave_type_id', 'start_date', 'end_date', 'day_part', 'reason']) as $lv) {
             $leaveByEmp[$lv->employee_id][] = $lv;
         }
 
@@ -519,7 +519,16 @@ class AttendanceController extends Controller
                     $half = $covering->day_part !== 'full';
                     $val = $half ? 0.5 : 1.0;
                     $byType[$code] = ($byType[$code] ?? 0) + $val;
-                    $cells[$ds] = ['mark' => $abbr.($half ? '½' : ''), 'kind' => $code === 'WFH' ? 'wfh' : 'leave'];
+                    $cells[$ds] = [
+                        'mark' => $abbr.($half ? '½' : ''),
+                        'kind' => $code === 'WFH' ? 'wfh' : 'leave',
+                        'leave_id' => $covering->id,
+                        'type_id' => $covering->leave_type_id,
+                        'start_date' => $covering->start_date,
+                        'end_date' => $covering->end_date,
+                        'day_part' => $covering->day_part,
+                        'reason' => $covering->reason,
+                    ];
                 } elseif (! empty($present[$r->nik][$ds])) {
                     $cells[$ds] = ['mark' => '✓', 'kind' => 'present'];
                     $hadir++;

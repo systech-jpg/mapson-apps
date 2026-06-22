@@ -43,7 +43,7 @@ class LeaveAdminController extends Controller
         return Inertia::render('leave/admin/requests', [
             'requests' => $requests,
             'filters' => ['status' => $status, 'type_id' => $typeId, 'search' => $search, 'from' => $from, 'to' => $to],
-            'leaveTypes' => LeaveType::orderBy('sort_order')->get(['id', 'name']),
+            'leaveTypes' => LeaveType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'code', 'allow_half_day']),
             'statuses' => array_merge(LeaveRequest::PENDING_STATUSES, [
                 LeaveRequest::STATUS_APPROVED, LeaveRequest::STATUS_REJECTED,
                 LeaveRequest::STATUS_WITHDRAWN, LeaveRequest::STATUS_CANCELLED, LeaveRequest::STATUS_EXPIRED,
@@ -71,6 +71,38 @@ class LeaveAdminController extends Controller
         }
 
         return back()->with('success', 'Cuti berhasil dicatat & disetujui.');
+    }
+
+    /** HR edit of an existing (approved) leave. */
+    public function update(Request $request, LeaveRequest $leave): RedirectResponse
+    {
+        $data = $request->validate([
+            'leave_type_id' => ['required', 'exists:leave_types,id'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
+            'day_part' => ['nullable', 'in:full,first_half,second_half'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->service->adminUpdate($leave, $data, $request->user());
+        } catch (Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Data cuti diperbarui.');
+    }
+
+    /** HR delete: removes the leave and restores any balance. */
+    public function destroy(LeaveRequest $leave): RedirectResponse
+    {
+        try {
+            $this->service->adminDelete($leave);
+        } catch (Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Data cuti dihapus & saldo dikembalikan.');
     }
 
     /** HR override cancel. */

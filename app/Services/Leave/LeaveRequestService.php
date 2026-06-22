@@ -162,6 +162,67 @@ class LeaveRequestService
         return $request;
     }
 
+    /** HR edit of an approved leave: reverse old balance, re-validate, re-commit, update fields. */
+    public function adminUpdate(LeaveRequest $leave, array $data, ?User $actor = null): LeaveRequest
+    {
+        if ($leave->status !== LeaveRequest::STATUS_APPROVED) {
+            throw new RuntimeException('Hanya cuti berstatus disetujui yang bisa diubah di sini.');
+        }
+
+        $type = LeaveType::findOrFail($data['leave_type_id']);
+        $start = Carbon::parse($data['start_date'])->startOfDay();
+        $end = Carbon::parse($data['end_date'] ?? $data['start_date'])->startOfDay();
+        $dayPart = $data['day_part'] ?? 'full';
+
+        $leave->loadMissing('employee', 'leaveType');
+        $this->validateAdmin($leave->employee, $type, $start, $end, $dayPart, $leave->id);
+
+        $days = $this->calculator->effectiveDays($start->toDateString(), $end->toDateString(), $dayPart);
+        if ($days <= 0) {
+            throw new RuntimeException('Tanggal yang dipilih jatuh pada akhir pekan/hari libur (0 hari efektif).');
+        }
+        $year = $start->year;
+
+        return DB::transaction(function () use ($leave, $type, $start, $end, $dayPart, $days, $year, $data) {
+            // Reverse the previously-committed balance, then commit the new figures.
+            if ($oldBt = $this->balanceType($leave->leaveType)) {
+                $this->balances->reverseCommit($leave->employee_id, $oldBt->id, $leave->year, (float) $leave->total_days);
+            }
+            if ($newBt = $this->balanceType($type)) {
+                $this->balances->hold($leave->employee_id, $newBt->id, $year, $days);
+                $this->balances->commit($leave->employee_id, $newBt->id, $year, $days);
+            }
+
+            $leave->update([
+                'leave_type_id' => $type->id,
+                'start_date' => $start->toDateString(),
+                'end_date' => $end->toDateString(),
+                'day_part' => $dayPart,
+                'total_days' => $days,
+                'year' => $year,
+                'reason' => $data['reason'] ?? $leave->reason,
+            ]);
+
+            return $leave->fresh();
+        });
+    }
+
+    /** HR delete: restore balance (hold or committed) then soft-delete the record. */
+    public function adminDelete(LeaveRequest $leave): void
+    {
+        DB::transaction(function () use ($leave) {
+            $bt = $this->balanceType($leave->leaveType);
+            if ($bt) {
+                if ($leave->isPending()) {
+                    $this->balances->release($leave->employee_id, $bt->id, $leave->year, (float) $leave->total_days);
+                } elseif ($leave->status === LeaveRequest::STATUS_APPROVED) {
+                    $this->balances->reverseCommit($leave->employee_id, $bt->id, $leave->year, (float) $leave->total_days);
+                }
+            }
+            $leave->delete();
+        });
+    }
+
     /** Approve the active step; advance or finalize (commit balance). */
     public function approve(LeaveRequest $request, Employee $approver, ?string $notes = null): LeaveRequest
     {
@@ -303,7 +364,7 @@ class LeaveRequestService
     }
 
     /** Validation for HR direct entry: no min-notice/future-date rule, but still guard conflicts. */
-    private function validateAdmin(Employee $employee, LeaveType $type, Carbon $start, Carbon $end, string $dayPart): void
+    private function validateAdmin(Employee $employee, LeaveType $type, Carbon $start, Carbon $end, string $dayPart, ?int $excludeId = null): void
     {
         if (! $type->is_active) {
             throw new RuntimeException('Jenis cuti tidak aktif.');
@@ -320,6 +381,7 @@ class LeaveRequestService
 
         $overlap = LeaveRequest::where('employee_id', $employee->id)
             ->whereIn('status', array_merge(LeaveRequest::PENDING_STATUSES, [LeaveRequest::STATUS_APPROVED]))
+            ->when($excludeId, fn ($q) => $q->whereKeyNot($excludeId))
             ->where('start_date', '<=', $end->toDateString())
             ->where('end_date', '>=', $start->toDateString())
             ->exists();

@@ -5,13 +5,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useForm } from '@inertiajs/react';
+import { router, useForm } from '@inertiajs/react';
 import { useEffect, useMemo, type FormEventHandler } from 'react';
 
 export interface AdminLeaveTarget {
     employeeId: number;
     employeeName: string;
     date: string;
+    // When present → edit an existing leave instead of recording a new one.
+    leaveId?: number;
+    typeId?: number;
+    startDate?: string;
+    endDate?: string;
+    dayPart?: string;
+    reason?: string;
 }
 
 export interface AdminLeaveType {
@@ -32,7 +39,7 @@ interface Props {
  * Used from the attendance recap pages. Posts to leave.admin.record (auto-approve).
  */
 export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props) {
-    const { data, setData, post, processing, errors, reset, clearErrors } = useForm({
+    const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         employee_id: '',
         leave_type_id: '',
         start_date: '',
@@ -41,16 +48,18 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
         reason: '',
     });
 
+    const isEdit = !!target?.leaveId;
+
     useEffect(() => {
         if (target) {
             clearErrors();
             setData({
                 employee_id: String(target.employeeId),
-                leave_type_id: '',
-                start_date: target.date,
-                end_date: target.date,
-                day_part: 'full',
-                reason: '',
+                leave_type_id: target.typeId ? String(target.typeId) : '',
+                start_date: target.startDate ?? target.date,
+                end_date: target.endDate ?? target.date,
+                day_part: target.dayPart ?? 'full',
+                reason: target.reason ?? '',
             });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,22 +69,39 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
-        post(route('leave.admin.record'), {
+        const opts = {
             preserveScroll: true,
             onSuccess: () => {
                 reset();
                 onClose();
             },
-        });
+        };
+        if (isEdit && target) {
+            put(route('leave.admin.update', target.leaveId), opts);
+        } else {
+            post(route('leave.admin.record'), opts);
+        }
+    };
+
+    const remove = () => {
+        if (target?.leaveId && confirm('Hapus data cuti ini? Saldo akan dikembalikan.')) {
+            router.delete(route('leave.admin.destroy', target.leaveId), {
+                preserveScroll: true,
+                onSuccess: () => onClose(),
+            });
+        }
     };
 
     return (
         <Dialog open={target !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>Catat Cuti / Absen</DialogTitle>
+                    <DialogTitle>{isEdit ? 'Ubah Cuti / Absen' : 'Catat Cuti / Absen'}</DialogTitle>
                     <DialogDescription>
-                        {target?.employeeName} · mulai {target?.date}. Cuti langsung <b>disetujui</b> dan masuk ke daftar pengajuan.
+                        {target?.employeeName}.{' '}
+                        {isEdit
+                            ? <>Mengubah data cuti yang sudah disetujui. Saldo akan disesuaikan otomatis.</>
+                            : <>Cuti langsung <b>disetujui</b> dan masuk ke daftar pengajuan.</>}
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={submit} className="grid gap-4">
@@ -137,13 +163,20 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
                         <InputError message={errors.reason} />
                     </div>
 
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>
-                            Batal
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            Simpan & Setujui
-                        </Button>
+                    <DialogFooter className="sm:justify-between">
+                        {isEdit ? (
+                            <Button type="button" variant="outline" className="text-rose-600" onClick={remove}>
+                                Hapus
+                            </Button>
+                        ) : <span />}
+                        <div className="flex gap-2">
+                            <Button type="button" variant="outline" onClick={onClose}>
+                                Batal
+                            </Button>
+                            <Button type="submit" disabled={processing}>
+                                {isEdit ? 'Simpan Perubahan' : 'Simpan & Setujui'}
+                            </Button>
+                        </div>
                     </DialogFooter>
                 </form>
             </DialogContent>

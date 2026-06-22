@@ -1,5 +1,6 @@
 import { Can } from '@/components/can';
 import { ConfirmDelete } from '@/components/confirm-delete';
+import AdminLeaveDialog, { type AdminLeaveTarget, type AdminLeaveType } from '@/components/leave/admin-leave-dialog';
 import { LeaveStatusBadge } from '@/components/leave-status-badge';
 import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { Eye, Search } from 'lucide-react';
+import { Eye, Pencil, Search } from 'lucide-react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -23,8 +24,12 @@ const ALL = 'all';
 interface Row {
     id: number;
     request_number: string;
+    employee_id: number;
+    leave_type_id: number;
     start_date: string;
     end_date: string;
+    day_part: string;
+    reason: string | null;
     total_days: string | number;
     status: string;
     leave_type?: { name: string } | null;
@@ -34,7 +39,7 @@ interface Row {
 interface Props {
     requests: { data: Row[]; links: { url: string | null; label: string; active: boolean }[]; total: number };
     filters: { status: string; type_id: number | null; search: string; from: string | null; to: string | null };
-    leaveTypes: { id: number; name: string }[];
+    leaveTypes: AdminLeaveType[];
     statuses: string[];
 }
 
@@ -47,6 +52,13 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default function AdminRequests({ requests, filters, leaveTypes, statuses }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
+    const [target, setTarget] = useState<AdminLeaveTarget | null>(null);
+    const openEdit = (r: Row) =>
+        setTarget({
+            employeeId: r.employee_id, employeeName: r.employee?.full_name ?? '-', date: d(r.start_date),
+            leaveId: r.id, typeId: r.leave_type_id, startDate: d(r.start_date), endDate: d(r.end_date),
+            dayPart: r.day_part, reason: r.reason ?? '',
+        });
     const apply = (extra: Record<string, unknown> = {}) =>
         router.get(route('leave.admin.requests'), {
             search, status: filters.status || undefined, type_id: filters.type_id ?? undefined,
@@ -110,6 +122,11 @@ export default function AdminRequests({ requests, filters, leaveTypes, statuses 
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end gap-1">
                                                 <Button variant="ghost" size="icon" asChild><Link href={route('leave.show', r.id)}><Eye className="size-4" /></Link></Button>
+                                                {r.status === 'approved' && (
+                                                    <Can on="leave-admin-requests" do="edit">
+                                                        <Button variant="ghost" size="icon" title="Ubah / Hapus" onClick={() => openEdit(r)}><Pencil className="size-4" /></Button>
+                                                    </Can>
+                                                )}
                                                 {(r.status.startsWith('pending') || r.status === 'approved') && (
                                                     <Can on="leave-admin-requests" do="edit">
                                                         <ConfirmDelete url={route('leave.admin.cancel', r.id)} method="post" actionLabel="Batalkan"
@@ -128,6 +145,8 @@ export default function AdminRequests({ requests, filters, leaveTypes, statuses 
 
                 <Pagination links={requests.links} />
             </div>
+
+            <AdminLeaveDialog target={target} leaveTypes={leaveTypes} onClose={() => setTarget(null)} />
         </AppLayout>
     );
 }

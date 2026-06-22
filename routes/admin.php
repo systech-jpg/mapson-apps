@@ -92,6 +92,8 @@ Route::middleware(['auth'])->group(function () {
     // Leave Management — Admin/HR
     Route::get('leave-admin/requests', [LeaveAdminController::class, 'index'])->middleware('menu.access:leave-admin-requests,view')->name('leave.admin.requests');
     Route::post('leave-admin/requests/{leave}/cancel', [LeaveAdminController::class, 'cancel'])->middleware('menu.access:leave-admin-requests,edit')->name('leave.admin.cancel');
+    Route::put('leave-admin/requests/{leave}', [LeaveAdminController::class, 'update'])->middleware('menu.access:leave-admin-requests,edit')->name('leave.admin.update');
+    Route::delete('leave-admin/requests/{leave}', [LeaveAdminController::class, 'destroy'])->middleware('menu.access:leave-admin-requests,delete')->name('leave.admin.destroy');
     Route::post('leave-admin/record', [LeaveAdminController::class, 'record'])->middleware('menu.access:leave-admin-requests,create')->name('leave.admin.record');
     Route::get('leave-admin/balances', [LeaveBalanceAdminController::class, 'index'])->middleware('menu.access:leave-admin-balances,view')->name('leave.admin.balances');
     Route::post('leave-admin/balances/adjust', [LeaveBalanceAdminController::class, 'adjust'])->middleware('menu.access:leave-admin-balances,edit')->name('leave.admin.balances.adjust');

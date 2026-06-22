@@ -26,6 +26,12 @@ interface DateCol {
 interface Cell {
     mark: string | null;
     kind: 'present' | 'wfh' | 'leave' | 'holiday' | 'weekend' | 'alpha' | 'empty';
+    leave_id?: number;
+    type_id?: number;
+    start_date?: string;
+    end_date?: string;
+    day_part?: string;
+    reason?: string | null;
 }
 
 interface TypeCol {
@@ -86,6 +92,7 @@ const CELL_CLASS: Record<Cell['kind'], string> = {
 export default function AttendanceRecap({ period, periodLabel, year, dates, typeCols, employees, leaveTypes, stats }: Props) {
     const { can } = usePermissions();
     const canRecord = can('leave-admin-requests', 'create');
+    const canEdit = can('leave-admin-requests', 'edit');
     const [target, setTarget] = useState<AdminLeaveTarget | null>(null);
 
     const shiftPeriod = (delta: number) => {
@@ -187,12 +194,29 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                                                 </td>
                                                 {dates.map((d) => {
                                                     const c = e.cells[d.date];
-                                                    const clickable = canRecord && e.employee_id !== null && !d.weekend && !d.holiday;
+                                                    const hasLeave = !!c?.leave_id;
+                                                    const empId = e.employee_id;
+                                                    const canEditCell = canEdit && hasLeave && empId !== null;
+                                                    const canAddCell = canRecord && empId !== null && !d.weekend && !d.holiday && !hasLeave;
+                                                    const clickable = canEditCell || canAddCell;
+                                                    const open = () => {
+                                                        if (empId === null) return;
+                                                        if (canEditCell && c) {
+                                                            setTarget({
+                                                                employeeId: empId, employeeName: e.name ?? e.nik, date: d.date,
+                                                                leaveId: c.leave_id, typeId: c.type_id,
+                                                                startDate: c.start_date, endDate: c.end_date,
+                                                                dayPart: c.day_part, reason: c.reason ?? '',
+                                                            });
+                                                        } else if (canAddCell) {
+                                                            setTarget({ employeeId: empId, employeeName: e.name ?? e.nik, date: d.date });
+                                                        }
+                                                    };
                                                     return (
                                                         <td
                                                             key={d.date}
-                                                            onClick={clickable ? () => setTarget({ employeeId: e.employee_id as number, employeeName: e.name ?? e.nik, date: d.date }) : undefined}
-                                                            title={clickable ? 'Klik untuk catat cuti/absen' : undefined}
+                                                            onClick={clickable ? open : undefined}
+                                                            title={canEditCell ? 'Klik untuk ubah/hapus cuti' : canAddCell ? 'Klik untuk catat cuti/absen' : undefined}
                                                             className={`border-r px-1 py-1 text-center whitespace-nowrap ${d.holiday ? 'bg-rose-100 dark:bg-rose-950/30' : d.weekend ? 'bg-rose-50 dark:bg-rose-950/20' : ''} ${clickable ? 'cursor-pointer hover:bg-primary/10' : ''}`}
                                                         >
                                                             <span className={c ? CELL_CLASS[c.kind] : ''}>{c?.mark ?? <span className="text-muted-foreground/30">·</span>}</span>
@@ -288,7 +312,8 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                 <p className="text-xs text-muted-foreground">
                     <b>Total</b> = Hadir + WFH. <b>Pemakaian</b> = akumulasi cuti tahunan terpakai s/d {year}; <b>Sisa Cuti</b> = saldo cuti tahunan tersisa (dari modul Cuti).
                     Kode absen diambil dari pengajuan cuti yang <b>disetujui</b>; kolom berarsir = akhir pekan / libur.
-                    {canRecord && <> <b className="text-foreground">Klik sel tanggal</b> untuk mencatat cuti/absen karyawan (langsung disetujui).</>}
+                    {canRecord && <> <b className="text-foreground">Klik sel kosong</b> untuk mencatat cuti/absen (langsung disetujui).</>}
+                    {canEdit && <> Klik sel <b className="text-blue-600">bertanda cuti</b> untuk mengubah / menghapusnya.</>}
                 </p>
             </div>
 
