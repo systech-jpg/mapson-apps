@@ -61,6 +61,7 @@ class LeaveAdminController extends Controller
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'day_part' => ['nullable', 'in:full,first_half,second_half'],
             'reason' => ['nullable', 'string', 'max:500'],
+            'has_certificate' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -82,6 +83,7 @@ class LeaveAdminController extends Controller
             'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'day_part' => ['nullable', 'in:full,first_half,second_half'],
             'reason' => ['nullable', 'string', 'max:500'],
+            'has_certificate' => ['nullable', 'boolean'],
         ]);
 
         try {

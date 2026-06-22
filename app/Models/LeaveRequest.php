@@ -43,7 +43,7 @@ class LeaveRequest extends Model
 
     protected $fillable = [
         'request_number', 'employee_id', 'leave_type_id', 'start_date', 'end_date',
-        'day_part', 'total_days', 'start_time', 'end_time', 'year', 'reason',
+        'day_part', 'total_days', 'start_time', 'end_time', 'year', 'reason', 'has_certificate',
         'status', 'current_level', 'submitted_at', 'decided_at', 'decision_note', 'created_by',
     ];
 
@@ -53,6 +53,7 @@ class LeaveRequest extends Model
             'start_date' => 'date:Y-m-d',
             'end_date' => 'date:Y-m-d',
             'total_days' => 'decimal:1',
+            'has_certificate' => 'boolean',
             'year' => 'integer',
             'current_level' => 'integer',
             'submitted_at' => 'datetime',

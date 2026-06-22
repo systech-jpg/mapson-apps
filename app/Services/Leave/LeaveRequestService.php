@@ -130,6 +130,7 @@ class LeaveRequestService
                 'total_days' => $days,
                 'year' => $year,
                 'reason' => $data['reason'] ?? 'Input langsung oleh HR',
+                'has_certificate' => (bool) ($data['has_certificate'] ?? false),
                 'status' => LeaveRequest::STATUS_APPROVED,
                 'current_level' => 1,
                 'submitted_at' => now(),
@@ -201,6 +202,7 @@ class LeaveRequestService
                 'total_days' => $days,
                 'year' => $year,
                 'reason' => $data['reason'] ?? $leave->reason,
+                'has_certificate' => (bool) ($data['has_certificate'] ?? $leave->has_certificate),
             ]);
 
             return $leave->fresh();

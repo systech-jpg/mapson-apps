@@ -32,6 +32,7 @@ interface Cell {
     end_date?: string;
     day_part?: string;
     reason?: string | null;
+    has_certificate?: boolean;
 }
 
 interface TypeCol {
@@ -60,8 +61,8 @@ interface EmployeeRow {
     has_transport: boolean;
     noted: string;
     potong_days: number;
-    potong_meal: number | null;
-    potong_transport: number | null;
+    potong_tm: number;
+    potong_gtm: number;
     potong_cuti: number;
 }
 
@@ -207,6 +208,7 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                                                                 leaveId: c.leave_id, typeId: c.type_id,
                                                                 startDate: c.start_date, endDate: c.end_date,
                                                                 dayPart: c.day_part, reason: c.reason ?? '',
+                                                                hasCertificate: c.has_certificate,
                                                             });
                                                         } else if (canAddCell) {
                                                             setTarget({ employeeId: empId, employeeName: e.name ?? e.nik, date: d.date });
@@ -247,7 +249,7 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                     <h2 className="mb-1 text-base font-semibold">Potongan Tunjangan (Prorata Kehadiran)</h2>
                     <p className="mb-2 text-xs text-muted-foreground">
                         Potongan dihitung dari hari kerja yang <b>tidak hadir di kantor</b> (cuti/sakit/izin/alpha + WFH); setengah hari = 0,5.
-                        <b className="text-rose-700"> POTONG TM</b> = Tunjangan Makan, <b className="text-rose-700">POTONG GTM</b> = Tunjangan Transport, <b>POTONG CUTI</b> = potong saldo cuti tahunan. Satuan = hari.
+                        <b className="text-rose-700"> POTONG TM</b> = potong Transport + Makan (gaji utuh), <b className="text-rose-700">POTONG GTM</b> = potong Gaji + Transport + Makan, <b>POTONG CUTI</b> = potong saldo cuti tahunan. Satuan = hari. Sakit (SL) <b>ada surat</b> → hanya TM; <b>tanpa surat</b> → potong cuti (jika ada saldo) atau GTM.
                     </p>
                     <Card>
                         <CardContent className="p-0">
@@ -264,8 +266,8 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                                             <th className="border-r px-1.5 py-1.5" title="Alpha">A</th>
                                             <th className="border-r px-1.5 py-1.5 font-semibold" title="Total hari potongan (tidak hadir)">Total</th>
                                             <th className="border-r px-1.5 py-1.5">Sisa Cuti</th>
-                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potongan Tunjangan Makan">POTONG TM</th>
-                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potongan Tunjangan Transport">POTONG GTM</th>
+                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potong Transport + Makan (gaji utuh)">POTONG TM</th>
+                                            <th className="border-r bg-rose-50 px-1.5 py-1.5 text-rose-700 dark:bg-rose-950/30" title="Potong Gaji + Transport + Makan">POTONG GTM</th>
                                             <th className="border-r px-1.5 py-1.5" title="Potong saldo cuti tahunan">POTONG CUTI</th>
                                             <th className="px-2 py-1.5 text-left">Keterangan</th>
                                         </tr>
@@ -287,8 +289,8 @@ export default function AttendanceRecap({ period, periodLabel, year, dates, type
                                                     <td className={`border-r px-1.5 py-1 ${e.alpha > 0 ? 'font-semibold text-rose-600' : ''}`}>{cnt(e.alpha) || '-'}</td>
                                                     <td className="border-r px-1.5 py-1 font-semibold">{e.potong_days > 0 ? num(e.potong_days) : '-'}</td>
                                                     <td className="border-r px-1.5 py-1">{num(e.sisa_cuti)}</td>
-                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_meal ? num(e.potong_meal) : '-'}</td>
-                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_transport ? num(e.potong_transport) : '-'}</td>
+                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_tm > 0 ? num(e.potong_tm) : '-'}</td>
+                                                    <td className="border-r bg-rose-50/40 px-1.5 py-1 font-medium text-rose-700 dark:bg-rose-950/10">{e.potong_gtm > 0 ? num(e.potong_gtm) : '-'}</td>
                                                     <td className="border-r px-1.5 py-1">{e.potong_cuti > 0 ? num(e.potong_cuti) : '-'}</td>
                                                     <td className="px-2 py-1 text-left text-muted-foreground"></td>
                                                 </tr>

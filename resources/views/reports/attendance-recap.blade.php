@@ -130,8 +130,8 @@ $header = function ($halaman) use ($logo, $meta) {
             <td>{{ $e['alpha'] > 0 ? $n($e['alpha']) : '-' }}</td>
             <td><b>{{ $e['potong_days'] > 0 ? $n($e['potong_days']) : '-' }}</b></td>
             <td>{{ $e['sisa_cuti'] === null ? '-' : $n($e['sisa_cuti']) }}</td>
-            <td class="red">{{ $e['potong_meal'] ? $n($e['potong_meal']) : '-' }}</td>
-            <td class="red">{{ $e['potong_transport'] ? $n($e['potong_transport']) : '-' }}</td>
+            <td class="red">{{ $e['potong_tm'] > 0 ? $n($e['potong_tm']) : '-' }}</td>
+            <td class="red">{{ $e['potong_gtm'] > 0 ? $n($e['potong_gtm']) : '-' }}</td>
             <td>{{ $e['potong_cuti'] > 0 ? $n($e['potong_cuti']) : '-' }}</td>
             <td class="lname"></td>
         </tr>
@@ -142,7 +142,7 @@ $header = function ($halaman) use ($logo, $meta) {
 <div class="legend">
     ✓ = Hadir &middot; LN = Libur Nasional &middot; A = Alpha &middot;
     @foreach ($typeCols as $tc){{ $tc['abbr'] }} = {{ $tc['label'] }}@if (!$loop->last) &middot; @endif @endforeach
-    &nbsp;|&nbsp; POTONG TM = Tunjangan Makan &middot; POTONG GTM = Tunjangan Transport &middot; POTONG CUTI = potong saldo cuti tahunan.
+    &nbsp;|&nbsp; POTONG TM = Transport + Makan (gaji utuh) &middot; POTONG GTM = Gaji + Transport + Makan &middot; POTONG CUTI = potong saldo cuti tahunan.
 </div>
 
 <table class="sign">

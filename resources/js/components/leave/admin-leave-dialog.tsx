@@ -1,5 +1,6 @@
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +20,7 @@ export interface AdminLeaveTarget {
     endDate?: string;
     dayPart?: string;
     reason?: string;
+    hasCertificate?: boolean;
 }
 
 export interface AdminLeaveType {
@@ -46,6 +48,7 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
         end_date: '',
         day_part: 'full',
         reason: '',
+        has_certificate: false as boolean,
     });
 
     const isEdit = !!target?.leaveId;
@@ -60,6 +63,7 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
                 end_date: target.endDate ?? target.date,
                 day_part: target.dayPart ?? 'full',
                 reason: target.reason ?? '',
+                has_certificate: target.hasCertificate ?? false,
             });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -156,6 +160,13 @@ export default function AdminLeaveDialog({ target, leaveTypes, onClose }: Props)
                             <InputError message={errors.end_date} />
                         </div>
                     </div>
+
+                    {selectedType?.code === 'SICK' && (
+                        <label className="flex items-center gap-2 rounded-md border p-3 text-sm">
+                            <Checkbox checked={data.has_certificate} onCheckedChange={(v) => setData('has_certificate', v === true)} />
+                            <span>Ada surat dokter (mempengaruhi potongan: dengan surat hanya potong TM, tanpa surat potong cuti/GTM).</span>
+                        </label>
+                    )}
 
                     <div className="grid gap-2">
                         <Label htmlFor="al_reason">Keterangan</Label>

@@ -337,8 +337,8 @@ class AttendanceController extends Controller
             $sum .= '<td style="text-align:center;">'.($e['alpha'] > 0 ? $num($e['alpha']) : '-').'</td>';
             $sum .= '<td style="text-align:center;font-weight:bold;">'.($e['potong_days'] > 0 ? $num($e['potong_days']) : '-').'</td>';
             $sum .= '<td style="text-align:center;">'.($e['sisa_cuti'] === null ? '-' : $num($e['sisa_cuti'])).'</td>';
-            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_meal'] ? $num($e['potong_meal']) : '-').'</td>';
-            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_transport'] ? $num($e['potong_transport']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_tm'] > 0 ? $num($e['potong_tm']) : '-').'</td>';
+            $sum .= '<td style="text-align:center;color:#b91c1c;">'.($e['potong_gtm'] > 0 ? $num($e['potong_gtm']) : '-').'</td>';
             $sum .= '<td style="text-align:center;">'.($e['potong_cuti'] > 0 ? $num($e['potong_cuti']) : '-').'</td>';
             $sum .= '<td></td></tr>';
         }
@@ -348,7 +348,7 @@ class AttendanceController extends Controller
             .'<h3>Rekap Kehadiran — '.$esc($r['periodLabel']).'</h3>'
             .$html
             .'<h3 style="margin-top:24px;">Potongan Tunjangan (Prorata Kehadiran)</h3>'
-            .'<p style="font-size:10px;color:#666;">POTONG TM = Tunjangan Makan · POTONG GTM = Tunjangan Transport · POTONG CUTI = potong saldo cuti tahunan. Satuan = hari.</p>'
+            .'<p style="font-size:10px;color:#666;">POTONG TM = potong Transport + Makan (gaji utuh) · POTONG GTM = potong Gaji + Transport + Makan · POTONG CUTI = potong saldo cuti tahunan. Satuan = hari.</p>'
             .$sum
             .'<p style="font-size:10px;color:#666;">✓ = Hadir · LN = Libur Nasional · A = Alpha (tanpa keterangan) · '.$esc(implode(' · ', $legend)).'.</p>'
             .'<p style="font-size:10px;color:#666;">Pemakaian Total Cuti = akumulasi cuti tahunan terpakai s/d tahun '.$r['year'].'; Sisa Cuti = saldo cuti tahunan tersisa.</p>'
@@ -466,7 +466,7 @@ class AttendanceController extends Controller
         $leaveByEmp = [];
         foreach (DB::table('leave_requests')->where('status', 'approved')->whereNull('deleted_at')
             ->where('start_date', '<=', $toS)->where('end_date', '>=', $fromS)
-            ->get(['id', 'employee_id', 'leave_type_id', 'start_date', 'end_date', 'day_part', 'reason']) as $lv) {
+            ->get(['id', 'employee_id', 'leave_type_id', 'start_date', 'end_date', 'day_part', 'reason', 'has_certificate']) as $lv) {
             $leaveByEmp[$lv->employee_id][] = $lv;
         }
 
@@ -488,6 +488,7 @@ class AttendanceController extends Controller
             $ln = 0;
             $alpha = 0.0;
             $byType = [];
+            $absentDays = [];   // per non-present workday: ['value', 'code', 'surat'] for deduction model
             $empLeaves = $leaveByEmp[$r->employee_id] ?? [];
 
             foreach ($dates as $dt) {
@@ -519,6 +520,7 @@ class AttendanceController extends Controller
                     $half = $covering->day_part !== 'full';
                     $val = $half ? 0.5 : 1.0;
                     $byType[$code] = ($byType[$code] ?? 0) + $val;
+                    $absentDays[] = ['value' => $val, 'code' => $code, 'surat' => (bool) $covering->has_certificate];
                     $cells[$ds] = [
                         'mark' => $abbr.($half ? '½' : ''),
                         'kind' => $code === 'WFH' ? 'wfh' : 'leave',
@@ -528,6 +530,7 @@ class AttendanceController extends Controller
                         'end_date' => $covering->end_date,
                         'day_part' => $covering->day_part,
                         'reason' => $covering->reason,
+                        'has_certificate' => (bool) $covering->has_certificate,
                     ];
                 } elseif (! empty($present[$r->nik][$ds])) {
                     $cells[$ds] = ['mark' => '✓', 'kind' => 'present'];
@@ -535,20 +538,47 @@ class AttendanceController extends Controller
                 } else {
                     $cells[$ds] = ['mark' => 'A', 'kind' => 'alpha'];
                     $alpha++;
+                    $absentDays[] = ['value' => 1.0, 'code' => 'ALPHA', 'surat' => false];
                 }
             }
 
             $wfh = (float) ($byType['WFH'] ?? 0);
             $bal = $balByEmp[$r->employee_id] ?? null;
 
-            // Allowance proration: every non-present workday (leave incl. WFH, or alpha) cuts
-            // 1 day of meal & transport allowance (half-day leave = 0.5). Eligibility per employee.
             $potongDays = $alpha + array_sum($byType);
             // Unmatched Hadirr rows have no master flags → assume eligible (common case).
             $meal = $r->employee_id === null ? true : (bool) $r->has_meal_allowance;
             $transport = $r->employee_id === null ? true : (bool) $r->has_transport_allowance;
-            // Days that consume the annual leave balance.
-            $potongCuti = (float) ($byType['ANNUAL'] ?? 0) + (float) ($byType['HALFDAY'] ?? 0);
+
+            // Deduction model (per non-present workday):
+            //  - TM  = potong Transport + Makan (gaji utuh): hari yang masih ter-cover cuti.
+            //  - GTM = potong Gaji + Transport + Makan: cuti habis / tanpa cuti & tanpa surat.
+            //  - POTONG CUTI = hari yang mengurangi saldo cuti tahunan.
+            // Rules: ANNUAL/HALFDAY (sudah pakai saldo) → TM + potong cuti. SICK+surat / WFH /
+            // cuti khusus (nikah/melahirkan) → TM saja. UNPAID → GTM. Sisanya (alpha, sakit tanpa
+            // surat, izin) → jika masih ada saldo cuti tahunan: TM + potong cuti; jika habis: GTM.
+            $runningBal = max(0.0, (float) ($bal['available'] ?? 0));
+            $potongTm = 0.0;
+            $potongGtm = 0.0;
+            $potongCuti = 0.0;
+            foreach ($absentDays as $ad) {
+                $v = $ad['value'];
+                $code = $ad['code'];
+                if (in_array($code, ['ANNUAL', 'HALFDAY'], true)) {
+                    $potongTm += $v;
+                    $potongCuti += $v;
+                } elseif ($code === 'UNPAID') {
+                    $potongGtm += $v;
+                } elseif (in_array($code, ['MARRIAGE', 'MATERNITY', 'PATERNITY', 'WFH'], true) || ($code === 'SICK' && $ad['surat'])) {
+                    $potongTm += $v;
+                } elseif ($runningBal >= $v) {
+                    $potongTm += $v;
+                    $potongCuti += $v;
+                    $runningBal -= $v;
+                } else {
+                    $potongGtm += $v;
+                }
+            }
 
             return [
                 'nik' => $r->nik,
@@ -569,8 +599,8 @@ class AttendanceController extends Controller
                 'has_transport' => $transport,
                 'noted' => $this->allowanceNote($meal, $transport),
                 'potong_days' => $potongDays,
-                'potong_meal' => $meal ? $potongDays : null,
-                'potong_transport' => $transport ? $potongDays : null,
+                'potong_tm' => $potongTm,
+                'potong_gtm' => $potongGtm,
                 'potong_cuti' => $potongCuti,
             ];
         })->values()->all();
