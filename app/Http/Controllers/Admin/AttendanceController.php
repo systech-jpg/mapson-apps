@@ -470,6 +470,17 @@ class AttendanceController extends Controller
             $leaveByEmp[$lv->employee_id][] = $lv;
         }
 
+        // Leaves that carry an uploaded document (surat) — counts as "ada surat" too.
+        $leaveIds = [];
+        foreach ($leaveByEmp as $list) {
+            foreach ($list as $lv) {
+                $leaveIds[] = $lv->id;
+            }
+        }
+        $attSet = $leaveIds
+            ? array_flip(DB::table('leave_attachments')->whereIn('leave_request_id', $leaveIds)->distinct()->pluck('leave_request_id')->all())
+            : [];
+
         // Annual balance: used = pemakaian YTD, available = sisa.
         $balByEmp = [];
         if ($annualId) {
@@ -482,7 +493,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $employees = $roster->map(function ($r) use ($dates, $present, $leaveByEmp, $typeById, $balByEmp) {
+        $employees = $roster->map(function ($r) use ($dates, $present, $leaveByEmp, $typeById, $balByEmp, $attSet) {
             $cells = [];
             $hadir = 0.0;       // ✓ present only (WFH excluded)
             $ln = 0;
@@ -520,7 +531,8 @@ class AttendanceController extends Controller
                     $half = $covering->day_part !== 'full';
                     $val = $half ? 0.5 : 1.0;
                     $byType[$code] = ($byType[$code] ?? 0) + $val;
-                    $absentDays[] = ['value' => $val, 'code' => $code, 'surat' => (bool) $covering->has_certificate];
+                    $surat = (bool) $covering->has_certificate || isset($attSet[$covering->id]);
+                    $absentDays[] = ['value' => $val, 'code' => $code, 'surat' => $surat];
                     $cells[$ds] = [
                         'mark' => $abbr.($half ? '½' : ''),
                         'kind' => $code === 'WFH' ? 'wfh' : 'leave',
@@ -530,7 +542,7 @@ class AttendanceController extends Controller
                         'end_date' => $covering->end_date,
                         'day_part' => $covering->day_part,
                         'reason' => $covering->reason,
-                        'has_certificate' => (bool) $covering->has_certificate,
+                        'has_certificate' => $surat,
                     ];
                 } elseif (! empty($present[$r->nik][$ds])) {
                     $cells[$ds] = ['mark' => '✓', 'kind' => 'present'];
