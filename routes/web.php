@@ -17,9 +17,12 @@ Route::get('/', function () {
 })->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    // Front dashboard (sales analytics) — BOD only; gate direct-URL access too.
+    // Front dashboard (BOD only) — split into top-menu sections; gate direct-URL access too.
     Route::get('dashboard', [DashboardController::class, 'index'])->middleware('menu.access:dashboard,view')->name('dashboard');
     Route::get('dashboard/drilldown', [DashboardController::class, 'drilldown'])->middleware('menu.access:dashboard,view')->name('dashboard.drilldown');
+    Route::get('dashboard/finance', [DashboardController::class, 'finance'])->middleware('menu.access:dashboard-finance,view')->name('dashboard.finance');
+    Route::get('dashboard/stock', [DashboardController::class, 'stock'])->middleware('menu.access:dashboard-stock,view')->name('dashboard.stock');
+    Route::get('dashboard/cost', [DashboardController::class, 'cost'])->middleware('menu.access:dashboard-cost,view')->name('dashboard.cost');
 });
 
 require __DIR__.'/admin.php';

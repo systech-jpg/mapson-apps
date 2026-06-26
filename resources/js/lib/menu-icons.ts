@@ -1,6 +1,7 @@
 import {
     BadgeCheck,
     BarChart3,
+    Boxes,
     Briefcase,
     Building2,
     Calculator,
@@ -26,12 +27,14 @@ import {
     Network,
     Package,
     Plug,
+    Receipt,
     Settings,
     ShoppingCart,
     Shield,
     SlidersHorizontal,
     Stethoscope,
     Timer,
+    TrendingUp,
     UserCog,
     Users,
     UsersRound,
@@ -80,6 +83,9 @@ export const menuIcons: Record<string, LucideIcon> = {
     Calculator,
     Landmark,
     Package,
+    Boxes,
+    Receipt,
+    TrendingUp,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

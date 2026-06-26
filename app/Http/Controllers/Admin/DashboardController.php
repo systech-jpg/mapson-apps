@@ -132,6 +132,50 @@ class DashboardController extends Controller
         ]);
     }
 
+    /** Finance section (top-menu) — receivables / collection from ERP. */
+    public function finance(): Response
+    {
+        $paidTotal = (float) SalesFact::where('paid_unpaid', 'PAID')->sum('total');
+        $outstanding = (float) SalesFact::where('paid_unpaid', 'UNPAID')->sum('total');
+        $collectionRate = ($paidTotal + $outstanding) > 0 ? round($paidTotal / ($paidTotal + $outstanding) * 100, 1) : 0;
+
+        $aging = SalesFact::query()->where('paid_unpaid', 'UNPAID')->selectRaw("
+            SUM(CASE WHEN due_date IS NULL OR due_date >= CURDATE() THEN total ELSE 0 END) AS belum,
+            SUM(CASE WHEN due_date < CURDATE() AND DATEDIFF(CURDATE(), due_date) BETWEEN 1 AND 30 THEN total ELSE 0 END) AS d1_30,
+            SUM(CASE WHEN due_date < CURDATE() AND DATEDIFF(CURDATE(), due_date) BETWEEN 31 AND 60 THEN total ELSE 0 END) AS d31_60,
+            SUM(CASE WHEN due_date < CURDATE() AND DATEDIFF(CURDATE(), due_date) BETWEEN 61 AND 90 THEN total ELSE 0 END) AS d61_90,
+            SUM(CASE WHEN due_date < CURDATE() AND DATEDIFF(CURDATE(), due_date) > 90 THEN total ELSE 0 END) AS d90p
+        ")->first();
+
+        return Inertia::render('dashboard/finance', [
+            'hasData' => SalesFact::query()->exists(),
+            'ar' => [
+                'paid' => $paidTotal,
+                'outstanding' => $outstanding,
+                'collectionRate' => $collectionRate,
+                'aging' => [
+                    ['label' => 'Belum jatuh tempo', 'value' => (float) ($aging->belum ?? 0)],
+                    ['label' => '1–30 hari', 'value' => (float) ($aging->d1_30 ?? 0)],
+                    ['label' => '31–60 hari', 'value' => (float) ($aging->d31_60 ?? 0)],
+                    ['label' => '61–90 hari', 'value' => (float) ($aging->d61_90 ?? 0)],
+                    ['label' => '> 90 hari', 'value' => (float) ($aging->d90p ?? 0)],
+                ],
+            ],
+        ]);
+    }
+
+    /** Stock section (top-menu) — dummy scaffold for now. */
+    public function stock(): Response
+    {
+        return Inertia::render('dashboard/placeholder', ['section' => 'stock']);
+    }
+
+    /** Cost section (top-menu) — dummy scaffold for now. */
+    public function cost(): Response
+    {
+        return Inertia::render('dashboard/placeholder', ['section' => 'cost']);
+    }
+
     /**
      * Lazy drilldown: return the detail invoice lines behind a clicked dashboard
      * figure, filtered + paginated. Loaded on demand (JSON), not with the page.

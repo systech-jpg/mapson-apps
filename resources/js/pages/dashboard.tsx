@@ -227,7 +227,7 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                     <CardTitle className="text-base">Penjualan per Merk ({year})</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <BarList items={topMerk} color="bg-violet-500" onItem={(it) => setDrill({ year, merk: it.label })} />
+                                    <BarList items={topMerk} onItem={(it) => setDrill({ year, merk: it.label })} color="bg-violet-500" />
                                 </CardContent>
                             </Card>
                         </div>

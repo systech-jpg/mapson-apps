@@ -10,14 +10,41 @@ class MenuSeeder extends Seeder
 {
     public function run(): void
     {
-        // Reporting area (front dashboard — BOD only).
+        // Reporting area (front dashboard — BOD only). Split into top-menu sections.
         $dashboard = $this->menu([
             'key' => 'dashboard',
-            'title' => 'Dashboard',
+            'title' => 'Sales',
             'route' => 'dashboard',
-            'icon' => 'LayoutGrid',
+            'icon' => 'TrendingUp',
             'area' => 'reporting',
             'sort_order' => 1,
+        ]);
+
+        $finance = $this->menu([
+            'key' => 'dashboard-finance',
+            'title' => 'Finance',
+            'route' => 'dashboard.finance',
+            'icon' => 'Wallet',
+            'area' => 'reporting',
+            'sort_order' => 2,
+        ]);
+
+        $stock = $this->menu([
+            'key' => 'dashboard-stock',
+            'title' => 'Stock',
+            'route' => 'dashboard.stock',
+            'icon' => 'Boxes',
+            'area' => 'reporting',
+            'sort_order' => 3,
+        ]);
+
+        $cost = $this->menu([
+            'key' => 'dashboard-cost',
+            'title' => 'Cost',
+            'route' => 'dashboard.cost',
+            'icon' => 'Receipt',
+            'area' => 'reporting',
+            'sort_order' => 4,
         ]);
 
         $analytics = $this->menu([
@@ -26,7 +53,7 @@ class MenuSeeder extends Seeder
             'route' => 'analytics.index',
             'icon' => 'BarChart3',
             'area' => 'reporting',
-            'sort_order' => 2,
+            'sort_order' => 5,
         ]);
 
         // Beranda (self-service) lives in the BACKEND area, not the BOD front dashboard.
@@ -139,6 +166,9 @@ class MenuSeeder extends Seeder
         if ($reporting) {
             $reporting->menus()->syncWithoutDetaching([
                 $dashboard->id => ['can_view' => true],
+                $finance->id => ['can_view' => true],
+                $stock->id => ['can_view' => true],
+                $cost->id => ['can_view' => true],
                 $analytics->id => ['can_view' => true],
             ]);
         }
