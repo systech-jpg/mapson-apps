@@ -305,6 +305,12 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                                         <TableCell className="text-right whitespace-nowrap font-medium">{num(r.saldo)}</TableCell>
                                                     </TableRow>
                                                 ))}
+                                                <TableRow className="border-t bg-muted/30 font-medium">
+                                                    <TableCell colSpan={3} className="text-right">Total mutasi {detail.year}</TableCell>
+                                                    <TableCell className="text-right whitespace-nowrap text-emerald-600">{num(detail.accurate.card.rows.reduce((s, r) => s + r.masuk, 0))}</TableCell>
+                                                    <TableCell className="text-right whitespace-nowrap text-red-600">{num(detail.accurate.card.rows.reduce((s, r) => s + r.keluar, 0))}</TableCell>
+                                                    <TableCell />
+                                                </TableRow>
                                                 <TableRow className="border-t-2 bg-muted/60 font-semibold">
                                                     <TableCell colSpan={5}>Saldo akhir (= stok Accurate)</TableCell>
                                                     <TableCell className="text-right whitespace-nowrap text-amber-600">{num(detail.accurate.qty)}</TableCell>
