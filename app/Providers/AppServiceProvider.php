@@ -2,12 +2,14 @@
 
 namespace App\Providers;
 
+use App\Models\ErpSetting;
 use App\Models\User;
 use App\Repositories\Contracts\HolidayRepositoryInterface;
 use App\Repositories\Eloquent\EloquentHolidayRepository;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -34,5 +36,16 @@ class AppServiceProvider extends ServiceProvider
         // Super admins bypass every authorization check. Returning null lets
         // non-super users fall through to the normal gate/policy resolution.
         Gate::before(fn (User $user) => $user->isSuperAdmin() ? true : null);
+
+        // If an active ERP setting exists, override the .env-based 'erp' connection
+        // at runtime. Falls back silently to .env when the table/row is absent.
+        try {
+            $erp = ErpSetting::query()->where('is_active', true)->first();
+            if ($erp && filled($erp->host)) {
+                $erp->applyToConfig();
+            }
+        } catch (Throwable) {
+            // table not migrated yet / DB unavailable → keep .env defaults
+        }
     }
 }

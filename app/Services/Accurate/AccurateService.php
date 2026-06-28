@@ -435,6 +435,51 @@ class AccurateService
     }
 
     /**
+     * Per-item stock mutation history (kartu stok) for a date range (dd/MM/yyyy).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function stockMutationHistory(AccurateSetting $s, int $itemId, string $from, string $to, int $maxPages = 30): array
+    {
+        $all = [];
+        $page = 1;
+        $pageCount = 1;
+
+        do {
+            try {
+                $j = $this->apiGet($s, 'item/stock-mutation-history.do', [
+                    'id' => $itemId,
+                    'fromDate' => $from,
+                    'toDate' => $to,
+                    'sp.page' => $page,
+                    'sp.pageSize' => 100,
+                ]);
+            } catch (Throwable) {
+                break;
+            }
+
+            if (($j['s'] ?? false) !== true || ! is_array($j['d'] ?? null)) {
+                break;
+            }
+
+            foreach ($j['d'] as $r) {
+                $all[] = [
+                    'date' => $r['transactionDate'] ?? null,
+                    'type' => $r['transactionType'] ?? null,
+                    'number' => $r['transactionNumber'] ?? null,
+                    'warehouse' => $r['warehouseName'] ?? null,
+                    'qty' => (float) ($r['mutation'] ?? 0),
+                ];
+            }
+
+            $pageCount = (int) ($j['sp']['pageCount'] ?? 1);
+            $page++;
+        } while ($page <= $pageCount && $page <= $maxPages);
+
+        return $all;
+    }
+
+    /**
      * Quick connection test (db-list).
      *
      * @return array{ok: bool, message: string}

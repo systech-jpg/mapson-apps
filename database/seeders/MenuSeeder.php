@@ -150,16 +150,25 @@ class MenuSeeder extends Seeder
             'icon' => 'DatabaseZap',
             'sort_order' => 6,
         ]);
-        $this->menu(['key' => 'data-integration', 'title' => 'ERP', 'route' => 'integration.index', 'icon' => 'Database', 'sort_order' => 1], $integrasi->id);
+        // Sub-module: ERP (Dolibarr) — Sales + Stok dipisah agar paginasi tidak bentrok.
+        $erp = $this->menu(['key' => 'erp', 'title' => 'ERP', 'route' => null, 'icon' => 'Database', 'sort_order' => 1], $integrasi->id);
+        $this->menu(['key' => 'erp-setting', 'title' => 'Setting', 'route' => 'erp.settings', 'icon' => 'Settings', 'sort_order' => 1], $erp->id);
+        $this->menu(['key' => 'data-integration', 'title' => 'Sales', 'route' => 'integration.index', 'icon' => 'ShoppingCart', 'sort_order' => 2], $erp->id);
+        $this->menu(['key' => 'erp-stock', 'title' => 'Stok', 'route' => 'integration.stock', 'icon' => 'Boxes', 'sort_order' => 3], $erp->id);
 
         // Sub-module: Accurate (menu lain menyusul).
         $accurate = $this->menu(['key' => 'accurate', 'title' => 'Accurate', 'route' => null, 'icon' => 'Plug', 'sort_order' => 2], $integrasi->id);
         $this->menu(['key' => 'accurate-setting', 'title' => 'Setting', 'route' => 'accurate.settings', 'icon' => 'Settings', 'sort_order' => 1], $accurate->id);
         $this->menu(['key' => 'accurate-sales', 'title' => 'Penjualan', 'route' => 'accurate.sales', 'icon' => 'ShoppingCart', 'sort_order' => 2], $accurate->id);
+        $this->menu(['key' => 'accurate-staging', 'title' => 'Staging Data', 'route' => 'accurate.staging', 'icon' => 'Database', 'sort_order' => 3], $accurate->id);
+        $this->menu(['key' => 'accurate-stock', 'title' => 'Stok', 'route' => 'accurate.stock', 'icon' => 'Boxes', 'sort_order' => 4], $accurate->id);
 
         // Sub-module: Hadirr (attendance).
         $hadirr = $this->menu(['key' => 'hadirr', 'title' => 'Hadirr', 'route' => null, 'icon' => 'Fingerprint', 'sort_order' => 3], $integrasi->id);
         $this->menu(['key' => 'hadirr-setting', 'title' => 'Setting', 'route' => 'hadirr.settings', 'icon' => 'Settings', 'sort_order' => 1], $hadirr->id);
+
+        // Stock reconciliation ERP vs Accurate (own leaf under Integrasi Data).
+        $this->menu(['key' => 'stock-recon', 'title' => 'Rekon Data Stok', 'route' => 'stock.recon', 'icon' => 'Layers', 'sort_order' => 4], $integrasi->id);
 
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();

@@ -7,7 +7,9 @@ use App\Http\Controllers\Admin\HadirrController;
 use App\Http\Controllers\Admin\HrSettingController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
+use App\Http\Controllers\Admin\ErpSettingController;
 use App\Http\Controllers\Admin\IntegrationController;
+use App\Http\Controllers\Admin\StockReconController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\EmployeeSubDataController;
@@ -48,6 +50,11 @@ Route::middleware(['auth'])->group(function () {
     // Data Integration (ERP stock & sales)
     Route::get('integration', [IntegrationController::class, 'index'])->middleware('menu.access:data-integration,view')->name('integration.index');
     Route::post('integration/sync-sales', [IntegrationController::class, 'syncSales'])->middleware('menu.access:data-integration,edit')->name('integration.sync-sales');
+    Route::get('integration/erp/settings', [ErpSettingController::class, 'settings'])->middleware('menu.access:erp-setting,view')->name('erp.settings');
+    Route::put('integration/erp/settings', [ErpSettingController::class, 'update'])->middleware('menu.access:erp-setting,edit')->name('erp.settings.update');
+    Route::post('integration/erp/test', [ErpSettingController::class, 'test'])->middleware('menu.access:erp-setting,view')->name('erp.test');
+    Route::get('integration/stock', [IntegrationController::class, 'stock'])->middleware('menu.access:erp-stock,view')->name('integration.stock');
+    Route::post('integration/sync-stock', [IntegrationController::class, 'syncStock'])->middleware('menu.access:erp-stock,edit')->name('integration.sync-stock');
 
     // Data Integration → Accurate
     Route::get('integration/accurate/settings', [AccurateController::class, 'settings'])->middleware('menu.access:accurate-setting,view')->name('accurate.settings');
@@ -61,6 +68,16 @@ Route::middleware(['auth'])->group(function () {
     Route::get('integration/accurate/sales', [AccurateController::class, 'salesPage'])->middleware('menu.access:accurate-sales,view')->name('accurate.sales');
     Route::get('integration/accurate/sales/data', [AccurateController::class, 'salesData'])->middleware('menu.access:accurate-sales,view')->name('accurate.sales.data');
     Route::get('integration/accurate/sales/{id}/detail', [AccurateController::class, 'salesDetail'])->whereNumber('id')->middleware('menu.access:accurate-sales,view')->name('accurate.sales.detail');
+    Route::get('integration/accurate/staging', [AccurateController::class, 'staging'])->middleware('menu.access:accurate-staging,view')->name('accurate.staging');
+    Route::post('integration/accurate/staging/sync', [AccurateController::class, 'stagingSync'])->middleware('menu.access:accurate-staging,edit')->name('accurate.staging.sync');
+    Route::post('integration/accurate/staging/sync-movements', [AccurateController::class, 'stockMovementsSync'])->middleware('menu.access:accurate-staging,edit')->name('accurate.staging.sync-movements');
+    Route::get('integration/accurate/staging/export', [AccurateController::class, 'stagingExport'])->middleware('menu.access:accurate-staging,view')->name('accurate.staging.export');
+    Route::get('integration/accurate/stock', [AccurateController::class, 'stock'])->middleware('menu.access:accurate-stock,view')->name('accurate.stock');
+    Route::post('integration/accurate/stock/sync', [AccurateController::class, 'stockSync'])->middleware('menu.access:accurate-stock,edit')->name('accurate.stock.sync');
+    Route::get('integration/accurate/stock/export', [AccurateController::class, 'stockExport'])->middleware('menu.access:accurate-stock,view')->name('accurate.stock.export');
+    Route::get('stock-recon', [StockReconController::class, 'index'])->middleware('menu.access:stock-recon,view')->name('stock.recon');
+    Route::get('stock-recon/export', [StockReconController::class, 'export'])->middleware('menu.access:stock-recon,view')->name('stock.recon.export');
+    Route::get('stock-recon/detail', [StockReconController::class, 'detail'])->middleware('menu.access:stock-recon,view')->name('stock.recon.detail');
 
     // Data Integration → Hadirr
     Route::get('integration/hadirr/settings', [HadirrController::class, 'settings'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.settings');
