@@ -108,6 +108,41 @@ class ErpStockSyncService
         return DB::connection(config('erp.connection'))->select($sql);
     }
 
+    /**
+     * Tindakan/usage entries for $productId where the item is in the kit but qty_used = 0,
+     * limited to the given SJ refs. Used so a delivery note (SJ) that exists in ERP as a
+     * tindakan still appears as a comparison row (ERP qty 0) against the Accurate SJ, even
+     * though nothing was consumed. Keyed by SJ; qty is implicitly 0.
+     *
+     * @param  list<string>  $sjRefs
+     * @return array<int, object>
+     */
+    public function usageZeroBySj(int $productId, ?string $from, ?string $to, array $sjRefs): array
+    {
+        $sjRefs = array_values(array_filter(array_unique($sjRefs)));
+        if (! $sjRefs) {
+            return [];
+        }
+        $p = config('erp.prefix');
+        $id = (int) $productId;
+        $start = ($from ?: '1970-01-01').' 00:00:00';
+        $end = ($to ?: now()->toDateString()).' 23:59:59';
+        $in = implode(',', array_fill(0, count($sjRefs), '?'));
+
+        $sql = "SELECT t.ref_sj AS do_ref, MAX(ur.date_creation) AS dt, COUNT(*) AS ln
+                FROM {$p}usage_report_det urd
+                JOIN {$p}usage_report ur ON ur.rowid = urd.fk_usage_report
+                JOIN {$p}tindakan t ON t.id = ur.fk_tindakan
+                LEFT JOIN {$p}product_association pa ON pa.fk_product_pere = urd.fk_product
+                LEFT JOIN {$p}product_association pa2 ON pa2.fk_product_pere = pa.fk_product_fils
+                WHERE COALESCE(pa2.fk_product_fils, pa.fk_product_fils, urd.fk_product) = {$id}
+                  AND urd.qty_used = 0 AND ur.date_creation BETWEEN ? AND ?
+                  AND t.ref_sj IN ({$in})
+                GROUP BY t.ref_sj";
+
+        return DB::connection(config('erp.connection'))->select($sql, array_merge([$start, $end], $sjRefs));
+    }
+
     private function query(string $asOf): string
     {
         $p = config('erp.prefix');

@@ -158,6 +158,23 @@ class StockReconController extends Controller
         }
         $accDocs = array_values($accDocsMap);
 
+        // Surface SJ that exist in ERP as a tindakan but consumed 0 of this item, so they still
+        // appear as a comparison row (ERP qty 0) opposite the Accurate SJ. Only for SJ present on
+        // the Accurate side and not already on the ERP side — avoids noise.
+        if ($erpRow) {
+            $erpDoNumbers = array_column(array_filter($erpDocs, fn ($d) => $d['category'] === 'DO'), 'doc');
+            $accSj = array_values(array_diff(
+                array_column(array_filter($accDocs, fn ($d) => $d['type'] === 'DO'), 'doc'),
+                $erpDoNumbers
+            ));
+            foreach ($erp->usageZeroBySj((int) $erpRow->erp_product_id, $yearStart, $to->toDateString(), $accSj) as $z) {
+                if (blank($z->do_ref)) {
+                    continue;
+                }
+                $erpDocs[] = ['doc' => $z->do_ref, 'category' => 'DO', 'qty' => 0.0, 'lines' => (int) $z->ln, 'date' => substr((string) $z->dt, 0, 10)];
+            }
+        }
+
         // Kartu stok Accurate: per document, chronological, running balance anchored to live qty.
         $card = $accDocs;
         usort($card, fn ($a, $b) => strcmp((string) $a['date'], (string) $b['date']));
