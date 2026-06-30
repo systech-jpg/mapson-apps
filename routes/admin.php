@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\ErpSettingController;
 use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\StockReconController;
+use App\Http\Controllers\Admin\StocktakeReconController;
 use App\Http\Controllers\Admin\DepartmentController;
 use App\Http\Controllers\Admin\EmployeeController;
 use App\Http\Controllers\Admin\EmployeeSubDataController;
@@ -78,6 +79,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('stock-recon', [StockReconController::class, 'index'])->middleware('menu.access:stock-recon,view')->name('stock.recon');
     Route::get('stock-recon/export', [StockReconController::class, 'export'])->middleware('menu.access:stock-recon,view')->name('stock.recon.export');
     Route::get('stock-recon/detail', [StockReconController::class, 'detail'])->middleware('menu.access:stock-recon,view')->name('stock.recon.detail');
+
+    Route::get('stocktake-recon', [StocktakeReconController::class, 'index'])->middleware('menu.access:stocktake-recon,view')->name('stocktake.recon');
+    Route::get('stocktake-recon/export', [StocktakeReconController::class, 'export'])->middleware('menu.access:stocktake-recon,view')->name('stocktake.recon.export');
+    Route::post('stocktake-recon/import', [StocktakeReconController::class, 'import'])->middleware('menu.access:stocktake-recon,edit')->name('stocktake.recon.import');
+    Route::post('stocktake-recon/sync-erp', [StocktakeReconController::class, 'syncFromErp'])->middleware('menu.access:stocktake-recon,edit')->name('stocktake.recon.sync-erp');
 
     // Data Integration → Hadirr
     Route::get('integration/hadirr/settings', [HadirrController::class, 'settings'])->middleware('menu.access:hadirr-setting,view')->name('hadirr.settings');

@@ -1,0 +1,1 @@
+import{j as n}from"./app-a8od-tpE.js";import{u as i}from"./use-permissions-C9p1Uosu.js";function u({on:r,do:s="view",children:o,fallback:t=null}){const{can:e}=i();return n.jsx(n.Fragment,{children:e(r,s)?o:t})}export{u as C};

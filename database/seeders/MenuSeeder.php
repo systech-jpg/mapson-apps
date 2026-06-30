@@ -170,6 +170,9 @@ class MenuSeeder extends Seeder
         // Stock reconciliation ERP vs Accurate (own leaf under Integrasi Data).
         $this->menu(['key' => 'stock-recon', 'title' => 'Rekon Data Stok', 'route' => 'stock.recon', 'icon' => 'Layers', 'sort_order' => 4], $integrasi->id);
 
+        // 3-way reconciliation: ERP vs Accurate vs physical stocktake.
+        $this->menu(['key' => 'stocktake-recon', 'title' => 'Rekon vs Stocktake', 'route' => 'stocktake.recon', 'icon' => 'ClipboardCheck', 'sort_order' => 5], $integrasi->id);
+
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();
         if ($reporting) {
