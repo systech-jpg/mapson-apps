@@ -29,8 +29,9 @@ use App\Http\Controllers\Admin\OvertimeApprovalController;
 use App\Http\Controllers\Admin\OvertimeController;
 use App\Http\Controllers\Admin\OvertimeSettingController;
 use App\Http\Controllers\Admin\PositionController;
-use App\Http\Controllers\Admin\PricingController;
-use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\PricelistController;
+use App\Http\Controllers\Admin\PricingApprovalController;
+use App\Http\Controllers\Admin\PricingEngineController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
@@ -136,17 +137,23 @@ Route::middleware(['auth'])->group(function () {
     Route::put('hr-settings/attend-tiers/{tier}', [HrSettingController::class, 'updateAttendTier'])->middleware('menu.access:hr-settings,edit')->name('hr-settings.attend-tiers.update');
     Route::delete('hr-settings/attend-tiers/{tier}', [HrSettingController::class, 'destroyAttendTier'])->middleware('menu.access:hr-settings,delete')->name('hr-settings.attend-tiers.destroy');
 
-    // Finance — Pricing Engine
-    Route::get('finance/pricing', [PricingController::class, 'index'])->middleware('menu.access:pricing-engine,view')->name('pricing.index');
-    Route::post('finance/pricing/approval', [PricingController::class, 'storeApproval'])->middleware('menu.access:pricing-engine,create')->name('pricing.storeApproval');
-    Route::get('finance/pricing/approvals', [PricingController::class, 'approvals'])->middleware('menu.access:pricing-approvals,view')->name('pricing.approvals');
-    Route::post('finance/pricing/approvals/{approval}/approve', [PricingController::class, 'approve'])->middleware('menu.access:pricing-approvals,edit')->name('pricing.approve');
-    Route::post('finance/pricing/approvals/{approval}/reject', [PricingController::class, 'reject'])->middleware('menu.access:pricing-approvals,edit')->name('pricing.reject');
+    // Finance — Pricing Engine (profile-based, editable grid + Excel upload)
+    Route::get('finance/pricing-engine', [PricingEngineController::class, 'index'])->middleware('menu.access:pricing-engine,view')->name('pricing-engine.index');
+    Route::post('finance/pricing-engine/principal', [PricingEngineController::class, 'storePrincipal'])->middleware('menu.access:pricing-engine,create')->name('pricing-engine.principal');
+    Route::post('finance/pricing-engine/save', [PricingEngineController::class, 'save'])->middleware('menu.access:pricing-engine,edit')->name('pricing-engine.save');
+    Route::get('finance/pricing-engine/history', [PricingEngineController::class, 'history'])->middleware('menu.access:pricing-engine,view')->name('pricing-engine.history');
+    Route::post('finance/pricing-engine/submit', [PricingApprovalController::class, 'submit'])->middleware('menu.access:pricing-engine,edit')->name('pricing-engine.submit');
 
-    // Finance — Data Produk
-    Route::get('finance/products', [ProductController::class, 'index'])->middleware('menu.access:finance-products,view')->name('finance.products.index');
-    Route::post('finance/products', [ProductController::class, 'store'])->middleware('menu.access:finance-products,create')->name('finance.products.store');
-    Route::delete('finance/products/{product}', [ProductController::class, 'destroy'])->middleware('menu.access:finance-products,delete')->name('finance.products.destroy');
+    // Finance — Persetujuan Harga (CEO)
+    Route::get('finance/pricing-approval', [PricingApprovalController::class, 'index'])->middleware('menu.access:pricing-approval,view')->name('pricing-approval.index');
+    Route::post('finance/pricing-approval/{submission}/approve', [PricingApprovalController::class, 'approve'])->middleware('menu.access:pricing-approval,edit')->name('pricing-approval.approve');
+    Route::post('finance/pricing-approval/{submission}/reject', [PricingApprovalController::class, 'reject'])->middleware('menu.access:pricing-approval,edit')->name('pricing-approval.reject');
+    Route::post('finance/pricing-approval/item/{item}', [PricingApprovalController::class, 'decideItem'])->middleware('menu.access:pricing-approval,edit')->name('pricing-approval.item');
+    Route::post('finance/pricing-approval/{submission}/attach', [PricingApprovalController::class, 'attach'])->middleware('menu.access:pricing-approval,edit')->name('pricing-approval.attach');
+    Route::get('finance/pricing-attachment/{attachment}', [PricingApprovalController::class, 'download'])->name('pricing-approval.download');
+
+    // Finance — Pricelist (approved prices, read-only + history + attachments)
+    Route::get('finance/pricelist', [PricelistController::class, 'index'])->middleware('menu.access:pricelist,view')->name('pricelist.index');
 
     // Attend Case (read from ERP).
     Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');

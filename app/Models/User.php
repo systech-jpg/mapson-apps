@@ -73,6 +73,24 @@ class User extends Authenticatable
         return (bool) $this->role?->is_super;
     }
 
+    /** Current position code of the linked employee (e.g. CEO, HFO), or null. */
+    public function positionCode(): ?string
+    {
+        return $this->employee?->currentPosition?->code;
+    }
+
+    /** Pricing pengaju = Head of Finance (HFO). Super admin may also submit. */
+    public function canSubmitPricing(): bool
+    {
+        return $this->isSuperAdmin() || $this->positionCode() === 'HFO';
+    }
+
+    /** Pricing approver = Direktur Utama / CEO. Super admin may also approve. */
+    public function canApprovePricing(): bool
+    {
+        return $this->isSuperAdmin() || $this->positionCode() === 'CEO';
+    }
+
     /**
      * Build (and memoize) the permission map from the user's role menus.
      *
