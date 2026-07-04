@@ -277,7 +277,7 @@ class PricingEngineController extends Controller
             'profile' => ['nullable', 'string'],
         ]);
 
-        $principal = $data['erp_societe_id']
+        $principal = ($data['erp_societe_id'] ?? null)
             ? PricingPrincipal::updateOrCreate(['erp_societe_id' => $data['erp_societe_id']], ['name' => $data['name']])
             : PricingPrincipal::create(['name' => $data['name']]);
 
@@ -297,7 +297,7 @@ class PricingEngineController extends Controller
             'principal' => ['nullable', 'integer'],
         ]);
 
-        $hospital = $data['erp_societe_id']
+        $hospital = ($data['erp_societe_id'] ?? null)
             ? PricingHospital::updateOrCreate(['erp_societe_id' => $data['erp_societe_id']], ['name' => $data['name']])
             : PricingHospital::create(['name' => $data['name']]);
 
