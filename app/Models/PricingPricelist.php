@@ -31,6 +31,16 @@ class PricingPricelist extends Model
         return $this->belongsTo(PricingProfile::class, 'profile_id');
     }
 
+    public function hospital(): BelongsTo
+    {
+        return $this->belongsTo(PricingHospital::class, 'hospital_id');
+    }
+
+    public function price(): BelongsTo
+    {
+        return $this->belongsTo(PricingProductPrice::class, 'price_id');
+    }
+
     public function submission(): BelongsTo
     {
         return $this->belongsTo(PricingSubmission::class, 'submission_id');

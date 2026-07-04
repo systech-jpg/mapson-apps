@@ -23,7 +23,7 @@ interface Profile {
     default_ops_pct: string; default_profit_pct: string; default_komisi_pct: string;
     default_event_pct: string; default_lainnya_pct: string; default_buffer_pct: string;
 }
-interface Principal { id: number | null; erp_societe_id: number | null; name: string; source: 'app' | 'erp' }
+interface Principal { id: number | null; erp_societe_id: number | null; name: string; source: 'app' | 'erp'; type?: string | null }
 interface Category { id: number; label: string; parent_id: number }
 interface Currency { code: string; name: string | null; rate_to_idr: string | number }
 
@@ -65,8 +65,11 @@ interface Props {
     selectedProfile: string | null;
     principals: Principal[];
     selectedPrincipal: { id: number; name: string } | null;
+    hospitals: Principal[];
+    selectedHospital: { id: number; name: string } | null;
     rows: Row[];
     copyableProfiles: { id: number; name: string; count: number }[];
+    baseCount: number;
     categories: Category[];
     currencies: Currency[];
     canSubmit: boolean;
@@ -174,7 +177,7 @@ const TEMPLATE_HEADERS = [
     'BM %', 'PPh22 %', 'PPN %', 'Shipment %', 'Ops % (D)', 'Profit % (F)', 'Komisi % (H)', 'Event % (I)', 'Lainnya % (J)', 'Maks Discount % (M)',
 ];
 
-export default function PricingEngineIndex({ profiles, selectedProfile, principals, selectedPrincipal, rows: initialRows, copyableProfiles, categories, currencies, canSubmit, draftCount }: Props) {
+export default function PricingEngineIndex({ profiles, selectedProfile, principals, selectedPrincipal, hospitals, selectedHospital, rows: initialRows, copyableProfiles, baseCount, categories, currencies, canSubmit, draftCount }: Props) {
     const profile = profiles.find((p) => p.code === selectedProfile) ?? profiles[0];
 
     const defaultsFromProfile = (p: Profile): Record<HeaderKey, number> => ({
@@ -219,18 +222,23 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         _dirty: true,
     });
 
-    // ---- profile / principal navigation ----
-    const changeProfile = (code: string) => router.get(route('pricing-engine.index'), { profile: code, principal: selectedPrincipal?.id }, { preserveScroll: true });
+    // ---- profile / principal / hospital navigation (hospital carried through everywhere) ----
+    const nav = (extra: Record<string, unknown>) => router.get(route('pricing-engine.index'), { profile: selectedProfile, principal: selectedPrincipal?.id, hospital: selectedHospital?.id, ...extra }, { preserveScroll: true });
+    const changeProfile = (code: string) => nav({ profile: code });
     const changePrincipal = (p: Principal) => {
-        if (p.source === 'app' && p.id) {
-            router.get(route('pricing-engine.index'), { profile: selectedProfile, principal: p.id }, { preserveScroll: true });
-        } else {
-            router.post(route('pricing-engine.principal'), { name: p.name, erp_societe_id: p.erp_societe_id, profile: selectedProfile });
-        }
+        if (p.source === 'app' && p.id) nav({ principal: p.id });
+        else router.post(route('pricing-engine.principal'), { name: p.name, erp_societe_id: p.erp_societe_id, profile: selectedProfile });
     };
     const addPrincipal = () => {
         const name = window.prompt('Nama principal baru:');
         if (name?.trim()) router.post(route('pricing-engine.principal'), { name: name.trim(), profile: selectedProfile });
+    };
+    // Hospitals come from Dolibarr (client=1, hospital types) — no in-app creation. Picking an
+    // ERP hospital links it (creates a pricing_hospitals mirror row) so prices can reference it.
+    const changeHospital = (p: Principal | null) => {
+        if (!p) nav({ hospital: undefined });                       // Semua RS (base)
+        else if (p.source === 'app' && p.id) nav({ hospital: p.id });
+        else router.post(route('pricing-engine.hospital'), { name: p.name, erp_societe_id: p.erp_societe_id, profile: selectedProfile, principal: selectedPrincipal?.id });
     };
 
     // ---- header + override mechanics ----
@@ -253,9 +261,9 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
             : r)));
     };
 
-    // Copy = server reload: load the source profile's products (with its sell params) as drafts.
-    const copyFromProfile = (sourceProfileId: string) =>
-        router.get(route('pricing-engine.index'), { profile: selectedProfile, principal: selectedPrincipal?.id, copy_from: sourceProfileId }, { preserveScroll: true });
+    // Copy = server reload: load a source (profile / base) into the current context as drafts.
+    const copyFromProfile = (sourceProfileId: string) => nav({ copy_from: sourceProfileId });
+    const copyFromBase = () => nav({ copy_from: 'base' });
 
     // Changing a category resets the deeper ones (cascading dropdowns).
     const updateCat = (i: number, level: number, value: string) => {
@@ -376,6 +384,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         router.post(route('pricing-engine.save'), {
             profile_id: profile.id,
             principal_id: selectedPrincipal.id,
+            hospital_id: selectedHospital?.id ?? null,
             rows: dirtyRows as unknown as Record<string, unknown>[],
         } as never, { preserveScroll: true, onStart: () => setSaving(true), onFinish: () => setSaving(false) });
     };
@@ -392,6 +401,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         router.post(route('pricing-engine.submit'), {
             principal_id: selectedPrincipal.id,
             profile_id: profile.id,
+            hospital_id: selectedHospital?.id ?? null,
             note: submitNote,
             attachments: submitFiles,
         } as never, {
@@ -476,6 +486,15 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                         <PrincipalCombobox principals={principals} selected={selectedPrincipal} onPick={changePrincipal} />
                     </div>
                     <Button variant="outline" size="sm" onClick={addPrincipal}><Building2 className="mr-1 h-4 w-4" /> Principal baru</Button>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-muted-foreground">Rumah Sakit (opsional)</label>
+                        <HospitalCombobox hospitals={hospitals} selected={selectedHospital} onPick={changeHospital} />
+                    </div>
+                    <div className="text-xs">
+                        {selectedHospital
+                            ? <span className="rounded bg-sky-100 px-2 py-1 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">Harga khusus RS: {selectedHospital.name}</span>
+                            : <span className="rounded bg-muted px-2 py-1 text-muted-foreground">Harga base (semua RS)</span>}
+                    </div>
                 </div>
 
                 {!ready && <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Pilih profil dan principal untuk mulai. Data yang sudah ada akan dimuat; jika belum, tambah baris atau upload Excel.</div>}
@@ -488,6 +507,11 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}><Upload className="mr-1 h-4 w-4" /> Upload Excel</Button>
                             <Button variant="ghost" size="sm" onClick={downloadTemplate}><FileDown className="mr-1 h-4 w-4" /> Download Template</Button>
                             <Button variant="outline" size="sm" onClick={addRow}><Plus className="mr-1 h-4 w-4" /> Tambah baris</Button>
+                            {selectedHospital && baseCount > 0 && (
+                                <Button variant="outline" size="sm" onClick={() => { if (window.confirm(`Salin ${baseCount} harga base (semua RS) ke RS "${selectedHospital.name}" sebagai draft? Data grid saat ini diganti.`)) copyFromBase(); }}>
+                                    <FileDown className="mr-1 h-4 w-4" /> Salin dari Base ({baseCount})
+                                </Button>
+                            )}
                             {copyableProfiles.length > 0 && (
                                 <div className="flex items-center gap-1 rounded-md border px-2 py-1">
                                     <span className="text-xs text-muted-foreground">Copy harga dari:</span>
@@ -638,7 +662,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                 <DialogContent className="max-w-md">
                     <DialogHeader><DialogTitle>Ajukan Approval Harga</DialogTitle></DialogHeader>
                     <div className="space-y-3 text-sm">
-                        <p className="text-muted-foreground">Mengajukan <b>{draftCount}</b> harga draft profil <b>{profile?.name}</b> untuk principal <b>{selectedPrincipal?.name}</b> ke Direktur Utama.</p>
+                        <p className="text-muted-foreground">Mengajukan <b>{draftCount}</b> harga draft profil <b>{profile?.name}</b> · principal <b>{selectedPrincipal?.name}</b> · <b>{selectedHospital?.name ?? 'Semua RS (base)'}</b> ke Direktur Utama.</p>
                         <div>
                             <label className="mb-1 block text-xs font-medium">Dasar pengajuan (opsional)</label>
                             <textarea value={submitNote} onChange={(e) => setSubmitNote(e.target.value)} rows={3} className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm" placeholder="Catatan / alasan pengajuan…" />
@@ -775,6 +799,45 @@ function PrincipalCombobox({ principals, selected, onPick }: { principals: Princ
                         >
                             <span className="truncate">{p.name}</span>
                             {p.source === 'erp' && <span className="ml-2 shrink-0 text-[10px] text-muted-foreground">ERP</span>}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Hospital picker — like the principal combobox but with a "Semua RS (Base)" clear option.
+function HospitalCombobox({ hospitals, selected, onPick }: { hospitals: Principal[]; selected: { id: number; name: string } | null; onPick: (p: Principal | null) => void }) {
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState('');
+    const filtered = useMemo(() => {
+        const s = q.trim().toLowerCase();
+        return (s ? hospitals.filter((p) => p.name.toLowerCase().includes(s)) : hospitals).slice(0, 50);
+    }, [q, hospitals]);
+
+    return (
+        <div className="relative w-72">
+            <input
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                placeholder={selected?.name ?? 'Semua RS (Base)'}
+                value={open ? q : (selected?.name ?? '')}
+                onFocus={() => { setOpen(true); setQ(''); }}
+                onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+                onBlur={() => setTimeout(() => setOpen(false), 150)}
+            />
+            {open && (
+                <div className="absolute z-50 mt-1 max-h-72 w-full overflow-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                    <button type="button" onMouseDown={(e) => { e.preventDefault(); onPick(null); setOpen(false); setQ(''); }}
+                        className="flex w-full items-center rounded px-2 py-1.5 text-left text-sm italic text-muted-foreground hover:bg-accent">
+                        Semua RS (Base)
+                    </button>
+                    {filtered.map((p) => (
+                        <button key={p.id ?? `erp:${p.erp_societe_id}`} type="button"
+                            onMouseDown={(e) => { e.preventDefault(); onPick(p); setOpen(false); setQ(''); }}
+                            className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent ${selected?.id === p.id ? 'bg-accent' : ''}`}>
+                            <span className="truncate">{p.name}</span>
+                            {p.type && <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground">{p.type}</span>}
                         </button>
                     ))}
                 </div>

@@ -31,13 +31,16 @@ class PricingApprovalController extends Controller
         $data = $request->validate([
             'principal_id' => ['required', 'exists:pricing_principals,id'],
             'profile_id' => ['required', 'exists:pricing_profiles,id'],
+            'hospital_id' => ['nullable', 'exists:pricing_hospitals,id'],
             'note' => ['nullable', 'string', 'max:1000'],
             'attachments' => ['nullable', 'array'],
             'attachments.*' => ['file', 'mimes:pdf,jpg,jpeg,png,doc,docx,xls,xlsx', 'max:10240'],
         ]);
 
+        $hospitalId = $data['hospital_id'] ?? null;
         $prices = PricingProductPrice::whereHas('product', fn ($q) => $q->where('principal_id', $data['principal_id']))
             ->where('profile_id', $data['profile_id'])
+            ->where('hospital_id', $hospitalId)
             ->where('status', PricingProductPrice::STATUS_DRAFT)
             ->get();
 
@@ -45,10 +48,11 @@ class PricingApprovalController extends Controller
             return back()->with('error', 'Tidak ada harga draft untuk diajukan.');
         }
 
-        DB::transaction(function () use ($request, $data, $prices) {
+        DB::transaction(function () use ($request, $data, $hospitalId, $prices) {
             $submission = PricingSubmission::create([
                 'principal_id' => $data['principal_id'],
                 'profile_id' => $data['profile_id'],
+                'hospital_id' => $hospitalId,
                 'status' => PricingSubmission::STATUS_PENDING,
                 'note' => $data['note'] ?? null,
                 'submitted_by' => $request->user()->id,
@@ -93,7 +97,7 @@ class PricingApprovalController extends Controller
 
         $submissions = PricingSubmission::whereIn('status', $statuses)
             ->with([
-                'principal:id,name', 'profile:id,name', 'submitter:id,name', 'decider:id,name',
+                'principal:id,name', 'profile:id,name', 'hospital:id,name', 'submitter:id,name', 'decider:id,name',
                 'items.price.product',
                 'attachments',
             ])
@@ -115,6 +119,7 @@ class PricingApprovalController extends Controller
             'status' => $s->status,
             'principal' => $s->principal?->name,
             'profile' => $s->profile?->name,
+            'hospital' => $s->hospital?->name,   // null = base (semua RS)
             'note' => $s->note,
             'decision_note' => $s->decision_note,
             'submitter' => $s->submitter?->name,
@@ -246,12 +251,14 @@ class PricingApprovalController extends Controller
 
         PricingPricelist::where('product_id', $price->product_id)
             ->where('profile_id', $price->profile_id)
+            ->where('hospital_id', $price->hospital_id)
             ->where('is_active', true)
             ->update(['is_active' => false, 'effective_to' => $today]);
 
         PricingPricelist::create([
             'product_id' => $price->product_id,
             'profile_id' => $price->profile_id,
+            'hospital_id' => $price->hospital_id,
             'price_id' => $price->id,
             'submission_id' => $submission->id,
             'pricelist' => $price->pricelist,

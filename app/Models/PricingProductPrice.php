@@ -43,6 +43,11 @@ class PricingProductPrice extends Model
         return $this->belongsTo(PricingProfile::class, 'profile_id');
     }
 
+    public function hospital(): BelongsTo
+    {
+        return $this->belongsTo(PricingHospital::class, 'hospital_id');
+    }
+
     public function submissionItems(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
         return $this->hasMany(PricingSubmissionItem::class, 'price_id');

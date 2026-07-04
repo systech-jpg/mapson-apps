@@ -140,6 +140,7 @@ Route::middleware(['auth'])->group(function () {
     // Finance — Pricing Engine (profile-based, editable grid + Excel upload)
     Route::get('finance/pricing-engine', [PricingEngineController::class, 'index'])->middleware('menu.access:pricing-engine,view')->name('pricing-engine.index');
     Route::post('finance/pricing-engine/principal', [PricingEngineController::class, 'storePrincipal'])->middleware('menu.access:pricing-engine,create')->name('pricing-engine.principal');
+    Route::post('finance/pricing-engine/hospital', [PricingEngineController::class, 'storeHospital'])->middleware('menu.access:pricing-engine,create')->name('pricing-engine.hospital');
     Route::post('finance/pricing-engine/save', [PricingEngineController::class, 'save'])->middleware('menu.access:pricing-engine,edit')->name('pricing-engine.save');
     Route::get('finance/pricing-engine/history', [PricingEngineController::class, 'history'])->middleware('menu.access:pricing-engine,view')->name('pricing-engine.history');
     Route::post('finance/pricing-engine/submit', [PricingApprovalController::class, 'submit'])->middleware('menu.access:pricing-engine,edit')->name('pricing-engine.submit');
@@ -154,6 +155,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Finance — Pricelist (approved prices, read-only + history + attachments)
     Route::get('finance/pricelist', [PricelistController::class, 'index'])->middleware('menu.access:pricelist,view')->name('pricelist.index');
+    Route::get('finance/pricelist/export', [PricelistController::class, 'export'])->middleware('menu.access:pricelist,view')->name('pricelist.export');
 
     // Attend Case (read from ERP).
     Route::get('attend-case', [AttendCaseController::class, 'mine'])->middleware('menu.access:attend-mine,view')->name('attend-case.mine');

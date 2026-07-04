@@ -24,7 +24,7 @@ interface Detail {
 interface Item { id: number; status: string; sku_code: string | null; product_name: string | null; pricelist: number; detail: Detail | null }
 interface Attachment { id: number; kind: string; name: string }
 interface Submission {
-    id: number; status: string; principal: string | null; profile: string | null;
+    id: number; status: string; principal: string | null; profile: string | null; hospital: string | null;
     note: string | null; decision_note: string | null; submitter: string | null; decider: string | null;
     submitted_at: string | null; decided_at: string | null; items: Item[]; attachments: Attachment[];
 }
@@ -64,7 +64,7 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
                         <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
                             <div className="flex items-center gap-2 text-sm">
                                 <Badge s={s.status} />
-                                <b>{s.principal}</b> · {s.profile}
+                                <b>{s.principal}</b> · {s.profile} · <span className={s.hospital ? 'text-sky-700 dark:text-sky-300' : 'text-muted-foreground'}>{s.hospital ?? 'Semua RS'}</span>
                                 <span className="text-muted-foreground">— {s.items.length} item</span>
                             </div>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">

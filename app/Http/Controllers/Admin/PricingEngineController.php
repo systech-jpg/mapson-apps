@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
+use App\Models\PricingHospital;
 use App\Models\PricingPriceLog;
 use App\Models\PricingPrincipal;
 use App\Models\PricingProduct;
@@ -57,33 +58,45 @@ class PricingEngineController extends Controller
         $principalId = $request->string('principal')->toString();
         $principal = $principalId ? PricingPrincipal::find($principalId) : null;
 
+        // Hospital dimension: null = base price (berlaku semua RS); a hospital id = override.
+        $hospitalId = $request->filled('hospital') ? (int) $request->input('hospital') : null;
+        $hospital = $hospitalId ? PricingHospital::find($hospitalId) : null;
+        $hospitalId = $hospital?->id;   // drop invalid ids back to base
+
         $rows = [];
         $copyableProfiles = [];
+        $baseCount = 0;
         if ($principal && $profile) {
             $products = PricingProduct::where('principal_id', $principal->id)
                 ->with('prices')->orderBy('sku_code')->get();
 
-            // When copy_from is set, load the source profile's products (with its sell params)
-            // as drafts for the current profile. Otherwise show only rows priced in this profile
-            // (so an untouched profile starts empty).
+            // copy_from: '' (none) | 'base' (this profile's base → into current hospital) | a profile id.
             $copyFrom = $request->string('copy_from')->toString();
-            $source = $copyFrom ?: $profile->id;
+            $isCopy = $copyFrom !== '';
+            [$srcProfile, $srcHospital] = $copyFrom === 'base'
+                ? [$profile->id, null]
+                : ($isCopy ? [(int) $copyFrom, $hospitalId] : [$profile->id, $hospitalId]);
 
             $rows = $products
-                ->filter(fn (PricingProduct $p) => $p->prices->firstWhere('profile_id', $source))
-                ->map(fn (PricingProduct $p) => $copyFrom
-                    ? $this->serializeRowCopy($p, $profile->id, $copyFrom)
-                    : $this->serializeRow($p, $profile->id))
+                ->filter(fn (PricingProduct $p) => $this->priceOf($p, $srcProfile, $srcHospital))
+                ->map(fn (PricingProduct $p) => $isCopy
+                    ? $this->serializeRowCopy($p, $profile->id, $hospitalId, $srcProfile, $srcHospital)
+                    : $this->serializeRow($p, $profile->id, $hospitalId))
                 ->values()->all();
 
-            // Other profiles that already have prices for this principal (for the copy picker).
+            // Other profiles that already have prices for this principal + current hospital.
             $copyableProfiles = $profiles->filter(fn ($pr) => $pr->id !== $profile->id)
                 ->map(fn ($pr) => [
                     'id' => $pr->id,
                     'name' => $pr->name,
-                    'count' => $products->filter(fn (PricingProduct $p) => $p->prices->firstWhere('profile_id', $pr->id))->count(),
+                    'count' => $products->filter(fn (PricingProduct $p) => $this->priceOf($p, $pr->id, $hospitalId))->count(),
                 ])
                 ->filter(fn ($x) => $x['count'] > 0)->values()->all();
+
+            // For a hospital view: how many base (all-RS) prices exist to copy from.
+            if ($hospitalId) {
+                $baseCount = $products->filter(fn (PricingProduct $p) => $this->priceOf($p, $profile->id, null))->count();
+            }
         }
 
         return Inertia::render('pricing-engine/index', [
@@ -91,13 +104,24 @@ class PricingEngineController extends Controller
             'selectedProfile' => $profile?->code,
             'principals' => $this->principals(),
             'selectedPrincipal' => $principal ? ['id' => $principal->id, 'name' => $principal->name] : null,
+            'hospitals' => $this->hospitals(),
+            'selectedHospital' => $hospital ? ['id' => $hospital->id, 'name' => $hospital->name] : null,
             'rows' => $rows,
             'copyableProfiles' => $copyableProfiles,
+            'baseCount' => $baseCount,
             'categories' => $this->erpCategories(),
             'currencies' => Currency::orderBy('code')->get(['code', 'name', 'rate_to_idr']),
             'canSubmit' => $request->user()->canSubmitPricing(),
             'draftCount' => ($principal && $profile) ? collect($rows)->where('status', 'draft')->count() : 0,
         ]);
+    }
+
+    /** Find a product's price for a given profile + hospital (null hospital = base). */
+    private function priceOf(PricingProduct $p, int|string $profileId, ?int $hospitalId): ?PricingProductPrice
+    {
+        $hkey = (int) $hospitalId;
+
+        return $p->prices->first(fn (PricingProductPrice $pr) => $pr->profile_id == $profileId && (int) $pr->hospital_id === $hkey);
     }
 
     /** Sell-side params of one price row, keyed for the frontend "copy from profile" feature. */
@@ -116,10 +140,12 @@ class PricingEngineController extends Controller
         ];
     }
 
-    private function serializeRow(PricingProduct $p, string $profileId): array
+    private function serializeRow(PricingProduct $p, string $profileId, ?int $hospitalId): array
     {
-        $current = $p->prices->firstWhere('profile_id', $profileId);
-        $byProfile = $p->prices->mapWithKeys(fn (PricingProductPrice $pr) => [$pr->profile_id => $this->sellParams($pr)])->all();
+        $current = $this->priceOf($p, $profileId, $hospitalId);
+        // prices_by_profile is scoped to the current hospital (for the cross-profile copy picker).
+        $byProfile = $p->prices->filter(fn (PricingProductPrice $pr) => (int) $pr->hospital_id === (int) $hospitalId)
+            ->mapWithKeys(fn (PricingProductPrice $pr) => [$pr->profile_id => $this->sellParams($pr)])->all();
 
         return [
             'id' => $p->id,
@@ -138,12 +164,12 @@ class PricingEngineController extends Controller
         ];
     }
 
-    /** Row for the target profile but seeded with a source profile's sell params (copy feature). */
-    private function serializeRowCopy(PricingProduct $p, string $targetProfileId, string $sourceProfileId): array
+    /** Row for the target profile+hospital seeded with a source (profile,hospital) sell params. */
+    private function serializeRowCopy(PricingProduct $p, string $targetProfileId, ?int $targetHospitalId, int $sourceProfileId, ?int $sourceHospitalId): array
     {
-        $src = $p->prices->firstWhere('profile_id', $sourceProfileId);
+        $src = $this->priceOf($p, $sourceProfileId, $sourceHospitalId);
 
-        return array_merge($this->serializeRow($p, $targetProfileId), [
+        return array_merge($this->serializeRow($p, $targetProfileId, $targetHospitalId), [
             'price_id' => null,
             'status' => 'draft',
             'ops_pct' => (float) $src->ops_pct,
@@ -183,6 +209,40 @@ class PricingEngineController extends Controller
         }
 
         return [...$app, ...$vendors];
+    }
+
+    /** Third-party types (Dolibarr c_typent) that count as a "hospital" buyer. */
+    private const HOSPITAL_TYPE_CODES = ['MAP_CUSTPH', 'MAP_CUSTGO', 'MAP_CUSTCO']; // Private Hospital, Government, Corporate
+
+    /** App-linked hospitals + Dolibarr customers (client=1) of the hospital third-party types. */
+    private function hospitals(): array
+    {
+        $app = PricingHospital::orderBy('name')->get()
+            ->map(fn ($h) => ['id' => $h->id, 'erp_societe_id' => $h->erp_societe_id, 'name' => $h->name, 'source' => $h->erp_societe_id ? 'erp' : 'app', 'type' => null])
+            ->all();
+
+        $linked = collect($app)->pluck('erp_societe_id')->filter()->all();
+
+        $customers = [];
+        try {
+            $p = config('erp.prefix');
+            $entities = array_filter(array_map('trim', explode(',', (string) config('erp.entities', '1'))));
+            $customers = DB::connection(config('erp.connection'))->table($p.'societe as s')
+                ->join($p.'c_typent as t', 't.id', '=', 's.fk_typent')
+                ->where('s.client', 1)
+                ->whereIn('t.code', self::HOSPITAL_TYPE_CODES)
+                ->when($entities, fn ($q) => $q->whereIn('s.entity', $entities))
+                ->when($linked, fn ($q) => $q->whereNotIn('s.rowid', $linked))
+                ->orderBy('s.nom')
+                ->limit(3000)
+                ->get(['s.rowid as erp_societe_id', 's.nom as name', 't.libelle as type'])
+                ->map(fn ($v) => ['id' => null, 'erp_societe_id' => (int) $v->erp_societe_id, 'name' => $v->name, 'source' => 'erp', 'type' => $v->type])
+                ->all();
+        } catch (\Throwable) {
+            // ERP offline — app hospitals only.
+        }
+
+        return [...$app, ...$customers];
     }
 
     /** Dolibarr product category chain (flat: id, label, parent) for cascading dropdowns. */
@@ -227,21 +287,44 @@ class PricingEngineController extends Controller
         ]));
     }
 
-    /** Upsert the grid: product identity/cost + computed price for the chosen profile. */
+    /** Create or link a hospital (from a Dolibarr customer or manual entry), then open the grid. */
+    public function storeHospital(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'erp_societe_id' => ['nullable', 'integer'],
+            'profile' => ['nullable', 'string'],
+            'principal' => ['nullable', 'integer'],
+        ]);
+
+        $hospital = $data['erp_societe_id']
+            ? PricingHospital::updateOrCreate(['erp_societe_id' => $data['erp_societe_id']], ['name' => $data['name']])
+            : PricingHospital::create(['name' => $data['name']]);
+
+        return redirect()->route('pricing-engine.index', array_filter([
+            'profile' => $data['profile'] ?? null,
+            'principal' => $data['principal'] ?? null,
+            'hospital' => $hospital->id,
+        ]));
+    }
+
+    /** Upsert the grid: product identity/cost + computed price for the chosen profile + hospital. */
     public function save(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'profile_id' => ['required', 'exists:pricing_profiles,id'],
             'principal_id' => ['required', 'exists:pricing_principals,id'],
+            'hospital_id' => ['nullable', 'exists:pricing_hospitals,id'],
             'rows' => ['required', 'array', 'min:1'],
             'rows.*.sku_code' => ['required', 'string', 'max:255'],
             'rows.*.product_name' => ['required', 'string', 'max:255'],
         ]);
 
         $profile = PricingProfile::findOrFail($data['profile_id']);
+        $hospitalId = $data['hospital_id'] ?? null;
         $saved = 0;
 
-        DB::transaction(function () use ($request, $data, $profile, &$saved) {
+        DB::transaction(function () use ($request, $data, $profile, $hospitalId, &$saved) {
             foreach ($request->input('rows', []) as $row) {
                 if (blank($row['sku_code'] ?? null)) {
                     continue;
@@ -269,7 +352,8 @@ class PricingEngineController extends Controller
                 ]);
 
                 $existing = PricingProductPrice::where('product_id', $product->id)
-                    ->where('profile_id', $profile->id)->first();
+                    ->where('profile_id', $profile->id)
+                    ->where('hospital_id', $hospitalId)->first();
 
                 // Pending (awaiting approval) prices are locked. Approved prices may be revised —
                 // editing sends them back to draft; the published pricelist stays active until
@@ -281,7 +365,7 @@ class PricingEngineController extends Controller
                 $newValues = collect(self::PRICE_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->clean($f, $row[$f] ?? 0)])->all();
 
                 PricingProductPrice::updateOrCreate(
-                    ['product_id' => $product->id, 'profile_id' => $profile->id],
+                    ['product_id' => $product->id, 'profile_id' => $profile->id, 'hospital_id' => $hospitalId],
                     $newValues + [
                         'pricelist' => $calc['l_pricelist'],
                         'breakdown' => $calc,
@@ -297,7 +381,7 @@ class PricingEngineController extends Controller
 
         // Redirect to a clean URL (drop any ?copy_from=) so a reload shows the saved profile data.
         return redirect()
-            ->route('pricing-engine.index', ['profile' => $profile->code, 'principal' => $data['principal_id']])
+            ->route('pricing-engine.index', array_filter(['profile' => $profile->code, 'principal' => $data['principal_id'], 'hospital' => $hospitalId]))
             ->with('success', "Tersimpan — {$saved} baris harga (draft).");
     }
 
