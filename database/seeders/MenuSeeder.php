@@ -138,9 +138,16 @@ class MenuSeeder extends Seeder
 
         // Module: Finance.
         $finance = $this->menu(['key' => 'finance', 'title' => 'Finance', 'route' => null, 'icon' => 'Landmark', 'sort_order' => 5]);
+
+        // Retire the old pricing engine menus (routes removed) — prevents a Ziggy "route not in
+        // list" crash (blank screen) when a stale menu points to a deleted route. Cascades role_menu.
+        Menu::whereIn('key', ['pricing-approvals', 'finance-products', 'pricing-engine-v2'])->delete();
+
         $this->menu(['key' => 'pricing-engine', 'title' => 'Pricing Engine', 'route' => 'pricing-engine.index', 'icon' => 'Calculator', 'sort_order' => 1], $finance->id);
         $this->menu(['key' => 'pricing-approval', 'title' => 'Persetujuan Harga', 'route' => 'pricing-approval.index', 'icon' => 'BadgeCheck', 'sort_order' => 2], $finance->id);
         $this->menu(['key' => 'pricelist', 'title' => 'Pricelist', 'route' => 'pricelist.index', 'icon' => 'ListChecks', 'sort_order' => 3], $finance->id);
+        $this->menu(['key' => 'pricing-profiles', 'title' => 'Kelola Profil', 'route' => 'pricing-profiles.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 4], $finance->id);
+        $this->menu(['key' => 'currencies', 'title' => 'Kelola Mata Uang', 'route' => 'currencies.index', 'icon' => 'Coins', 'sort_order' => 5], $finance->id);
 
         // Module: Integrasi Data.
         $integrasi = $this->menu([

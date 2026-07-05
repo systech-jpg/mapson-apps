@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\PositionController;
 use App\Http\Controllers\Admin\PricelistController;
 use App\Http\Controllers\Admin\PricingApprovalController;
 use App\Http\Controllers\Admin\PricingEngineController;
+use App\Http\Controllers\Admin\PricingSettingController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
@@ -156,6 +157,12 @@ Route::middleware(['auth'])->group(function () {
 
     // Finance — Pricelist (approved prices, read-only + history + attachments)
     Route::get('finance/pricelist', [PricelistController::class, 'index'])->middleware('menu.access:pricelist,view')->name('pricelist.index');
+
+    // Finance — Master (kelola profil & mata uang)
+    Route::get('finance/pricing-profiles', [PricingSettingController::class, 'profiles'])->middleware('menu.access:pricing-profiles,view')->name('pricing-profiles.index');
+    Route::post('finance/pricing-profiles', [PricingSettingController::class, 'saveProfiles'])->middleware('menu.access:pricing-profiles,edit')->name('pricing-profiles.save');
+    Route::get('finance/currencies', [PricingSettingController::class, 'currencies'])->middleware('menu.access:currencies,view')->name('currencies.index');
+    Route::post('finance/currencies', [PricingSettingController::class, 'saveCurrencies'])->middleware('menu.access:currencies,edit')->name('currencies.save');
     Route::get('finance/pricelist/export', [PricelistController::class, 'export'])->middleware('menu.access:pricelist,view')->name('pricelist.export');
 
     // Attend Case (read from ERP).
