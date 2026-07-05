@@ -226,10 +226,10 @@ export function DrilldownDialog({ filter, onClose }: { filter: DrillFilter | nul
 
     return (
         <Dialog open={!!filter} onOpenChange={(o) => !o && onClose()}>
-            <DialogContent className="max-h-[92vh] w-[96vw] max-w-7xl overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>{data?.title ?? 'Detail'}</DialogTitle>
-                    <DialogDescription>
+            <DialogContent className="max-h-[92vh] w-[96vw] max-w-7xl gap-3 overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="pr-8 text-left">
+                    <DialogTitle className="text-base break-words sm:text-lg">{data?.title ?? 'Detail'}</DialogTitle>
+                    <DialogDescription className="break-words">
                         {!data
                             ? 'Memuat...'
                             : data.mode === 'invoice-customer'
