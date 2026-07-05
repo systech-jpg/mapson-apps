@@ -31,8 +31,16 @@ const blank = (): Profile => ({
     default_ops_pct: 0, default_profit_pct: 0, default_komisi_pct: 0, default_event_pct: 0, default_lainnya_pct: 0, default_buffer_pct: 0,
 });
 
+// Values arrive as decimal:3 strings ("5.000"); show at most 2 decimals, no trailing zeros.
+const num2 = (v: number | string) => Math.round((parseFloat(String(v ?? 0)) || 0) * 100) / 100;
+const normalize = (p: Profile): Profile => {
+    const o = { ...p };
+    PCT.forEach(([k]) => { (o as Record<string, unknown>)[k] = num2(p[k] as number | string); });
+    return o;
+};
+
 export default function ProfilesSettings({ profiles }: Props) {
-    const [rows, setRows] = useState<Profile[]>(profiles.map((p) => ({ ...p })));
+    const [rows, setRows] = useState<Profile[]>(profiles.map(normalize));
     const [saving, setSaving] = useState(false);
 
     const set = (i: number, key: keyof Profile, value: string | number | boolean) =>
