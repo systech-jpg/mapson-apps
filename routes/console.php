@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Leave: refresh entitlement on the 1st each month (top-up pro-rata joiners + carry-over).
 Schedule::command('leave:accrue')->monthlyOn(1, '01:00');
+
+// Daily staging sync: ERP + Accurate + Hadirr (rolling 7-day window for transactional data).
+Schedule::command('sync:daily')->dailyAt('02:00')->withoutOverlapping()->runInBackground();
