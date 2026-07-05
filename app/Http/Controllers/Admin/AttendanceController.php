@@ -777,12 +777,19 @@ class AttendanceController extends Controller
             return back()->with('error', 'Maksimal 31 hari per sinkronisasi. Untuk rentang besar gunakan command hadirr:sync-attendance.');
         }
 
+        $start = microtime(true);
         try {
             $emp = $this->sync->syncEmployees();
             $att = $this->sync->syncAttendances($from->toDateString(), $to->toDateString());
         } catch (\Throwable $e) {
+            \App\Models\SyncLog::record('hadirr', 'Hadirr attendance', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
+
             return back()->with('error', 'Sinkronisasi gagal: '.$e->getMessage());
         }
+
+        $ms = (int) round((microtime(true) - $start) * 1000);
+        \App\Models\SyncLog::record('hadirr', 'Hadirr employees', 'success', $emp, null, $ms, 'manual', $request->user()->id);
+        \App\Models\SyncLog::record('hadirr', 'Hadirr attendance', 'success', $att, null, $ms, 'manual', $request->user()->id);
 
         return back()->with('success', sprintf(
             'Sinkron selesai: %d baris absensi (%d hari). Karyawan Hadirr: %d, terpetakan: %d.',

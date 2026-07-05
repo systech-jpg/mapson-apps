@@ -33,16 +33,16 @@ class SyncDaily extends Command
         $this->info("Mulai sync:daily (window {$days} hari, {$from->toDateString()} → {$today->toDateString()})");
 
         // --- ERP (Dolibarr) ---
-        $this->step('ERP sales_facts', fn () => $erpSales->sync());
-        $this->step('ERP stock snapshot', fn () => $erpStock->sync());
+        $this->step('erp', 'ERP sales_facts', fn () => $erpSales->sync());
+        $this->step('erp', 'ERP stock snapshot', fn () => $erpStock->sync());
 
         // --- Accurate ---
         if (AccurateSetting::current()->isConnected()) {
             $af = $from->format('d/m/Y');
             $at = $today->format('d/m/Y');
-            $this->step('Accurate sales (faktur+SO+DO)', fn () => $acc->syncSales($af, $at));
-            $this->step('Accurate stock snapshot', fn () => $acc->syncItemStock(null, true));
-            $this->step('Accurate stock movements', fn () => $acc->syncStockMovements($af, $at));
+            $this->step('accurate', 'Accurate sales (faktur+SO+DO)', fn () => $acc->syncSales($af, $at));
+            $this->step('accurate', 'Accurate stock snapshot', fn () => $acc->syncItemStock(null, true));
+            $this->step('accurate', 'Accurate stock movements', fn () => $acc->syncStockMovements($af, $at));
         } else {
             $this->warn('Accurate: belum terhubung — dilewati.');
         }
@@ -51,8 +51,8 @@ class SyncDaily extends Command
         if (HadirrSetting::current()->is_active) {
             $hf = $from->format('Y-m-d');
             $ht = $today->format('Y-m-d');
-            $this->step('Hadirr employees', fn () => $hadirr->syncEmployees());
-            $this->step('Hadirr attendance', fn () => $hadirr->syncAttendances($hf, $ht));
+            $this->step('hadirr', 'Hadirr employees', fn () => $hadirr->syncEmployees());
+            $this->step('hadirr', 'Hadirr attendance', fn () => $hadirr->syncAttendances($hf, $ht));
         } else {
             $this->warn('Hadirr: tidak aktif — dilewati.');
         }
@@ -62,8 +62,8 @@ class SyncDaily extends Command
         return self::SUCCESS;
     }
 
-    /** Run one source in isolation; log success/failure without aborting the rest. */
-    private function step(string $label, \Closure $fn): void
+    /** Run one source in isolation; record to sync_logs + app log without aborting the rest. */
+    private function step(string $channel, string $label, \Closure $fn): void
     {
         $start = microtime(true);
         try {
@@ -71,10 +71,12 @@ class SyncDaily extends Command
             $ms = (int) round((microtime(true) - $start) * 1000);
             $summary = is_array($result) ? json_encode($result) : (string) $result;
             $this->info("  ✓ {$label} ({$ms} ms) {$summary}");
-            Log::info("sync:daily · {$label} OK", ['ms' => $ms, 'result' => $result]);
+            \App\Models\SyncLog::record($channel, $label, 'success', $result, null, $ms, 'schedule');
         } catch (\Throwable $e) {
+            $ms = (int) round((microtime(true) - $start) * 1000);
             $this->error("  ✗ {$label}: {$e->getMessage()}");
             Log::error("sync:daily · {$label} GAGAL", ['error' => $e->getMessage()]);
+            \App\Models\SyncLog::record($channel, $label, 'failed', null, $e->getMessage(), $ms, 'schedule');
         }
     }
 }

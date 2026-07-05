@@ -173,6 +173,9 @@ class MenuSeeder extends Seeder
         // 3-way reconciliation: ERP vs Accurate vs physical stocktake.
         $this->menu(['key' => 'stocktake-recon', 'title' => 'Rekon vs Stocktake', 'route' => 'stocktake.recon', 'icon' => 'ClipboardCheck', 'sort_order' => 5], $integrasi->id);
 
+        // Sync job log (ERP / Accurate / Hadirr).
+        $this->menu(['key' => 'sync-logs', 'title' => 'Log Sinkronisasi', 'route' => 'integration.logs', 'icon' => 'ScrollText', 'sort_order' => 6], $integrasi->id);
+
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();
         if ($reporting) {

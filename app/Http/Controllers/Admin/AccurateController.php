@@ -295,6 +295,7 @@ class AccurateController extends Controller
         $to = Carbon::parse($data['to'])->format('d/m/Y');
 
         $parts = [];
+        $start = microtime(true);
         try {
             if (in_array('faktur', $targets, true)) {
                 $r = $sync->syncSales($from, $to);
@@ -309,8 +310,12 @@ class AccurateController extends Controller
                 $parts[] = "{$r['delivery_orders']} DO ({$r['do_items']} item)";
             }
         } catch (Throwable $e) {
+            \App\Models\SyncLog::record('accurate', 'Accurate staging', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
+
             return back()->with('error', 'Gagal tarik dari Accurate: '.$e->getMessage());
         }
+
+        \App\Models\SyncLog::record('accurate', 'Accurate staging ('.implode('+', $targets).')', 'success', implode(', ', $parts), null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
         return back()->with('success', 'Tarik selesai — '.implode(', ', $parts).'.');
     }
@@ -330,9 +335,12 @@ class AccurateController extends Controller
         $from = Carbon::parse($data['from'])->format('d/m/Y');
         $to = Carbon::parse($data['to'])->format('d/m/Y');
 
+        $start = microtime(true);
         try {
             $result = $sync->syncStockMovements($from, $to, null, (bool) ($data['truncate'] ?? false));
         } catch (Throwable $e) {
+            \App\Models\SyncLog::record('accurate', 'Accurate stock movements', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
+
             return back()->with('error', 'Gagal tarik mutasi stok: '.$e->getMessage());
         }
 
@@ -342,6 +350,8 @@ class AccurateController extends Controller
             $parts[] = "{$type}:{$r['lines']}";
             $totalLines += $r['lines'];
         }
+
+        \App\Models\SyncLog::record('accurate', 'Accurate stock movements', 'success', $totalLines, implode(' ', $parts), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
         return back()->with('success', "Tarik mutasi stok selesai — {$totalLines} baris (".implode(' ', $parts).').');
     }
@@ -411,11 +421,16 @@ class AccurateController extends Controller
             'truncate' => ['nullable', 'boolean'],
         ]);
 
+        $start = microtime(true);
         try {
             $r = $sync->syncItemStock($data['snapshot_date'] ?? null, (bool) ($data['truncate'] ?? false));
         } catch (Throwable $e) {
+            \App\Models\SyncLog::record('accurate', 'Accurate stock snapshot', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
+
             return back()->with('error', 'Gagal tarik stok: '.$e->getMessage());
         }
+
+        \App\Models\SyncLog::record('accurate', 'Accurate stock snapshot', 'success', $r, null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
         return back()->with('success', "Tarik stok selesai — {$r['items']} item.");
     }

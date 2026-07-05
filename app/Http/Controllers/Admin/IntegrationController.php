@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\SalesFact;
+use App\Models\SyncLog;
 use App\Services\Erp\ErpStockSyncService;
 use App\Services\Erp\SalesSyncService;
 use Illuminate\Http\RedirectResponse;
@@ -73,15 +74,19 @@ class IntegrationController extends Controller
         ]);
     }
 
-    public function syncSales(): RedirectResponse
+    public function syncSales(Request $request): RedirectResponse
     {
+        $start = microtime(true);
         try {
             $count = $this->salesSync->sync();
         } catch (Throwable $e) {
             report($e);
+            SyncLog::record('erp', 'ERP sales_facts', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
             return back()->with('error', 'Gagal sinkronisasi dari ERP: '.$e->getMessage());
         }
+
+        SyncLog::record('erp', 'ERP sales_facts', 'success', $count, null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
         return back()->with('success', "Sinkronisasi sales selesai. {$count} baris dimuat dari ERP.");
     }
@@ -91,14 +96,51 @@ class IntegrationController extends Controller
     {
         $data = $request->validate(['as_of' => ['nullable', 'date']]);
 
+        $start = microtime(true);
         try {
             $r = $stockSync->sync($data['as_of'] ?? null);
         } catch (Throwable $e) {
             report($e);
+            SyncLog::record('erp', 'ERP stock snapshot', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
             return back()->with('error', 'Gagal tarik stok ERP: '.$e->getMessage());
         }
 
+        SyncLog::record('erp', 'ERP stock snapshot', 'success', $r, null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
+
         return back()->with('success', "Stok ERP ditarik — {$r['items']} item (per {$r['as_of']}).");
+    }
+
+    /** Sync log page — recent runs of all integrations (ERP / Accurate / Hadirr). */
+    public function logs(Request $request): Response
+    {
+        $channel = $request->string('channel')->toString();
+        $status = $request->string('status')->toString();
+
+        $logs = SyncLog::query()
+            ->with('user:id,name')
+            ->when($channel !== '', fn ($q) => $q->where('channel', $channel))
+            ->when($status !== '', fn ($q) => $q->where('status', $status))
+            ->orderByDesc('created_at')
+            ->paginate(50)
+            ->withQueryString()
+            ->through(fn (SyncLog $l) => [
+                'id' => $l->id,
+                'channel' => $l->channel,
+                'source' => $l->source,
+                'status' => $l->status,
+                'rows' => $l->rows,
+                'summary' => $l->summary,
+                'message' => $l->message,
+                'duration_ms' => $l->duration_ms,
+                'trigger' => $l->trigger,
+                'user' => $l->user?->name,
+                'at' => $l->created_at?->format('Y-m-d H:i:s'),
+            ]);
+
+        return Inertia::render('integration/sync-logs', [
+            'logs' => $logs,
+            'filters' => ['channel' => $channel, 'status' => $status],
+        ]);
     }
 }

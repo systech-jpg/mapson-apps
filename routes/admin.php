@@ -51,6 +51,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Data Integration (ERP stock & sales)
     Route::get('integration', [IntegrationController::class, 'index'])->middleware('menu.access:data-integration,view')->name('integration.index');
+    Route::get('integration/sync-logs', [IntegrationController::class, 'logs'])->middleware('menu.access:sync-logs,view')->name('integration.logs');
     Route::post('integration/sync-sales', [IntegrationController::class, 'syncSales'])->middleware('menu.access:data-integration,edit')->name('integration.sync-sales');
     Route::get('integration/erp/settings', [ErpSettingController::class, 'settings'])->middleware('menu.access:erp-setting,view')->name('erp.settings');
     Route::put('integration/erp/settings', [ErpSettingController::class, 'update'])->middleware('menu.access:erp-setting,edit')->name('erp.settings.update');
