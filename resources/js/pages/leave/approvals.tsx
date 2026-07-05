@@ -62,9 +62,49 @@ export default function LeaveApprovals({ pending }: Props) {
                     <p className="text-sm text-muted-foreground">{pending.total} pengajuan menunggu keputusan Anda.</p>
                 </div>
 
-                <Card>
-                    <CardContent className="p-0">
-                        <Table className="text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
+                {/* Mobile card layout */}
+                <div className="space-y-2 md:hidden">
+                    {pending.data.length === 0 ? (
+                        <Card>
+                            <CardContent className="py-10 text-center text-sm text-muted-foreground">Tidak ada pengajuan menunggu.</CardContent>
+                        </Card>
+                    ) : (
+                        pending.data.map((r) => (
+                            <Card key={r.id}>
+                                <CardContent className="flex flex-col gap-2 py-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                            <div className="font-medium">{r.employee?.full_name ?? '-'}</div>
+                                            <div className="text-xs text-muted-foreground">{r.employee?.employee_code} · {r.request_number}</div>
+                                        </div>
+                                        <LeaveStatusBadge status={r.status} />
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">{r.leave_type?.name ?? '-'}</div>
+                                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+                                        <span className="whitespace-nowrap">{d(r.start_date)} – {d(r.end_date)}</span>
+                                        <span className="text-muted-foreground">{r.total_days} hari</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                        <Button variant="outline" size="sm" className="flex-1" asChild title="Detail">
+                                            <Link href={route('leave.show', r.id)}><Eye className="size-4" /> Detail</Link>
+                                        </Button>
+                                        <Button variant="outline" size="sm" className="flex-1 text-emerald-600" title="Setujui" onClick={() => openAction(r, 'approve')}>
+                                            <Check className="size-4" /> Setujui
+                                        </Button>
+                                        <Button variant="outline" size="sm" className="flex-1 text-rose-600" title="Tolak" onClick={() => openAction(r, 'reject')}>
+                                            <X className="size-4" /> Tolak
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop table layout */}
+                <Card className="hidden md:block">
+                    <CardContent className="overflow-x-auto p-0">
+                        <Table className="min-w-full text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Karyawan</TableHead>
@@ -116,7 +156,7 @@ export default function LeaveApprovals({ pending }: Props) {
             </div>
 
             <Dialog open={action !== null} onOpenChange={(o) => !o && setAction(null)}>
-                <DialogContent>
+                <DialogContent className="w-[95vw] max-w-lg">
                     <DialogHeader>
                         <DialogTitle>{action?.type === 'approve' ? 'Setujui Pengajuan' : 'Tolak Pengajuan'}</DialogTitle>
                     </DialogHeader>

@@ -147,7 +147,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                         <h1 className="text-xl font-semibold">Lembur Saya</h1>
                         <p className="text-sm text-muted-foreground">Periode {periodLabel}.</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <div className="flex items-center rounded-md border">
                             <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}>
                                 <ChevronLeft className="size-4" />
@@ -158,14 +158,14 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                             </Button>
                         </div>
                         {overtime && (
-                            <Button variant="outline" asChild>
+                            <Button variant="outline" className="w-full sm:w-auto" asChild>
                                 <a href={route('overtime.pdf', overtime.id)} target="_blank" rel="noopener">
                                     <Printer className="size-4" /> Cetak PDF
                                 </a>
                             </Button>
                         )}
                         {employeeLinked && editable && (
-                            <Button onClick={openAdd}>
+                            <Button className="w-full sm:w-auto" onClick={openAdd}>
                                 <Plus className="size-4" /> Tambah Entri
                             </Button>
                         )}
@@ -202,9 +202,48 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                     </Card>
                 </div>
 
-                <Card>
+                {/* Mobile: stacked cards */}
+                <div className="space-y-2 md:hidden">
+                    {entries.length === 0 ? (
+                        <Card>
+                            <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                                Belum ada entri lembur untuk periode ini.
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        entries.map((e) => (
+                            <Card key={e.id} className={e.status === 'rejected' ? 'opacity-50' : ''}>
+                                <CardContent className="space-y-2 py-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="text-sm font-medium whitespace-nowrap">
+                                            {d(e.date)} {e.is_holiday && <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700 dark:bg-rose-950 dark:text-rose-300">libur</span>}
+                                        </div>
+                                        <LeaveStatusBadge status={e.status} />
+                                    </div>
+                                    <div className="text-sm">{e.activity}</div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                                        <div>Mulai: <span className="text-foreground">{e.start_time.substring(0, 5)}</span></div>
+                                        <div>Selesai: <span className="text-foreground">{e.end_time.substring(0, 5)}</span></div>
+                                        <div>Jam: <span className="font-mono font-medium text-foreground">{hm(e.minutes)}</span></div>
+                                        <div>Nominal: <span className="text-foreground">{e.status === 'rejected' ? '—' : rupiah(e.amount)}</span></div>
+                                    </div>
+                                    {editable && (
+                                        <div className="flex gap-2 pt-1">
+                                            <Button variant="outline" size="sm" className="flex-1" onClick={() => openEdit(e)}><Pencil className="size-4" /> Ubah</Button>
+                                            <Button variant="outline" size="sm" className="flex-1 text-rose-600" onClick={() => del(e.id)}><Trash2 className="size-4" /> Hapus</Button>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop: table */}
+                <Card className="hidden md:block">
                     <CardContent className="p-0">
-                        <Table className="text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
+                        <div className="overflow-x-auto">
+                        <Table className="min-w-full text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Tanggal</TableHead>
@@ -249,6 +288,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                                 )}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -300,7 +340,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
             </div>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent>
+                <DialogContent className="w-[95vw] max-w-lg">
                     <DialogHeader>
                         <DialogTitle>{editingId ? 'Ubah Entri Lembur' : 'Tambah Entri Lembur'}</DialogTitle>
                     </DialogHeader>
@@ -315,7 +355,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                             <Input id="ot_activity" value={data.activity} onChange={(e) => setData('activity', e.target.value)} placeholder="mis. Closing laporan bulanan" required />
                             <InputError message={errors.activity} />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="ot_start">Jam Mulai *</Label>
                                 <Input id="ot_start" type="time" value={data.start_time} onChange={(e) => setData('start_time', e.target.value)} required />

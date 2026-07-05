@@ -76,7 +76,8 @@ export default function GeneralBody({ year, annual, balances = [], recentLeave =
                             <div className="flex items-center gap-2 font-medium"><ClipboardList className="size-4" /> Pengajuan Cuti Terbaru</div>
                             <Link href={route('leave.index')} className="text-xs text-primary hover:underline">Lihat semua</Link>
                         </div>
-                        <Table className="text-sm [&_td]:px-4 [&_td]:py-2 [&_th]:h-8 [&_th]:px-4">
+                        <div className="overflow-x-auto">
+                        <Table className="min-w-full text-sm [&_td]:px-4 [&_td]:py-2 [&_th]:h-8 [&_th]:px-4">
                             <TableHeader>
                                 <TableRow><TableHead>Jenis</TableHead><TableHead>Tanggal</TableHead><TableHead className="text-right">Hari</TableHead><TableHead>Status</TableHead></TableRow>
                             </TableHeader>
@@ -93,6 +94,7 @@ export default function GeneralBody({ year, annual, balances = [], recentLeave =
                                 ))}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -102,7 +104,8 @@ export default function GeneralBody({ year, annual, balances = [], recentLeave =
                             <div className="flex items-center gap-2 font-medium"><Timer className="size-4" /> Lembur Terbaru</div>
                             <Link href={route('overtime.index')} className="text-xs text-primary hover:underline">Lihat semua</Link>
                         </div>
-                        <Table className="text-sm [&_td]:px-4 [&_td]:py-2 [&_th]:h-8 [&_th]:px-4">
+                        <div className="overflow-x-auto">
+                        <Table className="min-w-full text-sm [&_td]:px-4 [&_td]:py-2 [&_th]:h-8 [&_th]:px-4">
                             <TableHeader>
                                 <TableRow><TableHead>Periode</TableHead><TableHead className="text-right">Jam</TableHead><TableHead className="text-right">Nominal</TableHead><TableHead>Status</TableHead></TableRow>
                             </TableHeader>
@@ -119,6 +122,7 @@ export default function GeneralBody({ year, annual, balances = [], recentLeave =
                                 ))}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
             </div>

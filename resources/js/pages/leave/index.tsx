@@ -123,9 +123,47 @@ export default function LeaveMine({ employeeLinked, requests, balances, year, le
                 )}
 
                 {requests && (
-                    <Card>
-                        <CardContent className="p-0">
-                            <Table className="text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
+                    <>
+                    {/* Mobile card layout */}
+                    <div className="space-y-2 md:hidden">
+                        {requests.data.length === 0 ? (
+                            <Card>
+                                <CardContent className="py-10 text-center text-sm text-muted-foreground">Belum ada pengajuan.</CardContent>
+                            </Card>
+                        ) : (
+                            requests.data.map((r) => (
+                                <Card key={r.id}>
+                                    <CardContent className="flex flex-col gap-2 py-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="font-medium">{r.request_number}</div>
+                                            <LeaveStatusBadge status={r.status} />
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">{r.leave_type?.name ?? '-'}</div>
+                                        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
+                                            <span className="whitespace-nowrap">{d(r.start_date)} – {d(r.end_date)}</span>
+                                            <span className="text-muted-foreground">{r.total_days} hari</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 pt-1">
+                                            <Button variant="outline" size="sm" className="flex-1" asChild>
+                                                <Link href={route('leave.show', r.id)}><Eye className="size-4" /> Detail</Link>
+                                            </Button>
+                                            {r.status.startsWith('pending') && (
+                                                <Button variant="outline" size="sm" className="flex-1 text-amber-600"
+                                                    onClick={() => router.post(route('leave.withdraw', r.id), {}, { preserveScroll: true })}>
+                                                    Tarik
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))
+                        )}
+                    </div>
+
+                    {/* Desktop table layout */}
+                    <Card className="hidden md:block">
+                        <CardContent className="overflow-x-auto p-0">
+                            <Table className="min-w-full text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
                                 <TableHeader>
                                     <TableRow>
                                         <TableHead>Nomor</TableHead>
@@ -169,13 +207,14 @@ export default function LeaveMine({ employeeLinked, requests, balances, year, le
                             </Table>
                         </CardContent>
                     </Card>
+                    </>
                 )}
 
                 {requests && <Pagination links={requests.links} />}
             </div>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-h-[92vh] overflow-y-auto">
+                <DialogContent className="max-h-[92vh] w-[95vw] max-w-lg overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>Ajukan Cuti</DialogTitle>
                     </DialogHeader>
@@ -207,7 +246,7 @@ export default function LeaveMine({ employeeLinked, requests, balances, year, le
                             </div>
                         )}
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="start_date">Tanggal Mulai *</Label>
                                 <Input id="start_date" type="date" value={data.start_date}

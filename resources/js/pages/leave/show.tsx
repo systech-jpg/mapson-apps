@@ -43,9 +43,9 @@ const d = (v: string | null) => (v ? v.substring(0, 10) : '-');
 
 function Row({ label, value }: { label: string; value?: string | null }) {
     return (
-        <div className="flex justify-between gap-4 border-b py-2 text-sm last:border-0">
+        <div className="flex flex-col justify-between gap-1 border-b py-2 text-sm last:border-0 sm:flex-row sm:gap-4">
             <span className="text-muted-foreground">{label}</span>
-            <span className="text-right font-medium">{value || '-'}</span>
+            <span className="font-medium break-words sm:text-right">{value || '-'}</span>
         </div>
     );
 }
@@ -120,24 +120,24 @@ export default function LeaveShow({ leave, can }: { leave: Leave; can: Can }) {
                     )}
 
                     {(can.approve || can.withdraw || can.cancel) && (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
                             {can.approve && (
                                 <>
-                                    <Button onClick={approve}>
+                                    <Button className="w-full sm:w-auto" onClick={approve}>
                                         <CheckCircle2 className="size-4" /> Setujui
                                     </Button>
-                                    <Button variant="outline" className="text-rose-600" onClick={reject}>
+                                    <Button variant="outline" className="w-full text-rose-600 sm:w-auto" onClick={reject}>
                                         <XCircle className="size-4" /> Tolak
                                     </Button>
                                 </>
                             )}
                             {can.withdraw && (
-                                <Button variant="outline" onClick={() => router.post(route('leave.withdraw', leave.id), {}, { preserveScroll: true })}>
+                                <Button variant="outline" className="w-full sm:w-auto" onClick={() => router.post(route('leave.withdraw', leave.id), {}, { preserveScroll: true })}>
                                     Tarik Pengajuan
                                 </Button>
                             )}
                             {can.cancel && (
-                                <Button variant="outline" className="text-rose-600" onClick={() => router.post(route('leave.cancel', leave.id), {}, { preserveScroll: true })}>
+                                <Button variant="outline" className="w-full text-rose-600 sm:w-auto" onClick={() => router.post(route('leave.cancel', leave.id), {}, { preserveScroll: true })}>
                                     Batalkan
                                 </Button>
                             )}

@@ -95,7 +95,35 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                         <LeaveStatusBadge status={p.status} />
                                     </div>
 
-                                    <Table className="text-sm [&_td]:px-2 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2">
+                                    {/* Mobile: per-entry cards */}
+                                    <div className="space-y-2 md:hidden">
+                                        {p.entries.map((e) => (
+                                            <div key={e.id} className={`rounded-md border p-3 ${e.status === 'rejected' ? 'opacity-50' : ''}`}>
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="text-sm font-medium whitespace-nowrap">
+                                                        {d(e.date)} {e.is_holiday && <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700 dark:bg-rose-950 dark:text-rose-300">libur</span>}
+                                                    </div>
+                                                    <LeaveStatusBadge status={e.status} />
+                                                </div>
+                                                <div className="mt-1 text-sm">{e.activity}{e.note && <span className="block text-[11px] text-muted-foreground">{e.note}</span>}</div>
+                                                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                                                    <div>Jam: <span className="text-foreground">{e.start_time.substring(0, 5)}–{e.end_time.substring(0, 5)}</span></div>
+                                                    <div>Durasi: <span className="font-mono font-medium text-foreground">{hm(e.minutes)}</span></div>
+                                                    <div className="col-span-2">Nominal: <span className="text-foreground">{e.status === 'rejected' ? '—' : rupiah(e.amount)}</span></div>
+                                                </div>
+                                                {p.can_act && isSupervisorStep && (
+                                                    <div className="mt-2 flex gap-2">
+                                                        <Button variant="outline" size="sm" className="flex-1 text-emerald-600" onClick={() => decide(e.id, 'approved')}><Check className="size-4" /> Setujui</Button>
+                                                        <Button variant="outline" size="sm" className="flex-1 text-rose-600" onClick={() => decide(e.id, 'rejected')}><X className="size-4" /> Tolak</Button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Desktop: table */}
+                                    <div className="hidden overflow-x-auto md:block">
+                                    <Table className="min-w-full text-sm [&_td]:px-2 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2">
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead>Tanggal</TableHead>
@@ -130,6 +158,7 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                             ))}
                                         </TableBody>
                                     </Table>
+                                    </div>
 
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -139,17 +168,17 @@ export default function OvertimeApprovals({ periods }: { periods: Period[] }) {
                                                 </span>
                                             ))}
                                         </div>
-                                        <div className="flex gap-2">
-                                            <Button size="sm" variant="outline" asChild>
+                                        <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                                            <Button size="sm" variant="outline" className="w-full sm:w-auto" asChild>
                                                 <a href={route('overtime.pdf', p.id)} target="_blank" rel="noopener"><Printer className="size-4" /> Cetak PDF</a>
                                             </Button>
                                             {p.can_act && (
                                                 <>
-                                                    <Button size="sm" variant="outline" className="text-amber-600" onClick={() => returnToDraft(p)}>
+                                                    <Button size="sm" variant="outline" className="w-full text-amber-600 sm:w-auto" onClick={() => returnToDraft(p)}>
                                                         <Undo2 className="size-4" /> Revisi (Kembalikan ke Draf)
                                                     </Button>
-                                                    <Button size="sm" variant="outline" className="text-rose-600" onClick={() => reject(p)}>Tolak</Button>
-                                                    <Button size="sm" onClick={() => approve(p)}>{isSupervisorStep ? 'Setujui & Teruskan ke HR' : 'Setujui (Final)'}</Button>
+                                                    <Button size="sm" variant="outline" className="w-full text-rose-600 sm:w-auto" onClick={() => reject(p)}>Tolak</Button>
+                                                    <Button size="sm" className="w-full sm:w-auto" onClick={() => approve(p)}>{isSupervisorStep ? 'Setujui & Teruskan ke HR' : 'Setujui (Final)'}</Button>
                                                 </>
                                             )}
                                         </div>

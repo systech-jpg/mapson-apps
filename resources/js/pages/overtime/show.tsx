@@ -124,7 +124,7 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                         <h1 className="text-xl font-semibold">{overtime.employee?.full_name ?? '-'}</h1>
                         <p className="text-sm text-muted-foreground">{overtime.request_number} · periode {overtime.period} ({d(overtime.period_start)} – {d(overtime.period_end)})</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <LeaveStatusBadge status={overtime.status} />
                         {overtime.can_edit_entries && (
                             <Button size="sm" onClick={openAdd}><Plus className="size-4" /> Tambah Entri</Button>
@@ -152,9 +152,43 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                     <Card><CardContent className="py-4"><div className="text-xs text-muted-foreground">Tarif {overtime.rate_per_hour ? '(terkunci)' : '(berjalan)'}</div><div className="text-sm">Kerja {rupiah(overtime.rate_per_hour)}/jam ×{overtime.multiplier_workday ?? '-'} · Libur {rupiah(overtime.holiday_flat_rate)}/hari</div></CardContent></Card>
                 </div>
 
-                <Card>
+                {/* Mobile: stacked cards */}
+                <div className="space-y-2 md:hidden">
+                    {overtime.entries.length === 0 ? (
+                        <Card>
+                            <CardContent className="py-10 text-center text-sm text-muted-foreground">Belum ada entri lembur.</CardContent>
+                        </Card>
+                    ) : (
+                        overtime.entries.map((e) => (
+                            <Card key={e.id} className={e.status === 'rejected' ? 'opacity-50' : ''}>
+                                <CardContent className="space-y-2 py-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="text-sm font-medium whitespace-nowrap">{d(e.date)} {e.is_holiday && <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700 dark:bg-rose-950 dark:text-rose-300">libur</span>}</div>
+                                        <LeaveStatusBadge status={e.status} />
+                                    </div>
+                                    <div className="text-sm">{e.activity}{e.note && <span className="block text-[11px] text-muted-foreground">{e.note}</span>}</div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                                        <div>Jam: <span className="text-foreground">{e.start_time.substring(0, 5)}–{e.end_time.substring(0, 5)}</span></div>
+                                        <div>Durasi: <span className="font-mono font-medium text-foreground">{hm(e.minutes)}</span></div>
+                                        <div className="col-span-2">Nominal: <span className="text-foreground">{e.status === 'rejected' ? '—' : rupiah(e.amount)}</span></div>
+                                    </div>
+                                    {overtime.can_edit_entries && (
+                                        <div className="flex gap-2 pt-1">
+                                            <Button variant="outline" size="sm" className="flex-1" onClick={() => openEdit(e)}><Pencil className="size-4" /> Ubah</Button>
+                                            <Button variant="outline" size="sm" className="flex-1 text-rose-600" onClick={() => delEntry(e.id)}><Trash2 className="size-4" /> Hapus</Button>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))
+                    )}
+                </div>
+
+                {/* Desktop: table */}
+                <Card className="hidden md:block">
                     <CardContent className="p-0">
-                        <Table className="text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
+                        <div className="overflow-x-auto">
+                        <Table className="min-w-full text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:h-9 [&_th]:px-3">
                             <TableHeader>
                                 <TableRow>
                                     <TableHead>Tanggal</TableHead>
@@ -192,6 +226,7 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                                 )}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -211,7 +246,7 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
             </div>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent>
+                <DialogContent className="w-[95vw] max-w-lg">
                     <DialogHeader>
                         <DialogTitle>{editingId ? 'Ubah Entri Lembur' : 'Tambah Entri Lembur (Susulan)'}</DialogTitle>
                     </DialogHeader>
@@ -226,7 +261,7 @@ export default function OvertimeShow({ overtime }: { overtime: Overtime }) {
                             <Input id="a_activity" value={data.activity} onChange={(e) => setData('activity', e.target.value)} placeholder="mis. Closing laporan bulanan" required />
                             <InputError message={errors.activity} />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div className="grid gap-2">
                                 <Label htmlFor="a_start">Jam Mulai *</Label>
                                 <Input id="a_start" type="time" value={data.start_time} onChange={(e) => setData('start_time', e.target.value)} required />

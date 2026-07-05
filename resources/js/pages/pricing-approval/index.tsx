@@ -51,7 +51,7 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Persetujuan Harga" />
             <div className="flex flex-col gap-4 p-4">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                     {[['pending', 'Menunggu'], ['history', 'Riwayat']].map(([k, label]) => (
                         <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? 'bg-primary text-primary-foreground' : 'border'}`}>{label}</button>
                     ))}
@@ -61,13 +61,13 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
 
                 {submissions.map((s) => (
                     <div key={s.id} className="rounded-lg border">
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
-                            <div className="flex items-center gap-2 text-sm">
+                        <div className="flex flex-col gap-1 border-b bg-muted/40 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+                            <div className="flex flex-wrap items-center gap-2 text-sm">
                                 <Badge s={s.status} />
-                                <b>{s.principal}</b> · {s.profile} · <span className={s.hospital ? 'text-sky-700 dark:text-sky-300' : 'text-muted-foreground'}>{s.hospital ?? 'Semua RS'}</span>
+                                <b className="break-words">{s.principal}</b> · {s.profile} · <span className={s.hospital ? 'text-sky-700 dark:text-sky-300' : 'text-muted-foreground'}>{s.hospital ?? 'Semua RS'}</span>
                                 <span className="text-muted-foreground">— {s.items.length} item</span>
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                                 <span>Diajukan {s.submitted_at} oleh {s.submitter}</span>
                                 {s.decided_at && <span>· Diputuskan {s.decided_at} oleh {s.decider}</span>}
                             </div>
@@ -118,9 +118,9 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
                             </div>
 
                             {(s.status === 'pending' || s.status === 'partial') && (
-                                <div className="flex justify-end gap-2">
-                                    <Button size="sm" variant="outline" className="text-red-600" onClick={() => reject(s)}><X className="mr-1 h-4 w-4" /> Tolak semua</Button>
-                                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => approve(s)}><Check className="mr-1 h-4 w-4" /> Setujui semua</Button>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                    <Button size="sm" variant="outline" className="w-full text-red-600 sm:w-auto" onClick={() => reject(s)}><X className="mr-1 h-4 w-4" /> Tolak semua</Button>
+                                    <Button size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto" onClick={() => approve(s)}><Check className="mr-1 h-4 w-4" /> Setujui semua</Button>
                                 </div>
                             )}
                         </div>
@@ -131,7 +131,7 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
             </div>
 
             <Dialog open={!!view} onOpenChange={(o) => !o && setView(null)}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent className="w-[95vw] max-w-2xl">
                     <DialogHeader><DialogTitle>Detail — {view?.sku_code}</DialogTitle></DialogHeader>
                     {view?.detail && (() => {
                         const d = view.detail!;
@@ -200,8 +200,8 @@ function ARow({ label, value, change, unit, big }: { label: string; value: React
     const hl = !!change;
     return (
         <div className={`flex items-center justify-between gap-4 border-b py-1.5 last:border-0 ${hl ? '-mx-3 bg-amber-50 px-3 dark:bg-amber-950/30' : ''}`}>
-            <span className="text-muted-foreground">{label}</span>
-            <span className={`text-right tabular-nums ${big ? 'text-base font-bold' : ''}`}>
+            <span className="break-words text-muted-foreground">{label}</span>
+            <span className={`shrink-0 text-right tabular-nums ${big ? 'text-base font-bold' : ''}`}>
                 {hl ? <span className="font-semibold text-amber-700 dark:text-amber-400">{fmt(change![0])} → {fmt(change![1])}</span> : value}
             </span>
         </div>
