@@ -43,11 +43,6 @@ export default function ProfilesSettings({ profiles }: Props) {
         preserveScroll: true, onStart: () => setSaving(true), onFinish: () => setSaving(false),
     });
 
-    const Num = ({ i, k }: { i: number; k: keyof Profile }) => (
-        <input type="number" step="any" value={rows[i][k] as number} onChange={(e) => set(i, k, e.target.value)}
-            className="h-7 w-16 rounded border bg-background px-1 text-right text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" />
-    );
-
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Kelola Profil" />
@@ -71,8 +66,8 @@ export default function ProfilesSettings({ profiles }: Props) {
                                 <tr key={i} className="border-t">
                                     <td className="px-2 py-1"><input value={r.code} onChange={(e) => set(i, 'code', e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
                                     <td className="px-2 py-1"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} className="h-7 w-48 rounded border bg-background px-1 text-xs" /></td>
-                                    <td className="px-2 py-1"><Num i={i} k="rounding_step" /></td>
-                                    {PCT.map(([k]) => <td key={k} className="px-2 py-1"><Num i={i} k={k} /></td>)}
+                                    <td className="px-2 py-1"><NInput value={r.rounding_step} onChange={(v) => set(i, 'rounding_step', v)} w="w-16" /></td>
+                                    {PCT.map(([k]) => <td key={k} className="px-2 py-1"><NInput value={rows[i][k] as number} onChange={(v) => set(i, k, v)} /></td>)}
                                     <td className="px-2 py-1 text-center"><input type="checkbox" checked={!!r.is_active} onChange={(e) => set(i, 'is_active', e.target.checked)} /></td>
                                     <td className="px-2 py-1 text-right"><button onClick={() => removeRow(i)} title="Hapus" className="text-red-500 hover:underline">×</button></td>
                                 </tr>
@@ -84,5 +79,14 @@ export default function ProfilesSettings({ profiles }: Props) {
                 <p className="text-xs text-muted-foreground">Menghapus baris lalu Simpan tidak menghapus profil dari database (hanya profil yang tidak dikirim tetap ada). Untuk menonaktifkan, hilangkan centang <b>Aktif</b>.</p>
             </div>
         </AppLayout>
+    );
+}
+
+// Module-level so it keeps a stable identity across renders (an inline component would remount
+// on every keystroke and lose focus).
+function NInput({ value, onChange, w = 'w-12' }: { value: number | string; onChange: (v: string) => void; w?: string }) {
+    return (
+        <input type="number" step="any" value={value} onChange={(e) => onChange(e.target.value)}
+            className={`h-7 ${w} rounded border bg-background px-1 text-right text-xs tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none`} />
     );
 }
