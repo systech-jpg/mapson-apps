@@ -18,8 +18,9 @@
     $isRejected = $leave->status === 'rejected';
 @endphp
 <style>
-    @page { margin: 24px 26px; }
+    @page { margin: 12mm 15mm 12mm 15mm; }   /* top right bottom left — aman dari area non-cetak printer */
     * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
     body { font-family: DejaVu Sans, sans-serif; color: #111; font-size: 9.5px; }
     table { width: 100%; border-collapse: collapse; }
     td, th { vertical-align: middle; }
