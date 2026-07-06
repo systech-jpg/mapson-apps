@@ -40,13 +40,19 @@
 </style>
 </head>
 <body>
-    {{-- Header: logo + website --}}
+    {{-- Header: logo + website (single open row, no internal divider) --}}
     <table class="frame">
         <tr>
-            <td style="width:62%; text-align:left; padding:6px;">
-                @if ($logo)<img src="{{ $logo }}" style="height:30px;">@else<b style="font-size:13px;">MAPSON ARYA PARAHITA</b>@endif
+            <td style="padding:6px 8px;">
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr>
+                        <td style="border:0; text-align:left; vertical-align:middle;">
+                            @if ($logo)<img src="{{ $logo }}" style="height:30px;">@else<b style="font-size:13px;">MAPSON ARYA PARAHITA</b>@endif
+                        </td>
+                        <td style="border:0; text-align:right; vertical-align:top; font-size:8px; color:#555; width:30%;">www.mapsonarya.com</td>
+                    </tr>
+                </table>
             </td>
-            <td style="text-align:right; font-size:8px; color:#555;">www.mapsonarya.com</td>
         </tr>
     </table>
 
