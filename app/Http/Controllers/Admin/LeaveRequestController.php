@@ -120,7 +120,14 @@ class LeaveRequestController extends Controller
             ->where('leave_type_id', $leave->leave_type_id)
             ->where('year', $leave->year)->first();
 
-        $roleName = fn (array $roles) => optional($leave->approvals->first(fn ($a) => in_array($a->role, $roles, true)))->approver?->full_name;
+        // Atasan Langsung = the request's supervisor/manager approver. Direktur Utama = the CEO
+        // (position code CEO). HRD = whoever holds the HR approver role.
+        $atasan = optional($leave->approvals->first(fn ($a) => in_array($a->role, ['supervisor', 'manager'], true)))->approver?->full_name;
+        $direktur = \App\Models\Employee::whereHas('currentPosition', fn ($q) => $q->where('code', 'CEO'))->value('full_name');
+        $hrd = optional(
+            \App\Models\User::whereHas('role', fn ($q) => $q->whereIn('slug', config('leave.approver_roles.hr', [])))
+                ->whereHas('employee')->with('employee:id,user_id,full_name')->first()
+        )?->employee?->full_name;
 
         $logoPath = public_path('images/logo.png');
         $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
@@ -130,9 +137,9 @@ class LeaveRequestController extends Controller
             'emp' => $leave->employee,
             'balance' => $balance,
             'logo' => $logo,
-            'atasan' => $roleName(['supervisor', 'manager']),
-            'direktur' => $roleName(['director']),
-            'hrd' => $roleName(['hr']),
+            'atasan' => $atasan,
+            'direktur' => $direktur,
+            'hrd' => $hrd,
         ])->setPaper('a4', 'portrait');
 
         return $pdf->stream('cuti-'.$leave->request_number.'.pdf');

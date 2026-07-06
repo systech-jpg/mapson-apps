@@ -55,7 +55,7 @@
     {{-- Identity --}}
     <table class="frame">
         <tr>
-            <td class="k" style="width:17%;">Nama</td><td style="width:33%;">: {{ $emp->name }}</td>
+            <td class="k" style="width:17%;">Nama</td><td style="width:33%;">: {{ $emp->display_name }}</td>
             <td class="k" style="width:22%;">No Dokumen</td><td style="width:28%;">: {{ $leave->request_number }}</td>
         </tr>
         <tr>
@@ -137,7 +137,7 @@
             <td class="role">HRD</td>
         </tr>
         <tr>
-            <td class="nm">{{ $emp->name }}</td>
+            <td class="nm">{{ $emp->display_name }}</td>
             <td class="nm">{{ $atasan ?? '' }}</td>
             <td class="nm">{{ $direktur ?? '' }}</td>
             <td class="nm">{{ $hrd ?? '' }}</td>
