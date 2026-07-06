@@ -16,6 +16,9 @@ class LeaveBalanceService
 {
     private const EPSILON = 0.0001;
 
+    /** Boleh saldo minus sampai batas ini (mis. 2 = boleh -2 hari); lebih dari itu ditolak. */
+    private const OVERDRAFT_DAYS = 2.0;
+
     /** Available = allotted + carried_over + adjustment − used − pending. */
     public function available(int $employeeId, int $leaveTypeId, int $year): float
     {
@@ -40,7 +43,8 @@ class LeaveBalanceService
         return DB::transaction(function () use ($employeeId, $leaveTypeId, $year, $days) {
             $b = $this->lockBucket($employeeId, $leaveTypeId, $year);
             $available = $this->availableOf($b);
-            if ($available + self::EPSILON < $days) {
+            // Izinkan saldo minus sampai -OVERDRAFT_DAYS; tolak hanya jika melebihi batas itu.
+            if ($available + self::OVERDRAFT_DAYS + self::EPSILON < $days) {
                 throw new InsufficientLeaveBalanceException($days, $available);
             }
             $b->pending = (float) $b->pending + $days;
