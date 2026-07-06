@@ -122,10 +122,14 @@ class LeaveRequestController extends Controller
 
         $roleName = fn (array $roles) => optional($leave->approvals->first(fn ($a) => in_array($a->role, $roles, true)))->approver?->full_name;
 
+        $logoPath = public_path('images/logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,'.base64_encode(file_get_contents($logoPath)) : null;
+
         $pdf = Pdf::loadView('reports.leave-form', [
             'leave' => $leave,
             'emp' => $leave->employee,
             'balance' => $balance,
+            'logo' => $logo,
             'atasan' => $roleName(['supervisor', 'manager']),
             'direktur' => $roleName(['director']),
             'hrd' => $roleName(['hr']),
