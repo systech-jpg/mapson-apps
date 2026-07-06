@@ -406,9 +406,11 @@ class LeaveRequestService
         if ($dayPart !== 'full' && ! $type->allow_half_day) {
             throw new RuntimeException('Jenis cuti ini tidak mendukung setengah hari.');
         }
-        if ($type->min_notice_days > 0 && $start->lt(now()->startOfDay()->addDays($type->min_notice_days))) {
-            throw new RuntimeException("Pengajuan minimal H-{$type->min_notice_days}.");
-        }
+        // TEMP: validasi "Pengajuan minimal H-{n}" dinonaktifkan sementara atas permintaan.
+        // Untuk mengaktifkan kembali, hapus komentar blok di bawah.
+        // if ($type->min_notice_days > 0 && $start->lt(now()->startOfDay()->addDays($type->min_notice_days))) {
+        //     throw new RuntimeException("Pengajuan minimal H-{$type->min_notice_days}.");
+        // }
 
         $overlap = LeaveRequest::where('employee_id', $employee->id)
             ->whereIn('status', array_merge(LeaveRequest::PENDING_STATUSES, [LeaveRequest::STATUS_APPROVED]))
