@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreLeaveRequestRequest;
+use App\Models\LeaveBalance;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
+use Barryvdh\DomPDF\Facade\Pdf;
 use App\Services\Leave\LeaveBalanceService;
 use App\Services\Leave\LeaveRequestService;
 use Illuminate\Http\RedirectResponse;
@@ -106,6 +108,30 @@ class LeaveRequestController extends Controller
                 'cancel' => $policy->cancel($user, $leave),      // owner (pending) or HR
             ],
         ]);
+    }
+
+    /** Printable leave form (FORMULIR PERMOHONAN CUTI/IZIN) — matches the paper form. */
+    public function pdf(LeaveRequest $leave): \Symfony\Component\HttpFoundation\Response
+    {
+        $this->authorize('view', $leave);
+
+        $leave->load(['leaveType', 'employee.department', 'employee.currentPosition', 'approvals.approver:id,full_name']);
+        $balance = LeaveBalance::where('employee_id', $leave->employee_id)
+            ->where('leave_type_id', $leave->leave_type_id)
+            ->where('year', $leave->year)->first();
+
+        $roleName = fn (array $roles) => optional($leave->approvals->first(fn ($a) => in_array($a->role, $roles, true)))->approver?->full_name;
+
+        $pdf = Pdf::loadView('reports.leave-form', [
+            'leave' => $leave,
+            'emp' => $leave->employee,
+            'balance' => $balance,
+            'atasan' => $roleName(['supervisor', 'manager']),
+            'direktur' => $roleName(['director']),
+            'hrd' => $roleName(['hr']),
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->stream('cuti-'.$leave->request_number.'.pdf');
     }
 
     public function withdraw(LeaveRequest $leave): RedirectResponse

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { CheckCircle2, Clock, Download, FileText, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock, Download, FileText, Printer, XCircle } from 'lucide-react';
 
 interface Approval {
     id: number;
@@ -118,6 +118,12 @@ export default function LeaveShow({ leave, can }: { leave: Leave; can: Can }) {
                             </CardContent>
                         </Card>
                     )}
+
+                    <div className="flex flex-col flex-wrap gap-2 sm:flex-row">
+                        <Button variant="outline" className="w-full sm:w-auto" onClick={() => window.open(route('leave.pdf', leave.id), '_blank')}>
+                            <Printer className="size-4" /> Cetak Form
+                        </Button>
+                    </div>
 
                     {(can.approve || can.withdraw || can.cancel) && (
                         <div className="flex flex-col flex-wrap gap-2 sm:flex-row">

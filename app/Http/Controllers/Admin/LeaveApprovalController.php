@@ -29,9 +29,12 @@ class LeaveApprovalController extends Controller
             }
         }
 
+        // HR can override any step, so HR sees every pending request; others see only theirs.
+        $isHr = in_array('hr', $roleSlugs, true);
+
         $pending = LeaveRequest::with(['leaveType:id,name,code', 'employee:id,full_name,employee_code'])
             ->whereIn('status', LeaveRequest::PENDING_STATUSES)
-            ->whereHas('approvals', function ($q) use ($empId, $roleSlugs) {
+            ->when(! $isHr, fn ($query) => $query->whereHas('approvals', function ($q) use ($empId, $roleSlugs) {
                 $q->whereColumn('level', 'leave_requests.current_level')->where('status', 'pending')
                     ->where(function ($w) use ($empId, $roleSlugs) {
                         if ($empId) {
@@ -41,7 +44,7 @@ class LeaveApprovalController extends Controller
                             $w->orWhere(fn ($r) => $r->whereNull('approver_employee_id')->whereIn('role', $roleSlugs));
                         }
                     });
-            })
+            }))
             ->orderBy('submitted_at')
             ->paginate(15);
 

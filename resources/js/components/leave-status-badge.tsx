@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 
 const MAP: Record<string, { label: string; cls: string }> = {
     draft: { label: 'Draf', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
-    pending_supervisor: { label: 'Menunggu Supervisor', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
+    pending_supervisor: { label: 'Menunggu Atasan', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
     pending_manager: { label: 'Menunggu Manager', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
     pending_hr: { label: 'Menunggu HR', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
     pending_director: { label: 'Menunggu Direktur', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' },
@@ -20,7 +20,7 @@ export function LeaveStatusBadge({ status }: { status: string }) {
 }
 
 export const ROLE_LABEL: Record<string, string> = {
-    supervisor: 'Supervisor',
+    supervisor: 'Atasan',
     manager: 'Manager',
     hr: 'HR',
     director: 'Direktur',

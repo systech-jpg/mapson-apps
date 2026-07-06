@@ -49,6 +49,11 @@ class LeaveRequestPolicy
             return false;
         }
 
+        // HR override: HR may act on ANY pending step (e.g. approve on behalf of the atasan).
+        if ($this->hasApproverRole($user, 'hr')) {
+            return true;
+        }
+
         // Person-based step: must be the assigned approver.
         if ($step->approver_employee_id) {
             return $user->employee?->id === $step->approver_employee_id;

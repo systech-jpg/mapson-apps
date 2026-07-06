@@ -106,6 +106,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('leave', [LeaveRequestController::class, 'index'])->middleware('menu.access:leave-mine,view')->name('leave.index');
     Route::post('leave', [LeaveRequestController::class, 'store'])->middleware('menu.access:leave-mine,create')->name('leave.store');
     Route::get('leave/{leave}', [LeaveRequestController::class, 'show'])->middleware('menu.access:leave-mine,view')->name('leave.show');
+    Route::get('leave/{leave}/pdf', [LeaveRequestController::class, 'pdf'])->name('leave.pdf'); // owner OR approver/HR (policy view)
     Route::post('leave/{leave}/withdraw', [LeaveRequestController::class, 'withdraw'])->middleware('menu.access:leave-mine,view')->name('leave.withdraw');
     Route::post('leave/{leave}/cancel', [LeaveRequestController::class, 'cancel'])->middleware('menu.access:leave-mine,view')->name('leave.cancel');
     Route::get('leave/{leave}/attachments/{attachment}', [LeaveRequestController::class, 'downloadAttachment'])->whereNumber('attachment')->middleware('menu.access:leave-mine,view')->name('leave.attachments.download');
