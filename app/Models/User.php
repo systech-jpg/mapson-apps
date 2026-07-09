@@ -85,10 +85,13 @@ class User extends Authenticatable
         return $this->isSuperAdmin() || $this->positionCode() === 'HFO';
     }
 
-    /** Pricing approver = Direktur Utama / CEO. Super admin may also approve. */
+    /**
+     * Pricing approver = Direktur Utama / CEO. Head of Finance (HFO) may also approve
+     * as an override when the director is unavailable. Super admin may always approve.
+     */
     public function canApprovePricing(): bool
     {
-        return $this->isSuperAdmin() || $this->positionCode() === 'CEO';
+        return $this->isSuperAdmin() || in_array($this->positionCode(), ['CEO', 'HFO'], true);
     }
 
     /**
