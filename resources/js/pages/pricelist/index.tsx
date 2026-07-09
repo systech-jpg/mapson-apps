@@ -30,12 +30,13 @@ interface Row {
     pricelist: number; harga_beli: number; effective_from: string | null; effective_to: string | null; approved_at: string | null; approved_by: string | null;
     detail: Detail; history: Version[];
 }
-interface Paginated<T> { data: T[]; links: { url: string | null; label: string; active: boolean }[] }
-interface Props { rows: Paginated<Row>; filters: { q: string; principal: string; hospital: string }; principals: { id: number; name: string }[]; hospitals: { id: number; name: string }[] }
+interface Paginated<T> { data: T[]; links: { url: string | null; label: string; active: boolean }[]; from: number | null; total: number }
+interface PrincipalCount { id: number; name: string; total: number }
+interface Props { rows: Paginated<Row>; principalCounts: PrincipalCount[]; filters: { q: string; principal: string; hospital: string }; principals: { id: number; name: string }[]; hospitals: { id: number; name: string }[] }
 
 const rupiah = (v: number) => 'Rp ' + Math.round(v).toLocaleString('id-ID');
 
-export default function PricelistIndex({ rows, filters, principals, hospitals }: Props) {
+export default function PricelistIndex({ rows, principalCounts, filters, principals, hospitals }: Props) {
     const [q, setQ] = useState(filters.q);
     const [detail, setDetail] = useState<Row | null>(null);   // history dialog
     const [preview, setPreview] = useState<Row | null>(null); // full-breakdown dialog
@@ -43,7 +44,7 @@ export default function PricelistIndex({ rows, filters, principals, hospitals }:
     const [exportFull, setExportFull] = useState(false);
     const apply = (extra: Record<string, string>) => router.get(route('pricelist.index'), { q, principal: filters.principal, hospital: filters.hospital, ...extra }, { preserveState: true, replace: true });
     const doExport = () => { window.location.href = route('pricelist.export', { q: filters.q, principal: filters.principal, hospital: filters.hospital, full: exportFull ? 1 : 0 }); };
-    const colCount = 8 + (showBeli ? 1 : 0);
+    const colCount = 9 + (showBeli ? 1 : 0);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -75,16 +76,36 @@ export default function PricelistIndex({ rows, filters, principals, hospitals }:
                 </div>
                 <p className="text-xs text-muted-foreground">Menampilkan harga yang berlaku (aktif). Centang <b>Struktur lengkap</b> untuk export bergaya Pricing Engine; jika tidak, export hanya Harga Beli & Harga Jual.</p>
 
+                {/* Jumlah baris pricelist: total + per principal */}
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="rounded bg-primary/10 px-2 py-1 font-semibold text-primary">Total: {rows.total.toLocaleString('id-ID')} baris</span>
+                    {principalCounts.map((p) => {
+                        const active = String(p.id) === filters.principal;
+                        return (
+                            <button
+                                key={p.id}
+                                onClick={() => apply({ principal: active ? '' : String(p.id) })}
+                                title={active ? 'Klik untuk hapus filter' : `Filter principal ${p.name}`}
+                                className={`rounded border px-2 py-1 transition-colors hover:bg-muted ${active ? 'border-primary bg-primary/10 text-primary' : 'text-muted-foreground'}`}
+                            >
+                                {p.name}: <b className="text-foreground">{p.total.toLocaleString('id-ID')}</b>
+                            </button>
+                        );
+                    })}
+                </div>
+
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="min-w-full text-sm">
                         <thead className="bg-muted/60"><tr>
+                            <th className="px-2 py-1.5 text-right">#</th>
                             <th className="px-2 py-1.5 text-left">Principal</th><th className="px-2 py-1.5 text-left">Kode</th><th className="px-2 py-1.5 text-left">Deskripsi</th>
                             <th className="px-2 py-1.5 text-left">Profil</th><th className="px-2 py-1.5 text-left">RS</th>{showBeli && <th className="px-2 py-1.5 text-right">Harga Beli</th>}<th className="px-2 py-1.5 text-right">Harga Pricelist</th>
                             <th className="px-2 py-1.5 text-left">Disetujui</th><th className="px-2 py-1.5" />
                         </tr></thead>
                         <tbody>
-                            {rows.data.map((r) => (
+                            {rows.data.map((r, i) => (
                                 <tr key={r.id} className="border-t hover:bg-muted/30">
+                                    <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">{(rows.from ?? 0) + i}</td>
                                     <td className="px-2 py-1.5">{r.principal}</td>
                                     <td className="px-2 py-1.5">{r.sku_code}</td>
                                     <td className="px-2 py-1.5">{r.product_name}</td>

@@ -8,6 +8,7 @@ use App\Models\PricingPricelist;
 use App\Models\PricingPrincipal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -50,8 +51,27 @@ class PricelistController extends Controller
 
         $page->getCollection()->transform(fn (PricingPricelist $e) => $this->serialize($e, $histories[$key($e)] ?? collect()));
 
+        // Jumlah baris pricelist aktif per principal (mengikuti filter RS & pencarian, lintas principal).
+        $principalCounts = PricingPricelist::query()
+            ->where('pricing_pricelists.is_active', true)
+            ->join('pricing_products', 'pricing_products.id', '=', 'pricing_pricelists.product_id')
+            ->join('pricing_principals', 'pricing_principals.id', '=', 'pricing_products.principal_id')
+            ->when($hospital === 'base', fn ($q) => $q->whereNull('pricing_pricelists.hospital_id'))
+            ->when($hospital !== '' && $hospital !== 'base', fn ($q) => $q->where('pricing_pricelists.hospital_id', $hospital))
+            ->when($search !== '', fn ($q) => $q->where(fn ($w) => $w
+                ->where('pricing_products.sku_code', 'like', "%{$search}%")
+                ->orWhere('pricing_products.product_name', 'like', "%{$search}%")))
+            ->groupBy('pricing_principals.id', 'pricing_principals.name')
+            ->orderByDesc('total')
+            ->get([
+                'pricing_principals.id as id',
+                'pricing_principals.name as name',
+                DB::raw('COUNT(*) as total'),
+            ]);
+
         return Inertia::render('pricelist/index', [
             'rows' => $page,
+            'principalCounts' => $principalCounts,
             'filters' => ['q' => $search, 'principal' => $principalId, 'hospital' => $hospital],
             'principals' => PricingPrincipal::orderBy('name')->get(['id', 'name']),
             'hospitals' => PricingHospital::whereIn('id', PricingPricelist::whereNotNull('hospital_id')->distinct()->pluck('hospital_id'))
