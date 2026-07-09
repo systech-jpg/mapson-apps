@@ -127,7 +127,7 @@ export default function PricingApprovalIndex({ submissions, tab }: Props) {
                     </div>
                 ))}
 
-                <p className="text-xs text-muted-foreground">Persetujuan hanya oleh Direktur Utama. <Link href={route('pricelist.index')} className="underline">Lihat Pricelist →</Link></p>
+                <p className="text-xs text-muted-foreground">Persetujuan oleh Direktur Utama (atau Head Finance sebagai override). <Link href={route('pricelist.index')} className="underline">Lihat Pricelist →</Link></p>
             </div>
 
             <Dialog open={!!view} onOpenChange={(o) => !o && setView(null)}>

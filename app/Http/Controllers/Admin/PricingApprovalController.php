@@ -88,7 +88,7 @@ class PricingApprovalController extends Controller
     /** CEO approval queue. */
     public function index(Request $request): Response
     {
-        abort_unless($request->user()->canApprovePricing(), 403, 'Hanya Direktur Utama yang dapat menyetujui.');
+        abort_unless($request->user()->canApprovePricing(), 403, 'Hanya Direktur Utama / Head Finance yang dapat menyetujui.');
 
         $tab = $request->string('tab')->toString() ?: 'pending';
         $statuses = $tab === 'history'
