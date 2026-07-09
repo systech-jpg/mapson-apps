@@ -6,7 +6,7 @@ import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Building2, Eye, FileDown, FileSpreadsheet, History, Plus, Save, Search, SendHorizonal, Upload } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -86,18 +86,23 @@ type HeaderKey = (typeof HEADER_KEYS)[number];
 const num = (v: number) => Math.round(v).toLocaleString('id-ID');
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// Grid is paginated so a large import (e.g. 2500 rows) doesn't mount ~90k cells at once.
+const PAGE_SIZE = 100;
+const EMPTY_OV: Partial<Record<HeaderKey, boolean>> = {};
+
 // Grid columns (order matters — the "Default" header row aligns inputs per column).
 // Principal is intentionally omitted (it equals the selected principal for the whole grid).
 const COLS = ['#', 'Kode', 'Deskripsi', 'Cat1', 'Cat2', 'Cat3', 'Cat4', 'Type',
     'Price Princ.', 'Disc%', 'Cur', 'Kurs', 'Qty Beli', 'UOM', 'Qty Jual', 'UOM',
     'A: Princ. IDR', 'BM%', 'BM Rp', 'PPh22%', 'PPh22 Rp', 'PPN%', 'PPN Rp', 'Ship%', 'Ship Rp',
     'Total Cost', 'Harga Masuk Gudang', 'Alokasi % Operasional', 'Harga Gudang', 'Alokasi % Profit', 'Harga Bawah',
-    'Alokasi % Komisi', 'Alokasi % Event', 'Alokasi % Lainnya', '% Maksimum Diskon',
+    'Alokasi % Komisi', 'Alokasi % Event', 'Alokasi % Lainnya', '% Maksimum Diskon', 'Pembulatan',
     'Harga Pricelist', ''];
 // Column index → header-default numeric field (currency at col 10 is handled separately).
 const DEFAULT_INPUTS: Record<number, HeaderKey> = {
     11: 'kurs', 17: 'bm_pct', 19: 'pph22_pct', 21: 'ppn_pct', 23: 'shipment_pct',
     27: 'ops_pct', 29: 'profit_pct', 31: 'komisi_pct', 32: 'event_pct', 33: 'lainnya_pct', 34: 'buffer_pct',
+    35: 'rounding_step',
 };
 
 // Frozen columns. Left: #, Kode, Deskripsi. Right: Harga Pricelist + actions.
@@ -193,6 +198,10 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
     const [rows, setRows] = useState<Row[]>(initialRows);
     // overrides[i][key] = true → that row's cell no longer follows the header.
     const [overrides, setOverrides] = useState<Record<number, Partial<Record<HeaderKey, boolean>>>>({});
+    // Keep a live ref so stable (useCallback) handlers can read current overrides without re-creating.
+    const overridesRef = useRef(overrides);
+    overridesRef.current = overrides;
+    const [page, setPage] = useState(0);
     const fileRef = useRef<HTMLInputElement>(null);
 
     // Inertia reuses this component across visits, so useState won't re-init on its own.
@@ -203,15 +212,16 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         setRows(initialRows.map((r) => ({ ...r, _dirty: r.price_id == null })));
         setOverrides({});
         setHeaderCurrency('');
+        setPage(0);
         if (profile) setHeader(defaultsFromProfile(profile));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialRows]);
 
     const roots = useMemo(() => categories.filter((c) => !c.parent_id), [categories]);
-    const childrenOf = (label: string): Category[] => {
+    const childrenOf = useCallback((label: string): Category[] => {
         const parent = categories.find((c) => c.label === label);
         return parent ? categories.filter((c) => c.parent_id === parent.id) : [];
-    };
+    }, [categories]);
 
     const blankRow = (): Row => ({
         brand: selectedPrincipal?.name ?? '', sku_code: '', product_name: '',
@@ -246,40 +256,41 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         setHeader((h) => ({ ...h, [key]: value }));
         setRows((rs) => rs.map((r, i) => (overrides[i]?.[key] ? r : { ...r, [key]: value, _dirty: true })));
     };
-    const updateCell = (i: number, key: keyof Row, value: string | number) => {
+    // Stable identity (useCallback) so memoized rows only re-render when their own row/override changes.
+    const updateCell = useCallback((i: number, key: keyof Row, value: string | number) => {
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [key]: value, _dirty: true } : r)));
         if ((HEADER_KEYS as readonly string[]).includes(key as string)) {
             setOverrides((o) => ({ ...o, [i]: { ...o[i], [key]: true } }));
         }
-    };
+    }, []);
 
     // Picking a currency auto-fills kurs from the master rate (unless kurs was overridden).
-    const updateCurrency = (i: number, code: string) => {
+    const updateCurrency = useCallback((i: number, code: string) => {
         const cur = currencies.find((c) => c.code === code);
         setRows((rs) => rs.map((r, idx) => (idx === i
-            ? { ...r, currency_code: code, _dirty: true, ...(overrides[i]?.kurs || !cur ? {} : { kurs: +cur.rate_to_idr }) }
+            ? { ...r, currency_code: code, _dirty: true, ...(overridesRef.current[i]?.kurs || !cur ? {} : { kurs: +cur.rate_to_idr }) }
             : r)));
-    };
+    }, [currencies]);
 
     // Copy = server reload: load a source (profile / base) into the current context as drafts.
     const copyFromProfile = (sourceProfileId: string) => nav({ copy_from: sourceProfileId });
     const copyFromBase = () => nav({ copy_from: 'base' });
 
     // Changing a category resets the deeper ones (cascading dropdowns).
-    const updateCat = (i: number, level: number, value: string) => {
+    const updateCat = useCallback((i: number, level: number, value: string) => {
         setRows((rs) => rs.map((r, idx) => {
             if (idx !== i) return r;
             const next = { ...r, [`cat${level}`]: value, _dirty: true } as Row;
             for (let l = level + 1; l <= 4; l++) (next as unknown as Record<string, unknown>)[`cat${l}`] = '';
             return next;
         }));
-    };
+    }, []);
 
     const addRow = () => setRows((rs) => [...rs, blankRow()]);
-    const removeRow = (i: number) => {
+    const removeRow = useCallback((i: number) => {
         setRows((rs) => rs.filter((_, idx) => idx !== i));
         setOverrides((o) => { const n = { ...o }; delete n[i]; return n; });
-    };
+    }, []);
 
     // ---- Excel upload (parsed client-side) ----
     const onFile = async (file: File) => {
@@ -421,7 +432,18 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         return [r.sku_code, r.product_name, r.cat1, r.cat2, r.cat3, r.cat4, r.product_type]
             .some((v) => String(v ?? '').toLowerCase().includes(q));
     };
-    const visibleCount = rows.filter(visible).length;
+    // Filter once, keeping original indices, then slice to the current page — the grid only ever
+    // mounts PAGE_SIZE rows regardless of how many were imported.
+    const visibleRows = useMemo(
+        () => rows.map((r, i) => ({ r, i })).filter(({ r }) => visible(r)),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [rows, search],
+    );
+    const visibleCount = visibleRows.length;
+    const pageCount = Math.max(1, Math.ceil(visibleCount / PAGE_SIZE));
+    const curPage = Math.min(page, pageCount - 1);
+    const pageRows = visibleRows.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE);
+    useEffect(() => { setPage(0); }, [search]);
 
     // ---- export to .xlsx (current, filtered grid with computed values) ----
     const exportExcel = () => {
@@ -429,7 +451,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
             'Price Principle', 'Disc %', 'Currency', 'Kurs', 'Qty Beli', 'UOM Beli', 'Qty Jual', 'UOM Jual',
             'A: Pricelist Principal IDR', 'BM %', 'BM Rp', 'PPh22 %', 'PPh22 Rp', 'PPN %', 'PPN Rp', 'Shipment %', 'Shipment Rp',
             'Total Cost', 'Harga Masuk Gudang', 'Ops % (D)', 'Harga Gudang', 'Profit % (F)', 'Harga Bawah',
-            'Komisi % (H)', 'Event % (I)', 'Lainnya % (J)', 'Maks Discount % (M)', 'Harga Pricelist'];
+            'Komisi % (H)', 'Event % (I)', 'Lainnya % (J)', 'Maks Discount % (M)', 'Pembulatan', 'Harga Pricelist'];
         const body = rows.filter(visible).map((r) => {
             const c = computeEngine(r);
             return [r.brand, r.sku_code, r.product_name, r.cat1, r.cat2, r.cat3, r.cat4, r.product_type,
@@ -437,7 +459,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                 +r.qty_beli || 0, r.uom_beli, +r.qty_jual || 0, r.uom_jual,
                 c.a_principal_idr, +r.bm_pct || 0, c.bm, +r.pph22_pct || 0, c.pph22, +r.ppn_pct || 0, c.ppn, +r.shipment_pct || 0, c.shipment,
                 c.b_total_cost, c.c_warehouse, +r.ops_pct || 0, c.e_harga_gudang, +r.profit_pct || 0, c.g_bottom,
-                +r.komisi_pct || 0, +r.event_pct || 0, +r.lainnya_pct || 0, +r.buffer_pct || 0, c.l_pricelist];
+                +r.komisi_pct || 0, +r.event_pct || 0, +r.lainnya_pct || 0, +r.buffer_pct || 0, +(r.rounding_step ?? 0) || 0, c.l_pricelist];
         });
         const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
         const wb = XLSX.utils.book_new();
@@ -449,7 +471,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
     // ---- detail view + change history ----
     const [detail, setDetail] = useState<Row | null>(null);
     const [history, setHistory] = useState<{ title: string; logs: HistLog[] | null } | null>(null);
-    const openHistory = async (r: Row) => {
+    const openHistory = useCallback(async (r: Row) => {
         if (!r.id) { alert('Baris ini belum tersimpan, jadi belum ada riwayat.'); return; }
         const title = `${r.sku_code} — ${r.product_name}`;
         setHistory({ title, logs: null });
@@ -459,7 +481,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         } catch {
             setHistory({ title, logs: [] });
         }
-    };
+    }, [profile]);
 
     // Brand guard: every row must belong to the selected principal's brand.
     const expectedBrand = selectedPrincipal?.name ?? '';
@@ -582,70 +604,14 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {rows.map((r, i) => {
-                                        if (!visible(r)) return null;
-                                        const c = computeEngine(r);
-                                        const ov = overrides[i] ?? {};
-                                        return (
-                                            <tr key={i} className="border-t hover:bg-muted/40">
-                                                <Td className="text-center text-muted-foreground" frozenIdx={0}><span title={r._dirty ? 'Ada perubahan belum disimpan' : ''} className={r._dirty ? 'font-bold text-amber-600' : ''}>{i + 1}</span></Td>
-                                                <TdIn v={r.sku_code} onC={(v) => updateCell(i, 'sku_code', v)} w="w-28" frozenIdx={1} />
-                                                <TdIn v={r.product_name} onC={(v) => updateCell(i, 'product_name', v)} w="w-56" frozenIdx={2} />
-                                                <TdCat v={r.cat1} opts={roots} onC={(v) => updateCat(i, 1, v)} />
-                                                <TdCat v={r.cat2} opts={childrenOf(r.cat1)} onC={(v) => updateCat(i, 2, v)} />
-                                                <TdCat v={r.cat3} opts={childrenOf(r.cat2)} onC={(v) => updateCat(i, 3, v)} />
-                                                <TdCat v={r.cat4} opts={childrenOf(r.cat3)} onC={(v) => updateCat(i, 4, v)} />
-                                                <Td>
-                                                    <select className="h-6 w-24 rounded border bg-background px-1" value={r.product_type} onChange={(e) => updateCell(i, 'product_type', e.target.value)}>
-                                                        <option value=""></option>
-                                                        <option value="instrument">instrument</option>
-                                                        <option value="implant">implant</option>
-                                                        <option value="bhp">BHP</option>
-                                                    </select>
-                                                </Td>
-                                                <TdNum v={r.price_principle} onC={(v) => updateCell(i, 'price_principle', v)} />
-                                                <TdNum v={r.disc_principle_pct} onC={(v) => updateCell(i, 'disc_principle_pct', v)} w="w-14" />
-                                                <Td>
-                                                    <select className="h-6 w-16 rounded border bg-background px-1" value={r.currency_code} onChange={(e) => updateCurrency(i, e.target.value)}>
-                                                        <option value=""></option>
-                                                        {currencies.map((cu) => <option key={cu.code} value={cu.code}>{cu.code}</option>)}
-                                                    </select>
-                                                </Td>
-                                                <TdNum v={r.kurs} onC={(v) => updateCell(i, 'kurs', v)} over={ov.kurs} />
-                                                <TdNum v={r.qty_beli} onC={(v) => updateCell(i, 'qty_beli', v)} w="w-14" />
-                                                <TdIn v={r.uom_beli} onC={(v) => updateCell(i, 'uom_beli', v)} w="w-12" />
-                                                <TdNum v={r.qty_jual} onC={(v) => updateCell(i, 'qty_jual', v)} w="w-14" />
-                                                <TdIn v={r.uom_jual} onC={(v) => updateCell(i, 'uom_jual', v)} w="w-12" />
-                                                <TdCalc>{num(c.a_principal_idr)}</TdCalc>
-                                                <TdNum v={r.bm_pct} onC={(v) => updateCell(i, 'bm_pct', v)} w="w-12" over={ov.bm_pct} />
-                                                <TdCalc>{num(c.bm)}</TdCalc>
-                                                <TdNum v={r.pph22_pct} onC={(v) => updateCell(i, 'pph22_pct', v)} w="w-12" over={ov.pph22_pct} />
-                                                <TdCalc>{num(c.pph22)}</TdCalc>
-                                                <TdNum v={r.ppn_pct} onC={(v) => updateCell(i, 'ppn_pct', v)} w="w-12" over={ov.ppn_pct} />
-                                                <TdCalc>{num(c.ppn)}</TdCalc>
-                                                <TdNum v={r.shipment_pct} onC={(v) => updateCell(i, 'shipment_pct', v)} w="w-12" over={ov.shipment_pct} />
-                                                <TdCalc>{num(c.shipment)}</TdCalc>
-                                                <TdCalc>{num(c.b_total_cost)}</TdCalc>
-                                                <TdCalc>{num(c.c_warehouse)}</TdCalc>
-                                                <TdNum v={r.ops_pct} onC={(v) => updateCell(i, 'ops_pct', v)} w="w-12" over={ov.ops_pct} />
-                                                <TdCalc>{num(c.e_harga_gudang)}</TdCalc>
-                                                <TdNum v={r.profit_pct} onC={(v) => updateCell(i, 'profit_pct', v)} w="w-12" over={ov.profit_pct} />
-                                                <TdCalc>{num(c.g_bottom)}</TdCalc>
-                                                <TdNum v={r.komisi_pct} onC={(v) => updateCell(i, 'komisi_pct', v)} w="w-12" over={ov.komisi_pct} />
-                                                <TdNum v={r.event_pct} onC={(v) => updateCell(i, 'event_pct', v)} w="w-12" over={ov.event_pct} />
-                                                <TdNum v={r.lainnya_pct} onC={(v) => updateCell(i, 'lainnya_pct', v)} w="w-12" over={ov.lainnya_pct} />
-                                                <TdNum v={r.buffer_pct} onC={(v) => updateCell(i, 'buffer_pct', v)} w="w-12" over={ov.buffer_pct} />
-                                                <TdCalc frozenIdx={COLS.length - 2} className="!bg-emerald-100 font-bold !text-emerald-800 dark:!bg-emerald-900/50 dark:!text-emerald-200">{rupiah(c.l_pricelist)}</TdCalc>
-                                                <Td frozenIdx={COLS.length - 1}>
-                                                    <div className="flex items-center justify-center gap-1.5">
-                                                        <button onClick={() => setDetail(r)} title="Lihat detail" className="text-slate-600 hover:text-slate-900 dark:text-slate-300"><Eye className="h-3.5 w-3.5" /></button>
-                                                        <button onClick={() => openHistory(r)} title="Riwayat perubahan" className="text-sky-600 hover:text-sky-800 disabled:opacity-30" disabled={!r.id}><History className="h-3.5 w-3.5" /></button>
-                                                        <button onClick={() => removeRow(i)} title="Hapus baris" className="text-red-500 hover:underline">×</button>
-                                                    </div>
-                                                </Td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {pageRows.map(({ r, i }) => (
+                                        <PricingRow
+                                            key={i} r={r} i={i} ov={overrides[i]}
+                                            roots={roots} childrenOf={childrenOf} currencies={currencies}
+                                            updateCell={updateCell} updateCat={updateCat} updateCurrency={updateCurrency}
+                                            removeRow={removeRow} onDetail={setDetail} onHistory={openHistory}
+                                        />
+                                    ))}
                                     {!rows.length ? (
                                         <tr><td colSpan={COLS.length} className="p-6 text-center text-muted-foreground">Belum ada baris. Upload Excel atau tambah baris.</td></tr>
                                     ) : visibleCount === 0 ? (
@@ -654,6 +620,22 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* Pagination — grid renders at most PAGE_SIZE rows at a time. */}
+                        {pageCount > 1 && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <span className="text-muted-foreground">
+                                    Menampilkan {curPage * PAGE_SIZE + 1}–{Math.min((curPage + 1) * PAGE_SIZE, visibleCount)} dari {visibleCount} baris
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    <Button variant="outline" size="sm" disabled={curPage === 0} onClick={() => setPage(0)}>«</Button>
+                                    <Button variant="outline" size="sm" disabled={curPage === 0} onClick={() => setPage(curPage - 1)}>‹ Sebelumnya</Button>
+                                    <span className="px-2">Hal {curPage + 1} / {pageCount}</span>
+                                    <Button variant="outline" size="sm" disabled={curPage >= pageCount - 1} onClick={() => setPage(curPage + 1)}>Berikutnya ›</Button>
+                                    <Button variant="outline" size="sm" disabled={curPage >= pageCount - 1} onClick={() => setPage(pageCount - 1)}>»</Button>
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
@@ -845,6 +827,87 @@ function HospitalCombobox({ hospitals, selected, onPick }: { hospitals: Principa
         </div>
     );
 }
+
+// One grid row, memoized: with stable handlers + per-row `r`/`ov` props, only the edited row
+// re-renders on a keystroke (not the whole page), and computeEngine runs once per changed row.
+interface PricingRowProps {
+    r: Row;
+    i: number;
+    ov?: Partial<Record<HeaderKey, boolean>>;
+    roots: Category[];
+    childrenOf: (label: string) => Category[];
+    currencies: Currency[];
+    updateCell: (i: number, key: keyof Row, value: string | number) => void;
+    updateCat: (i: number, level: number, value: string) => void;
+    updateCurrency: (i: number, code: string) => void;
+    removeRow: (i: number) => void;
+    onDetail: (r: Row) => void;
+    onHistory: (r: Row) => void;
+}
+const PricingRow = memo(function PricingRow({ r, i, ov: ovProp, roots, childrenOf, currencies, updateCell, updateCat, updateCurrency, removeRow, onDetail, onHistory }: PricingRowProps) {
+    const c = computeEngine(r);
+    const ov = ovProp ?? EMPTY_OV;
+    return (
+        <tr className="border-t hover:bg-muted/40">
+            <Td className="text-center text-muted-foreground" frozenIdx={0}><span title={r._dirty ? 'Ada perubahan belum disimpan' : ''} className={r._dirty ? 'font-bold text-amber-600' : ''}>{i + 1}</span></Td>
+            <TdIn v={r.sku_code} onC={(v) => updateCell(i, 'sku_code', v)} w="w-28" frozenIdx={1} />
+            <TdIn v={r.product_name} onC={(v) => updateCell(i, 'product_name', v)} w="w-56" frozenIdx={2} />
+            <TdCat v={r.cat1} opts={roots} onC={(v) => updateCat(i, 1, v)} />
+            <TdCat v={r.cat2} opts={childrenOf(r.cat1)} onC={(v) => updateCat(i, 2, v)} />
+            <TdCat v={r.cat3} opts={childrenOf(r.cat2)} onC={(v) => updateCat(i, 3, v)} />
+            <TdCat v={r.cat4} opts={childrenOf(r.cat3)} onC={(v) => updateCat(i, 4, v)} />
+            <Td>
+                <select className="h-6 w-24 rounded border bg-background px-1" value={r.product_type} onChange={(e) => updateCell(i, 'product_type', e.target.value)}>
+                    <option value=""></option>
+                    <option value="instrument">instrument</option>
+                    <option value="implant">implant</option>
+                    <option value="bhp">BHP</option>
+                </select>
+            </Td>
+            <TdNum v={r.price_principle} onC={(v) => updateCell(i, 'price_principle', v)} />
+            <TdNum v={r.disc_principle_pct} onC={(v) => updateCell(i, 'disc_principle_pct', v)} w="w-14" />
+            <Td>
+                <select className="h-6 w-16 rounded border bg-background px-1" value={r.currency_code} onChange={(e) => updateCurrency(i, e.target.value)}>
+                    <option value=""></option>
+                    {currencies.map((cu) => <option key={cu.code} value={cu.code}>{cu.code}</option>)}
+                </select>
+            </Td>
+            <TdNum v={r.kurs} onC={(v) => updateCell(i, 'kurs', v)} over={ov.kurs} />
+            <TdNum v={r.qty_beli} onC={(v) => updateCell(i, 'qty_beli', v)} w="w-14" />
+            <TdIn v={r.uom_beli} onC={(v) => updateCell(i, 'uom_beli', v)} w="w-12" />
+            <TdNum v={r.qty_jual} onC={(v) => updateCell(i, 'qty_jual', v)} w="w-14" />
+            <TdIn v={r.uom_jual} onC={(v) => updateCell(i, 'uom_jual', v)} w="w-12" />
+            <TdCalc>{num(c.a_principal_idr)}</TdCalc>
+            <TdNum v={r.bm_pct} onC={(v) => updateCell(i, 'bm_pct', v)} w="w-12" over={ov.bm_pct} />
+            <TdCalc>{num(c.bm)}</TdCalc>
+            <TdNum v={r.pph22_pct} onC={(v) => updateCell(i, 'pph22_pct', v)} w="w-12" over={ov.pph22_pct} />
+            <TdCalc>{num(c.pph22)}</TdCalc>
+            <TdNum v={r.ppn_pct} onC={(v) => updateCell(i, 'ppn_pct', v)} w="w-12" over={ov.ppn_pct} />
+            <TdCalc>{num(c.ppn)}</TdCalc>
+            <TdNum v={r.shipment_pct} onC={(v) => updateCell(i, 'shipment_pct', v)} w="w-12" over={ov.shipment_pct} />
+            <TdCalc>{num(c.shipment)}</TdCalc>
+            <TdCalc>{num(c.b_total_cost)}</TdCalc>
+            <TdCalc>{num(c.c_warehouse)}</TdCalc>
+            <TdNum v={r.ops_pct} onC={(v) => updateCell(i, 'ops_pct', v)} w="w-12" over={ov.ops_pct} />
+            <TdCalc>{num(c.e_harga_gudang)}</TdCalc>
+            <TdNum v={r.profit_pct} onC={(v) => updateCell(i, 'profit_pct', v)} w="w-12" over={ov.profit_pct} />
+            <TdCalc>{num(c.g_bottom)}</TdCalc>
+            <TdNum v={r.komisi_pct} onC={(v) => updateCell(i, 'komisi_pct', v)} w="w-12" over={ov.komisi_pct} />
+            <TdNum v={r.event_pct} onC={(v) => updateCell(i, 'event_pct', v)} w="w-12" over={ov.event_pct} />
+            <TdNum v={r.lainnya_pct} onC={(v) => updateCell(i, 'lainnya_pct', v)} w="w-12" over={ov.lainnya_pct} />
+            <TdNum v={r.buffer_pct} onC={(v) => updateCell(i, 'buffer_pct', v)} w="w-12" over={ov.buffer_pct} />
+            <TdNum v={r.rounding_step ?? ''} onC={(v) => updateCell(i, 'rounding_step', v)} w="w-16" over={ov.rounding_step} />
+            <TdCalc frozenIdx={COLS.length - 2} className="!bg-emerald-100 font-bold !text-emerald-800 dark:!bg-emerald-900/50 dark:!text-emerald-200">{rupiah(c.l_pricelist)}</TdCalc>
+            <Td frozenIdx={COLS.length - 1}>
+                <div className="flex items-center justify-center gap-1.5">
+                    <button onClick={() => onDetail(r)} title="Lihat detail" className="text-slate-600 hover:text-slate-900 dark:text-slate-300"><Eye className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => onHistory(r)} title="Riwayat perubahan" className="text-sky-600 hover:text-sky-800 disabled:opacity-30" disabled={!r.id}><History className="h-3.5 w-3.5" /></button>
+                    <button onClick={() => removeRow(i)} title="Hapus baris" className="text-red-500 hover:underline">×</button>
+                </div>
+            </Td>
+        </tr>
+    );
+});
 
 // ---- small presentational helpers ----
 function Td({ children, className = '', frozenIdx }: { children?: React.ReactNode; className?: string; frozenIdx?: number }) {

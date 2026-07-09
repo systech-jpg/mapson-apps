@@ -225,10 +225,50 @@ class LeaveRequestService
         });
     }
 
-    /** Approve the active step; advance or finalize (commit balance). */
-    public function approve(LeaveRequest $request, Employee $approver, ?string $notes = null): LeaveRequest
+    /**
+     * Approve the active step; advance or finalize (commit balance).
+     *
+     * When $overrideAll is true (HR acting), approve the active step and every
+     * subsequent pending step up to and including the HR step — stopping only if
+     * a Direktur step still remains (that authority is not HR's to override). This
+     * lets HR finalize a request in a single click instead of one step at a time.
+     */
+    public function approve(LeaveRequest $request, Employee $approver, ?string $notes = null, bool $overrideAll = false): LeaveRequest
     {
-        $request = DB::transaction(function () use ($request, $approver, $notes) {
+        $request = DB::transaction(function () use ($request, $approver, $notes, $overrideAll) {
+            if ($overrideAll) {
+                $stopAt = null;
+                $steps = $request->approvals()
+                    ->where('level', '>=', $request->current_level)
+                    ->where('status', LeaveApproval::STATUS_PENDING)
+                    ->orderBy('level')->get();
+
+                foreach ($steps as $step) {
+                    if ($step->role === 'director') {   // director must decide their own step
+                        $stopAt = $step;
+                        break;
+                    }
+                    $step->update([
+                        'status' => LeaveApproval::STATUS_APPROVED,
+                        'approver_employee_id' => $step->approver_employee_id ?? $approver->id,
+                        'notes' => $notes,
+                        'acted_at' => now(),
+                    ]);
+                }
+
+                if ($stopAt) {
+                    $request->update(['current_level' => $stopAt->level, 'status' => 'pending_'.$stopAt->role]);
+                } else {
+                    $lastLevel = (int) $request->approvals()->max('level');
+                    $request->update(['current_level' => $lastLevel, 'status' => LeaveRequest::STATUS_APPROVED, 'decided_at' => now()]);
+                    if ($bt = $this->balanceType($request->leaveType)) {
+                        $this->balances->commit($request->employee_id, $bt->id, $request->year, (float) $request->total_days);
+                    }
+                }
+
+                return $request->fresh('approvals');
+            }
+
             $step = $this->activeStep($request);
 
             $step->update([

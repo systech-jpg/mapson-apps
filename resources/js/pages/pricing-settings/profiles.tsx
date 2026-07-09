@@ -65,7 +65,7 @@ export default function ProfilesSettings({ profiles }: Props) {
                 <div className="overflow-x-auto rounded-lg border">
                     <table className="min-w-max text-sm">
                         <thead className="bg-muted/60"><tr>
-                            <th className="px-2 py-1.5 text-left">Code</th><th className="px-2 py-1.5 text-left">Nama</th><th className="px-2 py-1.5 text-right">Rounding</th>
+                            <th className="px-2 py-1.5 text-left">Code</th><th className="px-2 py-1.5 text-left">Nama</th>
                             {PCT.map(([, h]) => <th key={h} className="px-2 py-1.5 text-right">{h}</th>)}
                             <th className="px-2 py-1.5 text-center">Aktif</th><th className="px-2 py-1.5" />
                         </tr></thead>
@@ -74,13 +74,12 @@ export default function ProfilesSettings({ profiles }: Props) {
                                 <tr key={i} className="border-t">
                                     <td className="px-2 py-1"><input value={r.code} onChange={(e) => set(i, 'code', e.target.value)} className="h-7 w-28 rounded border bg-background px-1 text-xs" /></td>
                                     <td className="px-2 py-1"><input value={r.name} onChange={(e) => set(i, 'name', e.target.value)} className="h-7 w-48 rounded border bg-background px-1 text-xs" /></td>
-                                    <td className="px-2 py-1"><NInput value={r.rounding_step} onChange={(v) => set(i, 'rounding_step', v)} w="w-16" /></td>
                                     {PCT.map(([k]) => <td key={k} className="px-2 py-1"><NInput value={rows[i][k] as number} onChange={(v) => set(i, k, v)} /></td>)}
                                     <td className="px-2 py-1 text-center"><input type="checkbox" checked={!!r.is_active} onChange={(e) => set(i, 'is_active', e.target.checked)} /></td>
                                     <td className="px-2 py-1 text-right"><button onClick={() => removeRow(i)} title="Hapus" className="text-red-500 hover:underline">×</button></td>
                                 </tr>
                             ))}
-                            {rows.length === 0 && <tr><td colSpan={PCT.length + 5} className="p-6 text-center text-muted-foreground">Belum ada profil.</td></tr>}
+                            {rows.length === 0 && <tr><td colSpan={PCT.length + 4} className="p-6 text-center text-muted-foreground">Belum ada profil.</td></tr>}
                         </tbody>
                     </table>
                 </div>

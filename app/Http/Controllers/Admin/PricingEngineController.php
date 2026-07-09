@@ -152,7 +152,8 @@ class PricingEngineController extends Controller
             'price_id' => $current?->id,
             'status' => $current?->status ?? 'draft',
             'pricelist' => (float) ($current?->pricelist ?? 0),
-            ...collect(self::PRODUCT_FIELDS)->mapWithKeys(fn ($f) => [$f => $p->{$f}])->all(),
+            // Cast pct columns to float so decimal(6,3) doesn't serialize as "2.500" (grid shows "2.5").
+            ...collect(self::PRODUCT_FIELDS)->mapWithKeys(fn ($f) => [$f => in_array($f, self::PCT_FIELDS, true) ? (float) $p->{$f} : $p->{$f}])->all(),
             'ops_pct' => (float) ($current?->ops_pct ?? 0),
             'profit_pct' => (float) ($current?->profit_pct ?? 0),
             'komisi_pct' => (float) ($current?->komisi_pct ?? 0),

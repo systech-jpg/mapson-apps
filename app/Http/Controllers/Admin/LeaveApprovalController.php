@@ -58,8 +58,12 @@ class LeaveApprovalController extends Controller
     {
         $this->authorize('approve', $leave);
 
+        // HR override: HR approving finalizes the request (skips the atasan step and
+        // its own HR step in one action), stopping only if a Direktur step remains.
+        $isHr = in_array($request->user()->role?->slug, config('leave.approver_roles.hr', []), true);
+
         try {
-            $this->service->approve($leave, $request->user()->employee, $request->string('note')->toString() ?: null);
+            $this->service->approve($leave, $request->user()->employee, $request->string('note')->toString() ?: null, $isHr);
         } catch (Throwable $e) {
             return back()->with('error', $e->getMessage());
         }
