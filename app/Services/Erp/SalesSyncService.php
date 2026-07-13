@@ -82,10 +82,15 @@ SELECT
     cat_tree.Lvl_2                                               AS category_2,
     cat_tree.Lvl_3                                               AS category_3,
     cat_tree.Lvl_4                                               AS category_4,
-    (SELECT MAX(sup.nom)
-       FROM {$p}product_fournisseur_price AS pfp
-       JOIN {$p}societe AS sup ON pfp.fk_soc = sup.rowid
-      WHERE pfp.fk_product = p.rowid)                            AS merk,
+    COALESCE(
+        (SELECT sup_pr.nom
+           FROM {$p}product_extrafields AS pex
+           JOIN {$p}societe AS sup_pr ON sup_pr.rowid = pex.principal
+          WHERE pex.fk_object = p.rowid),
+        (SELECT MAX(sup.nom)
+           FROM {$p}product_fournisseur_price AS pfp
+           JOIN {$p}societe AS sup ON pfp.fk_soc = sup.rowid
+          WHERE pfp.fk_product = p.rowid))                       AS merk,
     ROUND(fd.subprice, 0)                                        AS price_qty,
     ROUND(fd.total_ht, 0)                                        AS total_price,
     ROUND(fd.remise_percent, 2)                                  AS disc,
