@@ -491,6 +491,76 @@ class AccurateSyncService
     }
 
     /**
+     * TRIAL (Analisa Produk): pull purchase-invoice lines for a set of item numbers into
+     * tmp_product_purchases — the buy-price basis for COGS estimation and price trends.
+     * Idempotent upsert by erp_id (PI detail line id).
+     *
+     * @param  string  $from  dd/MM/yyyy
+     * @param  string  $to    dd/MM/yyyy
+     * @param  list<string>  $itemNos
+     * @param  callable(string):void|null  $progress
+     * @return array<string, int>
+     */
+    public function syncProductPurchases(string $from, string $to, array $itemNos, ?callable $progress = null): array
+    {
+        @set_time_limit(0);
+        $s = AccurateSetting::current();
+        $now = now()->toDateTimeString();
+        $log = fn (string $m) => $progress && $progress($m);
+        $wanted = array_flip(array_filter($itemNos));
+        $docs = 0;
+        $lines = 0;
+        $page = 1;
+
+        do {
+            $list = $this->retry(fn () => $this->listPage($s, 'purchase-invoice/list.do', $from, $to, $page));
+            $pageCount = $list['sp']['pageCount'] ?? 1;
+            $log("Faktur pembelian halaman {$page}/{$pageCount} ({$lines} baris cocok)…");
+
+            foreach ($list['d'] ?? [] as $row) {
+                $d = $this->retry(fn () => $this->acc->apiGet($s, 'purchase-invoice/detail.do', ['id' => $row['id']])['d'] ?? null);
+                if (! is_array($d)) {
+                    continue;
+                }
+                $td = $this->date($d['transDate'] ?? null);
+                $vendor = is_array($d['vendor'] ?? null) ? ($d['vendor']['name'] ?? null) : ($d['vendorName'] ?? null);
+                $batch = [];
+
+                foreach ($d['detailItem'] ?? [] as $it) {
+                    $itemNo = is_array($it['item'] ?? null) ? ($it['item']['no'] ?? null) : null;
+                    if (! $itemNo || ! isset($wanted[$itemNo]) || empty($it['id'])) {
+                        continue;
+                    }
+                    $batch[] = [
+                        'erp_id' => $it['id'],
+                        'erp_doc_id' => $d['id'] ?? null,
+                        'doc_number' => $d['number'] ?? null,
+                        'trans_date' => $td,
+                        'vendor_name' => $vendor,
+                        'item_no' => $itemNo,
+                        'item_name' => $it['detailName'] ?? (is_array($it['item'] ?? null) ? ($it['item']['name'] ?? null) : null),
+                        'qty' => $it['quantity'] ?? 0,
+                        'unit' => is_array($it['itemUnit'] ?? null) ? ($it['itemUnit']['name'] ?? null) : ($it['availableItemUnitName'] ?? null),
+                        'unit_price' => $it['unitPrice'] ?? 0,
+                        'total' => $it['totalPrice'] ?? ((float) ($it['quantity'] ?? 0) * (float) ($it['unitPrice'] ?? 0)),
+                        'synced_at' => $now,
+                    ];
+                }
+
+                if ($batch) {
+                    DB::table('tmp_product_purchases')->upsert($batch, ['erp_id'], ['erp_doc_id', 'doc_number', 'trans_date', 'vendor_name', 'item_no', 'item_name', 'qty', 'unit', 'unit_price', 'total', 'synced_at']);
+                    $lines += count($batch);
+                    $docs++;
+                }
+            }
+
+            $page++;
+        } while ($page <= $pageCount);
+
+        return ['purchase_docs' => $docs, 'purchase_lines' => $lines];
+    }
+
+    /**
      * One page of a *.do list endpoint filtered by transDate BETWEEN. Throws on API error.
      *
      * @return array<string, mixed>

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import DashboardLayout from '@/layouts/dashboard-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' }];
@@ -224,7 +224,15 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                             </Card>
                             <Card>
                                 <CardHeader className="pb-2">
-                                    <CardTitle className="text-base">Penjualan per Merk ({year})</CardTitle>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <CardTitle className="text-base">Penjualan per Merk ({year})</CardTitle>
+                                        <Link
+                                            href={route('dashboard.brand', { year })}
+                                            className="shrink-0 text-xs font-medium text-primary hover:underline"
+                                        >
+                                            Analisa lengkap →
+                                        </Link>
+                                    </div>
                                 </CardHeader>
                                 <CardContent>
                                     <BarList items={topMerk} onItem={(it) => setDrill({ year, merk: it.label })} color="bg-violet-500" />

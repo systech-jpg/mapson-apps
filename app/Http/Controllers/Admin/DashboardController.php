@@ -214,6 +214,14 @@ class DashboardController extends Controller
             $q->where('merk', $request->input('merk'));
             $parts[] = 'Merk '.$request->input('merk');
         }
+        if ($request->filled('sales')) {
+            $q->where('sales', $request->input('sales'));
+            $parts[] = 'Sales '.$request->input('sales');
+        }
+        if ($request->filled('produk')) {
+            $q->where('description', $request->input('produk'));
+            $parts[] = $request->input('produk');
+        }
         if ($request->filled('status')) {
             $q->where('paid_unpaid', $request->string('status'));
             $parts[] = $request->input('status');

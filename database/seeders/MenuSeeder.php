@@ -56,6 +56,16 @@ class MenuSeeder extends Seeder
             'sort_order' => 5,
         ]);
 
+        // TRIAL: product-level P&L (Colarose/Boneguard) — tmp_ tables.
+        $productAnalysis = $this->menu([
+            'key' => 'dashboard-product',
+            'title' => 'Analisa Produk',
+            'route' => 'dashboard.product',
+            'icon' => 'FlaskConical',
+            'area' => 'reporting',
+            'sort_order' => 6,
+        ]);
+
         // Beranda (self-service) lives in the BACKEND area, not the BOD front dashboard.
         $this->menu([
             'key' => 'my-dashboard',
@@ -192,6 +202,7 @@ class MenuSeeder extends Seeder
                 $stock->id => ['can_view' => true],
                 $cost->id => ['can_view' => true],
                 $analytics->id => ['can_view' => true],
+                $productAnalysis->id => ['can_view' => true],
             ]);
         }
     }
