@@ -75,7 +75,7 @@ class BackfillStockSnapshot extends Command
 
         $summary = DB::table(InventorySnapshot::TABLE)
             ->where('source', InventorySnapshot::ERP)
-            ->selectRaw('COUNT(DISTINCT snapshot_date) dates, COUNT(*) rows, MIN(snapshot_date) mn, MAX(snapshot_date) mx')
+            ->selectRaw('COUNT(DISTINCT snapshot_date) dates, COUNT(*) `rows`, MIN(snapshot_date) mn, MAX(snapshot_date) mx')
             ->first();
 
         $this->info(sprintf('Selesai: %d tanggal, %d baris ditulis, %d gagal (%.1fs)', count($dates), $items, count($failed), $ms / 1000));

@@ -92,7 +92,7 @@ class DataWarehouseController extends Controller
     protected function glPeriods(): array
     {
         return DB::table('dwh_stg_gl')
-            ->selectRaw('period, COUNT(*) rows, COUNT(DISTINCT account_code) accounts,
+            ->selectRaw('period, COUNT(*) `rows`, COUNT(DISTINCT account_code) accounts,
                 SUM(debit) debit, SUM(credit) credit, SUM(amount) balance,
                 MAX(imported_at) imported_at, MAX(source_file) source_file, MAX(branch) branch')
             ->groupBy('period')->orderByDesc('period')->get()
