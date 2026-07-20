@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\BrandAnalysisController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\PivotExplorerController;
 use App\Http\Controllers\Admin\ProductAnalysisController;
 use App\Support\MenuService;
 use Illuminate\Support\Facades\Auth;
@@ -28,7 +29,22 @@ Route::middleware(['auth'])->group(function () {
     Route::get('dashboard/penjualan-merk/export', [BrandAnalysisController::class, 'export'])->middleware('menu.access:dashboard,view')->name('dashboard.brand.export');
     Route::get('dashboard/finance', [DashboardController::class, 'finance'])->middleware('menu.access:dashboard-finance,view')->name('dashboard.finance');
     Route::get('dashboard/stock', [DashboardController::class, 'stock'])->middleware('menu.access:dashboard-stock,view')->name('dashboard.stock');
+    // Daftar lengkap di balik tiap kotak KPI Stock.
+    Route::get('dashboard/stock/drilldown', [DashboardController::class, 'stockDrilldown'])->middleware('menu.access:dashboard-stock,view')->name('dashboard.stock.drilldown');
     Route::get('dashboard/cost', [DashboardController::class, 'cost'])->middleware('menu.access:dashboard-cost,view')->name('dashboard.cost');
+    // Telusur baris buku besar di balik satu akun — supaya angka bisa diverifikasi sendiri.
+    Route::get('dashboard/cost/drilldown', [DashboardController::class, 'costDrilldown'])->middleware('menu.access:dashboard-cost,view')->name('dashboard.cost.drilldown');
+
+    // Pivot Data Penjualan — analisa swalayan (cross-tab) atas sales_facts. Tanpa menu
+    // sendiri: diakses via kartu shortcut di dashboard Sales, jadi ikut gate `dashboard`.
+    Route::middleware('menu.access:dashboard,view')->group(function () {
+        Route::get('analytics/explorer', [PivotExplorerController::class, 'index'])->name('analytics.explorer');
+        Route::get('analytics/explorer/pivot', [PivotExplorerController::class, 'pivot'])->name('analytics.explorer.pivot');
+        Route::get('analytics/explorer/values', [PivotExplorerController::class, 'fieldValues'])->name('analytics.explorer.values');
+        Route::get('analytics/explorer/export', [PivotExplorerController::class, 'export'])->name('analytics.explorer.export');
+        // Detail transaksi di balik sel — method yang sama dgn dashboard, gate sendiri.
+        Route::get('analytics/explorer/drilldown', [DashboardController::class, 'drilldown'])->name('analytics.explorer.drilldown');
+    });
 
     // TRIAL: Analisa Produk (P&L per produk principal — tabel tmp_).
     Route::middleware('menu.access:dashboard-product,view')->group(function () {

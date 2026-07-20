@@ -2,6 +2,7 @@
 
 namespace App\Services\Erp;
 
+use App\Support\InventorySnapshot;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -15,7 +16,20 @@ use Illuminate\Support\Facades\DB;
  */
 class ErpStockSyncService
 {
-    /** Truncate + insert the ERP stock snapshot as of $asOf (Y-m-d, default today). */
+    /**
+     * Hitung saldo stok ERP as of $asOf (Y-m-d, default hari ini) lalu simpan sebagai
+     * satu baris per item pada tanggal itu di dwh_fact_inventory_snapshot.
+     *
+     * Upsert (bukan truncate) → riwayat tanggal lain tetap utuh, dan menjalankan ulang
+     * tanggal yang sama hanya menimpa tanggal itu. Inilah yang membuat backfill mundur
+     * dan Stock Aging / turnover jadi mungkin.
+     *
+     * CATATAN: hasilnya "as-of menurut pengetahuan hari ini", bukan "seperti tercatat
+     * hari itu". Dolibarr menerima mutasi backdate (mis. 128 mutasi bertanggal <= 25 Jun
+     * baru dicatat setelahnya), dan dedup usage memakai status expedition SAAT INI. Jadi
+     * menjalankan ulang tanggal lampau BISA menghasilkan qty berbeda dari hasil sync
+     * sebelumnya — itu koreksi data telat, bukan bug.
+     */
     public function sync(?string $asOf = null): array
     {
         @set_time_limit(0);
@@ -23,25 +37,157 @@ class ErpStockSyncService
         $rows = DB::connection(config('erp.connection'))->select($this->query($asOf));
 
         $now = now()->toDateTimeString();
-        DB::table('erp_item_stock')->truncate();
 
         $count = 0;
         foreach (array_chunk($rows, 500) as $chunk) {
-            DB::table('erp_item_stock')->insert(array_map(fn ($r) => [
-                'erp_product_id' => $r->rowid,
-                'ref' => $r->ref,
-                'label' => $r->label,
-                'principal' => $r->principal_name,
-                'category_l2' => $r->category_l2,
-                'buffer' => (float) ($r->buffer ?: 0),
-                'qty' => (float) $r->qty,
-                'snapshot_date' => $asOf,
-                'synced_at' => $now,
-            ], $chunk));
+            DB::table(InventorySnapshot::TABLE)->upsert(
+                array_map(fn ($r) => [
+                    'source' => InventorySnapshot::ERP,
+                    'snapshot_date' => $asOf,
+                    'ref' => $r->ref,
+                    'label' => $r->label,
+                    'qty' => (float) $r->qty,
+                    'erp_product_id' => $r->rowid,
+                    'principal' => $r->principal_name,
+                    'category_l2' => $r->category_l2,
+                    'buffer' => (float) ($r->buffer ?: 0),
+                    'synced_at' => $now,
+                ], $chunk),
+                ['source', 'ref', 'snapshot_date'],
+                ['label', 'qty', 'erp_product_id', 'principal', 'category_l2', 'buffer', 'synced_at'],
+            );
             $count += count($chunk);
         }
 
         return ['items' => $count, 'as_of' => $asOf];
+    }
+
+    /**
+     * Mutasi stok masuk vs keluar per bulan langsung dari Dolibarr `stock_mouvement`
+     * (bukan ledger Accurate). `value` sudah bertanda: + masuk, − keluar. Dibatasi ke
+     * produk dalam entity & tipe barang (mengikuti universe snapshot).
+     *
+     * $year null → rolling $months bulan terakhir dari pergerakan terbaru (agar chart
+     * tak terlalu lebar & tetap terisi walau data telat). $year diisi → seluruh bulan
+     * tahun itu.
+     *
+     * @return array{rows: array<int, array<string, mixed>>, from: ?string, to: ?string, total: int, years: int[], year: ?int}
+     */
+    public function movementsByMonth(?int $year = null, int $months = 12): array
+    {
+        $p = config('erp.prefix');
+        $entities = collect((array) config('erp.entities'))->map(fn ($e) => (int) $e)->implode(',') ?: '1';
+        $conn = DB::connection(config('erp.connection'));
+
+        $where = "p.entity IN ({$entities}) AND p.fk_product_type = 0 AND p.ref NOT LIKE '%-MAP'";
+        $from = "FROM {$p}stock_mouvement sm JOIN {$p}product p ON p.rowid = sm.fk_product WHERE {$where}";
+
+        // Tahun yang tersedia (untuk dropdown filter).
+        $years = array_map(
+            fn ($r) => (int) $r->y,
+            $conn->select("SELECT DISTINCT YEAR(sm.datem) y {$from} ORDER BY y DESC")
+        );
+
+        $empty = ['rows' => [], 'from' => null, 'to' => null, 'total' => 0, 'years' => $years, 'year' => $year];
+
+        if ($year !== null) {
+            $rows = $conn->select(
+                "SELECT DATE_FORMAT(sm.datem, '%Y-%m') period, SUM(GREATEST(sm.value,0)) masuk,
+                        SUM(-LEAST(sm.value,0)) keluar, COUNT(*) baris {$from} AND YEAR(sm.datem) = ?
+                 GROUP BY period ORDER BY period",
+                [$year]
+            );
+        } else {
+            // Jangkar ke pergerakan terbaru, bukan hari ini.
+            $maxDate = $conn->selectOne("SELECT MAX(sm.datem) mx {$from}")->mx;
+            if ($maxDate === null) {
+                return $empty;
+            }
+            $rows = $conn->select(
+                "SELECT DATE_FORMAT(sm.datem, '%Y-%m') period, SUM(GREATEST(sm.value,0)) masuk,
+                        SUM(-LEAST(sm.value,0)) keluar, COUNT(*) baris {$from}
+                        AND sm.datem >= DATE_SUB(?, INTERVAL ? MONTH)
+                 GROUP BY period ORDER BY period",
+                [$maxDate, $months]
+            );
+        }
+
+        return [
+            'rows' => array_map(fn ($r) => [
+                'period' => $r->period,
+                'masuk' => (float) $r->masuk,
+                'keluar' => (float) $r->keluar,
+                'baris' => (int) $r->baris,
+            ], $rows),
+            'from' => $rows[0]->period ?? null,
+            'to' => $rows ? end($rows)->period : null,
+            'total' => (int) collect($rows)->sum('baris'),
+            'years' => $years,
+            'year' => $year,
+        ];
+    }
+
+    /**
+     * Rincian mutasi satu bulan (YYYY-MM) dari `stock_mouvement`: agregasi per item
+     * (masuk/keluar) + rincian per tipe pergerakan. Untuk drill-down dari chart.
+     *
+     * @return array{period: string, summary: array<string, float|int>, byType: array<int, array<string, mixed>>, rows: array<int, array<string, mixed>>, truncated: bool}
+     */
+    public function movementDetailByMonth(string $period, int $limit = 500): array
+    {
+        $p = config('erp.prefix');
+        $entities = collect((array) config('erp.entities'))->map(fn ($e) => (int) $e)->implode(',') ?: '1';
+        $conn = DB::connection(config('erp.connection'));
+        $where = "p.entity IN ({$entities}) AND p.fk_product_type = 0 AND p.ref NOT LIKE '%-MAP'
+                  AND DATE_FORMAT(sm.datem, '%Y-%m') = ?";
+        $joinWhere = "FROM {$p}stock_mouvement sm JOIN {$p}product p ON p.rowid = sm.fk_product WHERE {$where}";
+
+        // Label ramah untuk type_mouvement Dolibarr (2=keluar, 3=masuk, 0/1=koreksi, 5=transfer).
+        $typeLabel = fn ($t) => match ((string) $t) {
+            '3' => 'Penerimaan (masuk)',
+            '2' => 'Pengiriman (keluar)',
+            '0', '1' => 'Koreksi / stok opname',
+            '5' => 'Transfer gudang',
+            default => 'Lainnya',
+        };
+
+        $agg = $conn->selectOne("SELECT COUNT(DISTINCT sm.fk_product) items, COUNT(*) baris,
+            SUM(GREATEST(sm.value,0)) masuk, SUM(-LEAST(sm.value,0)) keluar {$joinWhere}", [$period]);
+
+        $byType = array_map(fn ($r) => [
+            'type' => (int) $r->type_mouvement,
+            'label' => $typeLabel($r->type_mouvement),
+            'baris' => (int) $r->baris,
+            'masuk' => (float) $r->masuk,
+            'keluar' => (float) $r->keluar,
+        ], $conn->select("SELECT sm.type_mouvement, COUNT(*) baris,
+            SUM(GREATEST(sm.value,0)) masuk, SUM(-LEAST(sm.value,0)) keluar
+            {$joinWhere} GROUP BY sm.type_mouvement ORDER BY baris DESC", [$period]));
+
+        $rows = array_map(fn ($r) => [
+            'ref' => (string) $r->ref,
+            'label' => (string) $r->label,
+            'masuk' => (float) $r->masuk,
+            'keluar' => (float) $r->keluar,
+            'net' => (float) $r->masuk - (float) $r->keluar,
+            'baris' => (int) $r->baris,
+        ], $conn->select("SELECT p.ref, p.label, COUNT(*) baris,
+            SUM(GREATEST(sm.value,0)) masuk, SUM(-LEAST(sm.value,0)) keluar
+            {$joinWhere} GROUP BY p.ref, p.label
+            ORDER BY (SUM(GREATEST(sm.value,0)) + SUM(-LEAST(sm.value,0))) DESC LIMIT {$limit}", [$period]));
+
+        return [
+            'period' => $period,
+            'summary' => [
+                'items' => (int) ($agg->items ?? 0),
+                'baris' => (int) ($agg->baris ?? 0),
+                'masuk' => (float) ($agg->masuk ?? 0),
+                'keluar' => (float) ($agg->keluar ?? 0),
+            ],
+            'byType' => $byType,
+            'rows' => $rows,
+            'truncated' => (int) ($agg->items ?? 0) > $limit,
+        ];
     }
 
     /**
@@ -187,7 +333,11 @@ class ErpStockSyncService
                 LEFT JOIN ({$qMov}) sm ON sm.fk_product = p.rowid
                 LEFT JOIN ({$qUr}) su ON su.fk_product = p.rowid
                 WHERE p.entity IN ({$entities}) AND p.fk_product_type = 0 AND p.ref NOT LIKE '%-MAP'
-                HAVING qty != 0
+                  -- Item yang PERNAH punya mutasi/pemakaian saja. Sengaja tidak memakai
+                  -- `HAVING qty != 0` agar item yang stoknya kini HABIS tetap tercatat
+                  -- (justru itu yang dicari), tanpa menyeret ~9.100 produk yang tak
+                  -- pernah bergerak sama sekali ke dalam snapshot harian.
+                  AND (sm.fk_product IS NOT NULL OR su.fk_product IS NOT NULL)
                 ORDER BY p.ref";
     }
 }

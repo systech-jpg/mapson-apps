@@ -18,6 +18,8 @@ interface Row {
     total: string | number | null;
     sales: string | null;
     paid_unpaid: string | null;
+    patient?: string | null;
+    doctor?: string | null;
     disc?: string | number | null;
     disc_value?: string | number | null;
     dpp?: string | number | null;
@@ -85,6 +87,8 @@ const rpC = (n: number) => {
 const money = (v: string | number | null) => Number(v ?? 0).toLocaleString('id-ID');
 
 function RowsTable({ rows }: { rows: Row[] }) {
+    const showSensitive = rows.some((r) => r.patient !== undefined || r.doctor !== undefined);
+    const colSpan = showSensitive ? 10 : 8;
     return (
         <div className="overflow-x-auto rounded-md border">
             <Table className="text-xs [&_td]:px-3 [&_td]:py-1 [&_th]:h-8 [&_th]:px-3">
@@ -93,6 +97,8 @@ function RowsTable({ rows }: { rows: Row[] }) {
                         <TableHead className="whitespace-nowrap">Invoice</TableHead>
                         <TableHead className="whitespace-nowrap">Tanggal</TableHead>
                         <TableHead>Customer</TableHead>
+                        {showSensitive && <TableHead>Pasien</TableHead>}
+                        {showSensitive && <TableHead>Dokter</TableHead>}
                         <TableHead className="whitespace-nowrap">Part</TableHead>
                         <TableHead>Deskripsi</TableHead>
                         <TableHead className="text-right">Qty</TableHead>
@@ -103,7 +109,7 @@ function RowsTable({ rows }: { rows: Row[] }) {
                 <TableBody>
                     {rows.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                            <TableCell colSpan={colSpan} className="py-8 text-center text-muted-foreground">
                                 Tidak ada detail.
                             </TableCell>
                         </TableRow>
@@ -113,6 +119,8 @@ function RowsTable({ rows }: { rows: Row[] }) {
                                 <TableCell className="font-medium whitespace-nowrap">{row.invoice_no}</TableCell>
                                 <TableCell className="whitespace-nowrap">{row.invoice_date}</TableCell>
                                 <TableCell className="max-w-[160px] truncate" title={row.customer ?? ''}>{row.customer}</TableCell>
+                                {showSensitive && <TableCell className="max-w-[140px] truncate" title={row.patient ?? ''}>{row.patient}</TableCell>}
+                                {showSensitive && <TableCell className="max-w-[140px] truncate" title={row.doctor ?? ''}>{row.doctor}</TableCell>}
                                 <TableCell className="whitespace-nowrap">{row.part_number}</TableCell>
                                 <TableCell className="max-w-[220px] truncate" title={row.description ?? ''}>{row.description}</TableCell>
                                 <TableCell className="text-right">{Number(row.quantity ?? 0)}</TableCell>
@@ -192,7 +200,7 @@ function MonthBlock({ m, tone }: { m: MonthFigure; tone: 'last' | 'prev' }) {
     );
 }
 
-export function DrilldownDialog({ filter, onClose }: { filter: DrillFilter | null; onClose: () => void }) {
+export function DrilldownDialog({ filter, onClose, routeName = 'dashboard.drilldown' }: { filter: DrillFilter | null; onClose: () => void; routeName?: string }) {
     const [data, setData] = useState<Payload | null>(null);
     const [loading, setLoading] = useState(false);
     const [page, setPage] = useState(1);
@@ -210,7 +218,7 @@ export function DrilldownDialog({ filter, onClose }: { filter: DrillFilter | nul
         const params = new URLSearchParams();
         Object.entries(filter).forEach(([k, v]) => params.set(k, String(v)));
         params.set('page', String(page));
-        fetch(`${route('dashboard.drilldown')}?${params.toString()}`, {
+        fetch(`${route(routeName)}?${params.toString()}`, {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
             signal: controller.signal,

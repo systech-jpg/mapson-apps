@@ -142,6 +142,9 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                                 <div className="grid gap-2">
                                     <Label htmlFor="scope">Scope</Label>
                                     <Input id="scope" value={data.scope} onChange={(e) => setData('scope', e.target.value)} placeholder="mis. item_view sales_invoice_view ..." />
+                                    <p className="text-xs text-muted-foreground">
+                                        Hanya dipakai bila memakai alur OAuth. Integrasi ini memakai API Token + Signature, jadi hak akses ditentukan oleh user Accurate pemilik token — bukan oleh isian ini.
+                                    </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">

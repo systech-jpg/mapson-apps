@@ -31,7 +31,7 @@ class MenuSeeder extends Seeder
 
         $stock = $this->menu([
             'key' => 'dashboard-stock',
-            'title' => 'Stock',
+            'title' => 'Warehouse',
             'route' => 'dashboard.stock',
             'icon' => 'Boxes',
             'area' => 'reporting',
@@ -65,6 +65,11 @@ class MenuSeeder extends Seeder
             'area' => 'reporting',
             'sort_order' => 6,
         ]);
+
+        // Pivot Data Penjualan tidak punya menu sendiri — diakses via kartu shortcut di
+        // dashboard Sales dan ikut gate `dashboard`. Hapus menu lama bila pernah ter-seed
+        // (cascade role_menu) agar tidak muncul di top nav.
+        Menu::where('key', 'pivot-explorer')->delete();
 
         // Beranda (self-service) lives in the BACKEND area, not the BOD front dashboard.
         $this->menu([
@@ -192,6 +197,17 @@ class MenuSeeder extends Seeder
 
         // Sync job log (ERP / Accurate / Hadirr).
         $this->menu(['key' => 'sync-logs', 'title' => 'Log Sinkronisasi', 'route' => 'integration.logs', 'icon' => 'ScrollText', 'sort_order' => 6], $integrasi->id);
+
+        // Module: Data Warehouse — sumber data terpadu (dwh_*) + unggah manual (GL).
+        $dwh = $this->menu([
+            'key' => 'data-warehouse',
+            'title' => 'Data Warehouse',
+            'route' => null,
+            'icon' => 'Warehouse',
+            'sort_order' => 7,
+        ]);
+        $this->menu(['key' => 'dwh-pipeline', 'title' => 'Pipeline Data', 'route' => 'dwh.pipeline', 'icon' => 'DatabaseZap', 'sort_order' => 1], $dwh->id);
+        $this->menu(['key' => 'dwh-cost-mapping', 'title' => 'Pemetaan Biaya (ABC)', 'route' => 'dwh.cost-mapping', 'icon' => 'SlidersHorizontal', 'sort_order' => 2], $dwh->id);
 
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();

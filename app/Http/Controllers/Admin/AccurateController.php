@@ -7,6 +7,7 @@ use App\Http\Requests\Admin\UpdateAccurateSettingRequest;
 use App\Models\AccurateSetting;
 use App\Services\Accurate\AccurateService;
 use App\Services\Accurate\AccurateSyncService;
+use App\Support\InventorySnapshot;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -391,11 +392,13 @@ class AccurateController extends Controller
         $type = $request->string('type')->toString();
         $inStock = $request->boolean('in_stock');
 
-        $rows = DB::table('acc_item_stock')
-            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('item_no', 'like', "%{$q}%")->orWhere('name', 'like', "%{$q}%")))
+        // Snapshot Accurate terakhir; kolom di-alias ke nama lama agar halaman tak berubah.
+        $rows = InventorySnapshot::latest(InventorySnapshot::ACCURATE)
+            ->select('id', 'ref as item_no', 'label as name', 'item_type', 'unit_price', 'qty as quantity', 'available_to_sell')
+            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('ref', 'like', "%{$q}%")->orWhere('label', 'like', "%{$q}%")))
             ->when($type !== '', fn ($w) => $w->where('item_type', $type))
-            ->when($inStock, fn ($w) => $w->where('quantity', '!=', 0))
-            ->orderBy('item_no')
+            ->when($inStock, fn ($w) => $w->where('qty', '!=', 0))
+            ->orderBy('ref')
             ->paginate(50)
             ->withQueryString();
 
@@ -404,10 +407,10 @@ class AccurateController extends Controller
         return Inertia::render('accurate/stock', [
             'rows' => $rows,
             'filters' => ['q' => $q, 'type' => $type, 'in_stock' => $inStock],
-            'types' => DB::table('acc_item_stock')->whereNotNull('item_type')->distinct()->orderBy('item_type')->pluck('item_type'),
-            'count' => DB::table('acc_item_stock')->count(),
-            'lastSync' => DB::table('acc_item_stock')->max('synced_at'),
-            'snapshotDate' => DB::table('acc_item_stock')->max('snapshot_date'),
+            'types' => InventorySnapshot::latest(InventorySnapshot::ACCURATE)->whereNotNull('item_type')->distinct()->orderBy('item_type')->pluck('item_type'),
+            'count' => InventorySnapshot::latest(InventorySnapshot::ACCURATE)->count(),
+            'lastSync' => InventorySnapshot::latest(InventorySnapshot::ACCURATE)->max('synced_at'),
+            'snapshotDate' => InventorySnapshot::latestDate(InventorySnapshot::ACCURATE),
             'today' => now()->toDateString(),
             'ready' => $s->isConnected() && filled($s->api_host),
         ]);
@@ -442,11 +445,13 @@ class AccurateController extends Controller
         $type = $request->string('type')->toString();
         $inStock = $request->boolean('in_stock');
 
-        $rows = DB::table('acc_item_stock')
-            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('item_no', 'like', "%{$q}%")->orWhere('name', 'like', "%{$q}%")))
+        // Alias ke nama kolom lama supaya definisi $cols di bawah tetap berlaku.
+        $rows = InventorySnapshot::latest(InventorySnapshot::ACCURATE)
+            ->select('ref as item_no', 'label as name', 'item_type', 'unit_price', 'qty as quantity', 'available_to_sell', 'snapshot_date')
+            ->when($q !== '', fn ($w) => $w->where(fn ($x) => $x->where('ref', 'like', "%{$q}%")->orWhere('label', 'like', "%{$q}%")))
             ->when($type !== '', fn ($w) => $w->where('item_type', $type))
-            ->when($inStock, fn ($w) => $w->where('quantity', '!=', 0))
-            ->orderBy('item_no')
+            ->when($inStock, fn ($w) => $w->where('qty', '!=', 0))
+            ->orderBy('ref')
             ->limit(20000)
             ->get();
 

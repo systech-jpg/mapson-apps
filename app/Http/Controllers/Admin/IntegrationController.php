@@ -7,6 +7,7 @@ use App\Models\SalesFact;
 use App\Models\SyncLog;
 use App\Services\Erp\ErpStockSyncService;
 use App\Services\Erp\SalesSyncService;
+use App\Support\InventorySnapshot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +56,9 @@ class IntegrationController extends Controller
     {
         $stockSearch = $request->string('search')->toString();
 
-        $erpStock = DB::table('erp_item_stock')
+        // Halaman ini menampilkan "stok terkini" = snapshot ERP terakhir. Dibatasi ke item
+        // bersaldo (erpStocked) agar isinya sama seperti tabel erp_item_stock dahulu.
+        $erpStock = InventorySnapshot::erpStocked()
             ->when($stockSearch !== '', fn ($q) => $q->where(fn ($w) => $w
                 ->where('ref', 'like', "%{$stockSearch}%")->orWhere('label', 'like', "%{$stockSearch}%")->orWhere('principal', 'like', "%{$stockSearch}%")))
             ->orderBy('ref')
@@ -65,9 +68,9 @@ class IntegrationController extends Controller
         return Inertia::render('integration/stock', [
             'erpStock' => $erpStock,
             'stockMeta' => [
-                'count' => DB::table('erp_item_stock')->count(),
-                'lastSync' => DB::table('erp_item_stock')->max('synced_at'),
-                'snapshotDate' => DB::table('erp_item_stock')->max('snapshot_date'),
+                'count' => InventorySnapshot::erpStocked()->count(),
+                'lastSync' => InventorySnapshot::erp()->max('synced_at'),
+                'snapshotDate' => InventorySnapshot::latestDate(InventorySnapshot::ERP),
                 'today' => now()->toDateString(),
             ],
             'filters' => ['search' => $stockSearch],

@@ -7,6 +7,8 @@ use App\Http\Controllers\Admin\HadirrController;
 use App\Http\Controllers\Admin\HrSettingController;
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
+use App\Http\Controllers\Admin\CostMappingController;
+use App\Http\Controllers\Admin\DataWarehouseController;
 use App\Http\Controllers\Admin\ErpSettingController;
 use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\StockReconController;
@@ -49,6 +51,20 @@ Route::middleware(['auth'])->group(function () {
 
     // Analytics (reporting)
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('menu.access:analytics,view')->name('analytics.index');
+
+    // Data Warehouse — pantau sumber yang ditarik + kelola data yang diunggah manual (GL).
+    Route::middleware('menu.access:dwh-pipeline,view')->group(function () {
+        Route::get('data-warehouse/pipeline', [DataWarehouseController::class, 'pipeline'])->name('dwh.pipeline');
+        Route::post('data-warehouse/gl/upload', [DataWarehouseController::class, 'uploadGl'])->name('dwh.gl.upload');
+        Route::delete('data-warehouse/gl/{period}', [DataWarehouseController::class, 'destroyGlPeriod'])->name('dwh.gl.destroy');
+    });
+
+    // Master ABC costing — pemetaan akun GL → pool aktivitas (split %).
+    Route::middleware('menu.access:dwh-cost-mapping,view')->group(function () {
+        Route::get('data-warehouse/cost-mapping', [CostMappingController::class, 'index'])->name('dwh.cost-mapping');
+        Route::post('data-warehouse/cost-mapping/allocation', [CostMappingController::class, 'storeAllocation'])
+            ->middleware('menu.access:dwh-cost-mapping,edit')->name('dwh.cost-mapping.allocation');
+    });
 
     // Data Integration (ERP stock & sales)
     Route::get('integration', [IntegrationController::class, 'index'])->middleware('menu.access:data-integration,view')->name('integration.index');

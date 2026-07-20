@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AccurateSetting;
 use App\Services\Accurate\AccurateService;
 use App\Services\Erp\ErpStockSyncService;
+use App\Support\InventorySnapshot;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -14,25 +15,33 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Stock reconciliation: ERP (Dolibarr, erp_item_stock) vs Accurate (acc_item_stock),
- * matched on ERP product ref = Accurate item_no.
+ * Stock reconciliation: ERP (Dolibarr) vs Accurate, matched on ERP product ref =
+ * Accurate item_no. Keduanya dibaca dari snapshot TERAKHIR di
+ * dwh_fact_inventory_snapshot (dulu tabel terpisah erp_item_stock / acc_item_stock).
  */
 class StockReconController extends Controller
 {
     /**
      * Union of both systems' item keys, left-joined to each side. The Accurate side is
      * restricted to INVENTORY items with stock > 0 (non-inventory / zero-stock items are
-     * excluded from the Accurate column).
+     * excluded from the Accurate column); the ERP side to items with a non-zero balance.
+     *
+     * Subquery-nya di-alias ke nama kolom lama (a.item_no/a.name/a.quantity) supaya
+     * seluruh filter & agregasi di bawah tidak perlu berubah.
      */
     private function base()
     {
-        $acc = fn () => DB::table('acc_item_stock')->where('item_type', 'INVENTORY')->where('quantity', '>', 0);
+        $erp = fn () => InventorySnapshot::erpStocked()->select('ref', 'label', 'qty', 'principal');
+        // Alias ke nama kolom lama (item_no/name/quantity) supaya downstream tak berubah.
+        $acc = fn () => InventorySnapshot::accurateInventory()
+            ->select('ref as item_no', 'label as name', 'qty as quantity');
 
-        $keys = DB::table('erp_item_stock')->select('ref as k')
-            ->union($acc()->select('item_no as k'));
+        // Kunci union diambil dari kolom asli snapshot (ref), bukan alias di atas.
+        $keys = InventorySnapshot::erpStocked()->select('ref as k')
+            ->union(InventorySnapshot::accurateInventory()->select('ref as k'));
 
         return DB::query()->fromSub($keys, 'k')
-            ->leftJoin('erp_item_stock as e', 'e.ref', '=', 'k.k')
+            ->leftJoinSub($erp(), 'e', 'e.ref', '=', 'k.k')
             ->leftJoinSub($acc(), 'a', 'a.item_no', '=', 'k.k');
     }
 
@@ -87,8 +96,8 @@ class StockReconController extends Controller
                 'only_acc' => (int) ($agg->only_acc ?? 0),
             ],
             'snapshots' => [
-                'erp' => DB::table('erp_item_stock')->max('snapshot_date'),
-                'accurate' => DB::table('acc_item_stock')->max('snapshot_date'),
+                'erp' => InventorySnapshot::latestDate(InventorySnapshot::ERP),
+                'accurate' => InventorySnapshot::latestDate(InventorySnapshot::ACCURATE),
             ],
         ]);
     }
@@ -100,8 +109,8 @@ class StockReconController extends Controller
         $year = (int) ($request->input('year') ?: now()->year);
         $yearStart = Carbon::create($year, 1, 1)->toDateString();
 
-        $erpRow = DB::table('erp_item_stock')->where('ref', $code)->first();
-        $accRow = DB::table('acc_item_stock')->where('item_no', $code)->first();
+        $erpRow = InventorySnapshot::erp()->where('ref', $code)->first();
+        $accRow = InventorySnapshot::latest(InventorySnapshot::ACCURATE)->where('ref', $code)->first();
 
         $to = $accRow?->snapshot_date ? Carbon::parse($accRow->snapshot_date)
             : ($erpRow?->snapshot_date ? Carbon::parse($erpRow->snapshot_date) : now());
@@ -178,7 +187,7 @@ class StockReconController extends Controller
         // Kartu stok Accurate: per document, chronological, running balance anchored to live qty.
         $card = $accDocs;
         usort($card, fn ($a, $b) => strcmp((string) $a['date'], (string) $b['date']));
-        $accOpening = (float) ($accRow->quantity ?? 0) - array_sum(array_map(fn ($d) => $d['qty'], $card));
+        $accOpening = (float) ($accRow->qty ?? 0) - array_sum(array_map(fn ($d) => $d['qty'], $card));
         $run = $accOpening;
         $cardRows = [];
         foreach ($card as $c) {
@@ -219,7 +228,7 @@ class StockReconController extends Controller
 
         return response()->json([
             'code' => $code,
-            'label' => $erpRow->label ?? $accRow->name ?? $code,
+            'label' => $erpRow->label ?? $accRow->label ?? $code,
             'year' => $year,
             'erp' => [
                 'qty' => (float) ($erpRow->qty ?? 0),
@@ -228,7 +237,7 @@ class StockReconController extends Controller
                 'docs' => $erpDocs,
             ],
             'accurate' => [
-                'qty' => (float) ($accRow->quantity ?? 0),
+                'qty' => (float) ($accRow->qty ?? 0),
                 'snapshot' => $accRow->snapshot_date ?? null,
                 'exists' => (bool) $accRow,
                 'docs' => $accDocs,
@@ -240,7 +249,7 @@ class StockReconController extends Controller
                     'rows' => $cardRows,
                 ],
             ],
-            'selisih' => (float) ($erpRow->qty ?? 0) - (float) ($accRow->quantity ?? 0),
+            'selisih' => (float) ($erpRow->qty ?? 0) - (float) ($accRow->qty ?? 0),
             'do_match' => $doMatch,
         ]);
     }

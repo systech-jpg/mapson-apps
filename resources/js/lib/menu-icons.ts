@@ -28,11 +28,14 @@ import {
     Package,
     Plug,
     Receipt,
+    ScrollText,
     Settings,
     ShoppingCart,
     Shield,
     SlidersHorizontal,
     Stethoscope,
+    Table2,
+    Warehouse,
     Timer,
     TrendingUp,
     UserCog,
@@ -86,6 +89,9 @@ export const menuIcons: Record<string, LucideIcon> = {
     Boxes,
     Receipt,
     TrendingUp,
+    Table2,
+    Warehouse,
+    ScrollText,
 };
 
 export const menuIconNames = Object.keys(menuIcons);

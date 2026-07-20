@@ -3,6 +3,7 @@
 namespace App\Services\Accurate;
 
 use App\Models\AccurateSetting;
+use App\Support\InventorySnapshot;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -311,8 +312,12 @@ class AccurateSyncService
     }
 
     /**
-     * Pull the current stock snapshot for every item (item/list.do). Upsert by erp_id.
-     * The quantity is the LIVE balance at pull time; $snapshotDate is just a label.
+     * Pull the current stock snapshot for every item (item/list.do) into
+     * dwh_fact_inventory_snapshot (source = accurate), satu baris per item per tanggal.
+     *
+     * Kuantitas dari API adalah saldo LIVE saat ditarik, jadi $snapshotDate = tanggal
+     * penarikan dan sisi Accurate ini HANYA bisa maju (tidak bisa di-backfill mundur,
+     * beda dari ERP yang dihitung genuinely as-of).
      *
      * @param  callable(string):void|null  $progress
      * @return array<string, int>
@@ -328,8 +333,12 @@ class AccurateSyncService
         $page = 1;
 
         if ($truncate) {
-            DB::table('acc_item_stock')->truncate();
-            $log('Data stok lama dihapus (truncate).');
+            // Hanya bersihkan tanggal ini — riwayat tanggal lain tidak boleh ikut hilang.
+            DB::table(InventorySnapshot::TABLE)
+                ->where('source', InventorySnapshot::ACCURATE)
+                ->where('snapshot_date', $snapshotDate)
+                ->delete();
+            $log('Snapshot Accurate tanggal '.$snapshotDate.' dibersihkan untuk diisi ulang.');
         }
 
         do {
@@ -349,20 +358,28 @@ class AccurateSyncService
 
             $batch = [];
             foreach ($list['d'] ?? [] as $r) {
+                if (($r['no'] ?? null) === null) {
+                    continue; // tanpa item_no tak bisa dicocokkan ke ERP ref
+                }
                 $batch[] = [
-                    'erp_id' => $r['id'],
-                    'item_no' => $r['no'] ?? null,
-                    'name' => $r['name'] ?? null,
+                    'source' => InventorySnapshot::ACCURATE,
+                    'snapshot_date' => $snapshotDate,
+                    'ref' => $r['no'],
+                    'label' => $r['name'] ?? null,
+                    'qty' => $r['quantity'] ?? 0,
+                    'acc_item_id' => $r['id'],
                     'item_type' => $r['itemType'] ?? null,
                     'unit_price' => $r['unitPrice'] ?? 0,
-                    'quantity' => $r['quantity'] ?? 0,
                     'available_to_sell' => $r['availableToSell'] ?? 0,
-                    'snapshot_date' => $snapshotDate,
                     'synced_at' => $now,
                 ];
             }
             if ($batch) {
-                DB::table('acc_item_stock')->upsert($batch, ['erp_id'], ['item_no', 'name', 'item_type', 'unit_price', 'quantity', 'available_to_sell', 'snapshot_date', 'synced_at']);
+                DB::table(InventorySnapshot::TABLE)->upsert(
+                    $batch,
+                    ['source', 'ref', 'snapshot_date'],
+                    ['label', 'qty', 'acc_item_id', 'item_type', 'unit_price', 'available_to_sell', 'synced_at'],
+                );
                 $count += count($batch);
             }
 
@@ -491,6 +508,71 @@ class AccurateSyncService
     }
 
     /**
+     * Pull the chart of accounts (glaccount/list.do) into dwh_stg_acc_glaccount.
+     *
+     * Endpoint ini TIDAK diblokir hak akses (beda dari journal-voucher/expense), jadi
+     * struktur COA — accountType + parentName — tetap bisa ditarik otomatis dan dipakai
+     * menyusun P&L tanpa pemetaan manual.
+     *
+     * CATATAN: `balance` adalah saldo BERJALAN saat ditarik; parameter tanggal diabaikan
+     * Accurate, jadi kolom ini TIDAK bisa dipakai untuk tren per periode. Tren datang dari
+     * dwh_stg_gl (hasil unggahan Buku Besar).
+     *
+     * @param  callable(string):void|null  $progress
+     * @return array<string, int>
+     */
+    public function syncGlAccounts(?callable $progress = null): array
+    {
+        @set_time_limit(0);
+        $s = AccurateSetting::current();
+        $now = now()->toDateTimeString();
+        $log = fn (string $m) => $progress && $progress($m);
+        $count = 0;
+        $page = 1;
+
+        do {
+            $list = $this->acc->apiGet($s, 'glaccount/list.do', [
+                'sp.page' => $page,
+                'sp.pageSize' => 100,
+                'fields' => 'id,no,name,accountType,parentName,balance',
+            ]);
+
+            if (($list['s'] ?? false) !== true) {
+                $reason = is_array($list['d'] ?? null) ? implode(', ', $list['d']) : ($list['d'] ?? 'gagal list glaccount');
+                throw new \RuntimeException('List COA gagal: '.$reason);
+            }
+
+            $pageCount = $list['sp']['pageCount'] ?? 1;
+            $log('COA halaman '.$page.'/'.$pageCount.'…');
+
+            $batch = [];
+            foreach ($list['d'] ?? [] as $r) {
+                if (($r['no'] ?? null) === null) {
+                    continue; // tanpa nomor akun tak bisa dicocokkan ke buku besar
+                }
+                $batch[] = [
+                    'acc_id' => $r['id'],
+                    'no' => (string) $r['no'],
+                    'name' => $r['name'] ?? null,
+                    'account_type' => $r['accountType'] ?? null,
+                    'parent_name' => $r['parentName'] ?? null,
+                    'balance' => $r['balance'] ?? 0,
+                    'synced_at' => $now,
+                ];
+            }
+            if ($batch) {
+                DB::table('dwh_stg_acc_glaccount')->upsert($batch, ['acc_id'],
+                    ['no', 'name', 'account_type', 'parent_name', 'balance', 'synced_at']);
+                $count += count($batch);
+            }
+
+            $page++;
+        } while ($page <= $pageCount);
+
+        return ['accounts' => $count];
+    }
+
+    /**
      * TRIAL (Analisa Produk): pull purchase-invoice lines for a set of item numbers into
      * tmp_product_purchases — the buy-price basis for COGS estimation and price trends.
      * Idempotent upsert by erp_id (PI detail line id).
@@ -558,6 +640,139 @@ class AccurateSyncService
         } while ($page <= $pageCount);
 
         return ['purchase_docs' => $docs, 'purchase_lines' => $lines];
+    }
+
+    /**
+     * Pull purchase-invoice lines for ALL items into dwh_stg_acc_purchase_invoice_item —
+     * the buy-price basis for HPP (harga pokok) per produk. Idempotent upsert by erp_id.
+     *
+     * Beda dari syncProductPurchases (trial, item terpilih): tanpa filter itemNos, dan
+     * menulis ke tabel permanen dwh_*. Panggil recomputeProductCost() setelahnya.
+     *
+     * @param  string  $from  dd/MM/yyyy
+     * @param  string  $to    dd/MM/yyyy
+     * @param  callable(string):void|null  $progress
+     * @return array<string, int>
+     */
+    public function syncPurchaseInvoices(string $from, string $to, ?callable $progress = null): array
+    {
+        @set_time_limit(0);
+        $s = AccurateSetting::current();
+        $now = now()->toDateTimeString();
+        $log = fn (string $m) => $progress && $progress($m);
+        $docs = 0;
+        $lines = 0;
+        $page = 1;
+
+        do {
+            $list = $this->retry(fn () => $this->listPage($s, 'purchase-invoice/list.do', $from, $to, $page));
+            $pageCount = $list['sp']['pageCount'] ?? 1;
+            $log("Faktur pembelian halaman {$page}/{$pageCount} ({$lines} baris)…");
+
+            foreach ($list['d'] ?? [] as $row) {
+                $d = $this->retry(fn () => $this->acc->apiGet($s, 'purchase-invoice/detail.do', ['id' => $row['id']])['d'] ?? null);
+                if (! is_array($d)) {
+                    continue;
+                }
+                $td = $this->date($d['transDate'] ?? null);
+                $vendor = is_array($d['vendor'] ?? null) ? ($d['vendor']['name'] ?? null) : ($d['vendorName'] ?? null);
+                $batch = [];
+
+                foreach ($d['detailItem'] ?? [] as $it) {
+                    $itemNo = is_array($it['item'] ?? null) ? ($it['item']['no'] ?? null) : null;
+                    if (! $itemNo || empty($it['id'])) {
+                        continue;
+                    }
+                    $batch[] = [
+                        'erp_id' => $it['id'],
+                        'erp_doc_id' => $d['id'] ?? null,
+                        'doc_number' => $d['number'] ?? null,
+                        'trans_date' => $td,
+                        'vendor_name' => $vendor,
+                        'item_no' => $itemNo,
+                        'item_name' => $it['detailName'] ?? (is_array($it['item'] ?? null) ? ($it['item']['name'] ?? null) : null),
+                        'qty' => $it['quantity'] ?? 0,
+                        'unit' => is_array($it['itemUnit'] ?? null) ? ($it['itemUnit']['name'] ?? null) : ($it['availableItemUnitName'] ?? null),
+                        'unit_price' => $it['unitPrice'] ?? 0,
+                        'total' => $it['totalPrice'] ?? ((float) ($it['quantity'] ?? 0) * (float) ($it['unitPrice'] ?? 0)),
+                        'synced_at' => $now,
+                    ];
+                }
+
+                if ($batch) {
+                    DB::table('dwh_stg_acc_purchase_invoice_item')->upsert($batch, ['erp_id'],
+                        ['erp_doc_id', 'doc_number', 'trans_date', 'vendor_name', 'item_no', 'item_name', 'qty', 'unit', 'unit_price', 'total', 'synced_at']);
+                    $lines += count($batch);
+                    $docs++;
+                }
+            }
+
+            $page++;
+        } while ($page <= $pageCount);
+
+        return ['purchase_docs' => $docs, 'purchase_lines' => $lines];
+    }
+
+    /**
+     * Turunkan HPP per item dari dwh_stg_acc_purchase_invoice_item → dwh_map_product_cost.
+     * avg_cost = SUM(total)/SUM(qty) (rata-rata tertimbang), plus harga & tanggal beli terakhir.
+     * Baris qty<=0 diabaikan agar tak membagi nol / mengotori rata-rata (retur/koreksi).
+     *
+     * @return array<string, int>
+     */
+    public function recomputeProductCost(): array
+    {
+        $now = now()->toDateTimeString();
+
+        $agg = DB::table('dwh_stg_acc_purchase_invoice_item')
+            ->where('qty', '>', 0)
+            ->groupBy('item_no')
+            ->selectRaw('item_no,
+                SUM(total) sum_total, SUM(qty) sum_qty, COUNT(*) doc_count,
+                MAX(trans_date) last_date, MIN(trans_date) first_date')
+            ->get();
+
+        // Harga & nama pada pembelian TERAKHIR per item (untuk last_cost & label terkini).
+        $last = DB::table('dwh_stg_acc_purchase_invoice_item as p')
+            ->joinSub(
+                DB::table('dwh_stg_acc_purchase_invoice_item')
+                    ->where('qty', '>', 0)
+                    ->groupBy('item_no')
+                    ->selectRaw('item_no, MAX(CONCAT(COALESCE(trans_date,"0000-00-00"), "#", LPAD(erp_id,12,"0"))) mk'),
+                'm',
+                fn ($j) => $j->on('p.item_no', '=', 'm.item_no')
+                    ->whereRaw('CONCAT(COALESCE(p.trans_date,"0000-00-00"), "#", LPAD(p.erp_id,12,"0")) = m.mk')
+            )
+            ->pluck('p.unit_price', 'p.item_no'); // item_no => unit_price terakhir
+        $lastName = DB::table('dwh_stg_acc_purchase_invoice_item as p')
+            ->whereIn('p.item_no', $agg->pluck('item_no'))
+            ->orderBy('trans_date')->orderBy('erp_id')
+            ->pluck('item_name', 'item_no'); // ambil terakhir yg tertulis (order asc → nilai akhir menang)
+
+        $rows = [];
+        foreach ($agg as $r) {
+            $sumQty = (float) $r->sum_qty;
+            if ($sumQty <= 0) {
+                continue;
+            }
+            $rows[] = [
+                'item_no' => $r->item_no,
+                'item_name' => $lastName[$r->item_no] ?? null,
+                'avg_cost' => round((float) $r->sum_total / $sumQty, 2),
+                'last_cost' => round((float) ($last[$r->item_no] ?? 0), 2),
+                'last_date' => $r->last_date,
+                'qty_total' => $sumQty,
+                'doc_count' => (int) $r->doc_count,
+                'window_from' => $r->first_date,
+                'window_to' => $r->last_date,
+                'computed_at' => $now,
+            ];
+        }
+
+        DB::table('dwh_map_product_cost')->upsert($rows, ['item_no'],
+            ['item_name', 'avg_cost', 'last_cost', 'last_date', 'qty_total', 'doc_count', 'window_from', 'window_to', 'computed_at']);
+
+        return ['items_costed' => count($rows)];
     }
 
     /**

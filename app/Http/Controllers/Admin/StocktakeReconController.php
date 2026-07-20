@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Support\InventorySnapshot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -11,22 +12,27 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * 3-way stock reconciliation: ERP (erp_item_stock) vs Accurate (acc_item_stock) vs
- * physical stocktake (stocktake_counts), matched on the shared item code.
+ * 3-way stock reconciliation: ERP vs Accurate (keduanya dari snapshot terakhir di
+ * dwh_fact_inventory_snapshot) vs physical stocktake (stocktake_counts), matched on
+ * the shared item code.
  */
 class StocktakeReconController extends Controller
 {
     /** Union of item codes across the three sources, left-joined to each. */
     private function base()
     {
-        $acc = fn () => DB::table('acc_item_stock')->where('item_type', 'INVENTORY')->where('quantity', '>', 0);
+        $erp = fn () => InventorySnapshot::erpStocked()->select('ref', 'label', 'qty', 'principal');
+        // Alias ke nama kolom lama (item_no/name/quantity) supaya downstream tak berubah.
+        $acc = fn () => InventorySnapshot::accurateInventory()
+            ->select('ref as item_no', 'label as name', 'qty as quantity');
 
+        // Kunci union diambil dari kolom asli snapshot (ref), bukan alias di atas.
         $keys = DB::table('stocktake_counts')->select('code as k')
-            ->union(DB::table('erp_item_stock')->select('ref as k'))
-            ->union($acc()->select('item_no as k'));
+            ->union(InventorySnapshot::erpStocked()->select('ref as k'))
+            ->union(InventorySnapshot::accurateInventory()->select('ref as k'));
 
         return DB::query()->fromSub($keys, 'k')
-            ->leftJoin('erp_item_stock as e', 'e.ref', '=', 'k.k')
+            ->leftJoinSub($erp(), 'e', 'e.ref', '=', 'k.k')
             ->leftJoinSub($acc(), 'a', 'a.item_no', '=', 'k.k')
             ->leftJoin('stocktake_counts as s', 's.code', '=', 'k.k');
     }
@@ -94,8 +100,8 @@ class StocktakeReconController extends Controller
             'meta' => [
                 'counted_at' => DB::table('stocktake_counts')->max('counted_at'),
                 'count' => DB::table('stocktake_counts')->count(),
-                'erp_snapshot' => DB::table('erp_item_stock')->max('snapshot_date'),
-                'acc_snapshot' => DB::table('acc_item_stock')->max('snapshot_date'),
+                'erp_snapshot' => InventorySnapshot::latestDate(InventorySnapshot::ERP),
+                'acc_snapshot' => InventorySnapshot::latestDate(InventorySnapshot::ACCURATE),
                 'data_period' => $this->dataPeriod(),
             ],
             'erp_sessions' => $this->erpSessions(),
@@ -123,7 +129,7 @@ class StocktakeReconController extends Controller
     /** Period (YYYY-MM) the system data represents — analogised from the snapshot date. */
     private function dataPeriod(): ?string
     {
-        $snap = DB::table('acc_item_stock')->max('snapshot_date') ?: DB::table('erp_item_stock')->max('snapshot_date');
+        $snap = InventorySnapshot::latestDate(InventorySnapshot::ACCURATE) ?: InventorySnapshot::latestDate(InventorySnapshot::ERP);
 
         return $snap ? Carbon::parse($snap)->format('Y-m') : null;
     }

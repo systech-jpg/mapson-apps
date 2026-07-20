@@ -1,9 +1,11 @@
 import { DrilldownDialog, type DrillFilter } from '@/components/drilldown-dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { usePermissions } from '@/hooks/use-permissions';
 import DashboardLayout from '@/layouts/dashboard-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
+import { ArrowRight, Table2 } from 'lucide-react';
 import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Dashboard', href: '/dashboard' }];
@@ -30,7 +32,6 @@ interface Props {
     topMerk: Bar[];
 }
 
-const AGING_KEYS = ['belum', '1-30', '31-60', '61-90', '90plus'];
 const MONTHS_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 const fmtYm = (ym: string) => {
     const [y, m] = ym.split('-');
@@ -62,26 +63,32 @@ function Kpi({ label, value, sub, accent, onClick }: { label: string; value: str
     );
 }
 
-function BarList({ items, color = 'bg-primary', onItem }: { items: Bar[]; color?: string; onItem?: (item: Bar, index: number) => void }) {
+function BarList({ items, color = 'bg-primary', onItem, total }: { items: Bar[]; color?: string; onItem?: (item: Bar, index: number) => void; total?: number }) {
     const max = Math.max(...items.map((i) => i.value), 1);
     if (items.length === 0) return <p className="text-sm text-muted-foreground">Tidak ada data.</p>;
     return (
         <div className="space-y-2">
-            {items.map((it, idx) => (
-                <div
-                    key={it.label + idx}
-                    className={onItem ? 'cursor-pointer rounded p-1 -mx-1 hover:bg-accent/50' : ''}
-                    onClick={onItem ? () => onItem(it, idx) : undefined}
-                >
-                    <div className="flex justify-between gap-2 text-xs">
-                        <span className="truncate" title={it.label}>{it.label}</span>
-                        <span className="shrink-0 font-medium">{rpC(it.value)}</span>
+            {items.map((it, idx) => {
+                const share = total && total > 0 ? (it.value / total) * 100 : null;
+                return (
+                    <div
+                        key={it.label + idx}
+                        className={onItem ? 'cursor-pointer rounded p-1 -mx-1 hover:bg-accent/50' : ''}
+                        onClick={onItem ? () => onItem(it, idx) : undefined}
+                    >
+                        <div className="flex justify-between gap-2 text-xs">
+                            <span className="truncate" title={it.label}>{it.label}</span>
+                            <span className="shrink-0 font-medium">
+                                {rpC(it.value)}
+                                {share !== null && <span className="ml-1 font-normal text-muted-foreground">· {share.toFixed(1)}%</span>}
+                            </span>
+                        </div>
+                        <div className="mt-0.5 h-2 w-full rounded bg-muted">
+                            <div className={`h-2 rounded ${color}`} style={{ width: `${(it.value / max) * 100}%` }} />
+                        </div>
                     </div>
-                    <div className="mt-0.5 h-2 w-full rounded bg-muted">
-                        <div className={`h-2 rounded ${color}`} style={{ width: `${(it.value / max) * 100}%` }} />
-                    </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 }
@@ -114,8 +121,10 @@ function MonthlyTrend({ trend, year, prevYear, onMonth }: { trend: Props['trend'
     );
 }
 
-export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, trend, topCustomers, topRegions, topMerk }: Props) {
+export default function Dashboard({ years, year, prevYear, hasData, kpi, trend, topCustomers, topRegions, topMerk }: Props) {
     const [drill, setDrill] = useState<DrillFilter | null>(null);
+    const { can } = usePermissions();
+    const canPivot = can('dashboard', 'view');
     const setYear = (y: string) => router.get(route('dashboard'), { year: y }, { preserveState: true, preserveScroll: true, replace: true });
 
     return (
@@ -124,8 +133,8 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
             <div className="flex flex-1 flex-col gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-2xl font-semibold">Dashboard Eksekutif</h1>
-                        <p className="text-sm text-muted-foreground">Ringkasan penjualan & piutang dari data ERP. Klik angka / batang untuk lihat detail.</p>
+                        <h1 className="text-2xl font-semibold">Dashboard Sales</h1>
+                        <p className="text-sm text-muted-foreground">Ringkasan penjualan dari data ERP. Klik angka / batang untuk lihat detail.</p>
                     </div>
                     <Select value={year} onValueChange={setYear}>
                         <SelectTrigger className="w-28">
@@ -170,16 +179,12 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                 }
                                 onClick={kpi.momCompare ? () => setDrill({ months: `${kpi.momCompare!.last.ym},${kpi.momCompare!.prev.ym}` }) : undefined}
                             />
-                            <Kpi label={`Jumlah Invoice ${year}`} value={kpi.invoices.toLocaleString('id-ID')} sub={`${kpi.customers} customer aktif`} onClick={() => setDrill({ year, group: 'invoice-customer' })} />
-                            <Kpi label="Rata-rata / Invoice" value={rpC(kpi.aov)} sub="nilai DPP per invoice" onClick={() => setDrill({ year })} />
                             <Kpi label="Total Diskon" value={rpC(kpi.discount)} sub={`tahun ${year} — klik detail`} onClick={() => setDrill({ year, discounted: 1, view: 'discount' })} />
-                            <Kpi label="Collection Rate" value={`${ar.collectionRate}%`} sub={`Terbayar ${rpC(ar.paid)} — klik detail`} onClick={() => setDrill({ view: 'collection' })} />
-                            <Kpi label="Piutang (Outstanding)" value={rpC(ar.outstanding)} sub="seluruh periode — klik detail" accent onClick={() => setDrill({ status: 'UNPAID' })} />
                             <Kpi label="Customer Aktif" value={kpi.customers.toLocaleString('id-ID')} sub={`tahun ${year}`} onClick={() => setDrill({ year, view: 'customers' })} />
                         </div>
 
                         <div className="grid gap-4 lg:grid-cols-3">
-                            <Card className="lg:col-span-2">
+                            <Card className={canPivot ? 'lg:col-span-2' : 'lg:col-span-3'}>
                                 <CardHeader className="pb-2">
                                     <CardTitle className="text-base">Tren Penjualan (DPP) per Bulan</CardTitle>
                                 </CardHeader>
@@ -195,14 +200,26 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                     />
                                 </CardContent>
                             </Card>
-                            <Card>
-                                <CardHeader className="pb-2">
-                                    <CardTitle className="text-base">Aging Piutang</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <BarList items={ar.aging} color="bg-amber-500" onItem={(_, idx) => setDrill({ aging: AGING_KEYS[idx] })} />
-                                </CardContent>
-                            </Card>
+                            {canPivot && (
+                                <Link href={route('analytics.explorer')} className="group">
+                                    <Card className="flex h-full flex-col justify-between border-violet-200 bg-violet-50/50 transition-colors hover:border-violet-400 hover:bg-violet-50 dark:border-violet-900 dark:bg-violet-950/20 dark:hover:bg-violet-950/40">
+                                        <CardHeader className="pb-2">
+                                            <div className="flex size-10 items-center justify-center rounded-lg bg-violet-500/15 text-violet-600 dark:text-violet-400">
+                                                <Table2 className="size-5" />
+                                            </div>
+                                            <CardTitle className="mt-2 text-base">Pivot Data Penjualan</CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                            <p className="text-sm text-muted-foreground">
+                                                Bedah penjualan sendiri — tarik dimensi (merk, sales, region, produk…) & metrik, susun tabel silang, lihat detail transaksinya.
+                                            </p>
+                                            <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-violet-600 group-hover:gap-1.5 dark:text-violet-400">
+                                                Buka analisa <ArrowRight className="size-4 transition-all" />
+                                            </span>
+                                        </CardContent>
+                                    </Card>
+                                </Link>
+                            )}
                         </div>
 
                         <div className="grid gap-4 lg:grid-cols-3">
@@ -211,7 +228,7 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                     <CardTitle className="text-base">Top Customer ({year})</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <BarList items={topCustomers} onItem={(it) => setDrill({ year, customer: it.label })} />
+                                    <BarList items={topCustomers} total={kpi.dpp} onItem={(it) => setDrill({ year, customer: it.label })} />
                                 </CardContent>
                             </Card>
                             <Card>
@@ -219,7 +236,7 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                     <CardTitle className="text-base">Penjualan per Region ({year})</CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <BarList items={topRegions} color="bg-sky-500" onItem={(it) => setDrill({ year, region: it.label })} />
+                                    <BarList items={topRegions} total={kpi.dpp} color="bg-sky-500" onItem={(it) => setDrill({ year, region: it.label })} />
                                 </CardContent>
                             </Card>
                             <Card>
@@ -235,7 +252,7 @@ export default function Dashboard({ years, year, prevYear, hasData, kpi, ar, tre
                                     </div>
                                 </CardHeader>
                                 <CardContent>
-                                    <BarList items={topMerk} onItem={(it) => setDrill({ year, merk: it.label })} color="bg-violet-500" />
+                                    <BarList items={topMerk} total={kpi.dpp} onItem={(it) => setDrill({ year, merk: it.label })} color="bg-violet-500" />
                                 </CardContent>
                             </Card>
                         </div>

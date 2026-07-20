@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SyncLog;
 use App\Services\Accurate\AccurateSyncService;
+use App\Support\InventorySnapshot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -61,9 +62,11 @@ class ProductAnalysisController extends Controller
             ->selectRaw('m.product_label label, MONTH(i.trans_date) m, SUM(i.dpp) dpp, SUM(i.qty) qty')
             ->groupBy('label', 'm')->get() : collect();
 
-        // Stock snapshot per item (existing acc_item_stock).
-        $stock = $itemNos ? DB::table('acc_item_stock')->whereIn('item_no', $itemNos)
-            ->get(['item_no', 'name', 'quantity', 'unit_price'])->keyBy('item_no') : collect();
+        // Stok per item dari snapshot Accurate terakhir (alias ke nama kolom lama).
+        $stock = $itemNos ? InventorySnapshot::latest(InventorySnapshot::ACCURATE)
+            ->whereIn('ref', $itemNos)
+            ->get(['ref as item_no', 'label as name', 'qty as quantity', 'unit_price'])
+            ->keyBy('item_no') : collect();
 
         // Monthly stock movement qty per item (existing ledger) → valued with avg cost.
         $movRaw = $itemNos ? DB::table('acc_stock_movements')
@@ -226,9 +229,9 @@ class ProductAnalysisController extends Controller
             foreach ($def['keywords'] as $kw) {
                 $like = '%'.$kw.'%';
 
-                $candidates = DB::table('acc_item_stock')
-                    ->where('name', 'like', $like)->whereNotNull('item_no')
-                    ->get(['item_no', 'name'])
+                $candidates = InventorySnapshot::latest(InventorySnapshot::ACCURATE)
+                    ->where('label', 'like', $like)->whereNotNull('ref')
+                    ->get(['ref as item_no', 'label as name'])
                     ->concat(DB::table('acc_sales_invoice_items')
                         ->where('item_name', 'like', $like)->whereNotNull('item_no')
                         ->distinct()->get(['item_no', DB::raw('item_name as name')]))
@@ -263,7 +266,7 @@ class ProductAnalysisController extends Controller
             'product_label' => ['required', 'string', 'max:255'],
         ]);
 
-        $name = DB::table('acc_item_stock')->where('item_no', $data['item_no'])->value('name')
+        $name = InventorySnapshot::latest(InventorySnapshot::ACCURATE)->where('ref', $data['item_no'])->value('label')
             ?? DB::table('acc_sales_invoice_items')->where('item_no', $data['item_no'])->value('item_name');
 
         DB::table('tmp_product_map')->insert([

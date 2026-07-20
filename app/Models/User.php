@@ -95,6 +95,17 @@ class User extends Authenticatable
     }
 
     /**
+     * May see sensitive sales fields (patient & doctor names) in reporting
+     * detail views. Gated by position code — super admin plus the positions
+     * listed in config('analytics.sensitive_field_positions') (CEO/HFO/HOO).
+     */
+    public function canSeeSensitiveSales(): bool
+    {
+        return $this->isSuperAdmin()
+            || in_array($this->positionCode(), config('analytics.sensitive_field_positions', []), true);
+    }
+
+    /**
      * Build (and memoize) the permission map from the user's role menus.
      *
      * @return array<string, array<string, bool>>
