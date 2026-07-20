@@ -40,6 +40,7 @@ class SyncDaily extends Command
         if (AccurateSetting::current()->isConnected()) {
             $af = $from->format('d/m/Y');
             $at = $today->format('d/m/Y');
+            $this->step('accurate', 'Accurate COA (bagan akun)', fn () => $acc->syncGlAccounts());
             $this->step('accurate', 'Accurate sales (faktur+SO+DO)', fn () => $acc->syncSales($af, $at));
             $this->step('accurate', 'Accurate stock snapshot', fn () => $acc->syncItemStock(null, true));
             $this->step('accurate', 'Accurate stock movements', fn () => $acc->syncStockMovements($af, $at));

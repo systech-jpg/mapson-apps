@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             LeaveHolidaySeeder::class,
             CurrencySeeder::class,
             PricingProfileSeeder::class,
+            CostAllocationSeeder::class,
         ]);
     }
 }
