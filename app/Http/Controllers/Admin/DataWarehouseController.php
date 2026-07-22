@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\SyncLog;
 use App\Services\Dwh\GlImportService;
+use App\Services\Dwh\GlMappingRepair;
 use App\Support\InventorySnapshot;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -111,7 +112,7 @@ class DataWarehouseController extends Controller
     }
 
     /** Terima baris mentah hasil parse SheetJS di browser; seluruh penafsiran di server. */
-    public function uploadGl(Request $request, GlImportService $svc): RedirectResponse
+    public function uploadGl(Request $request, GlImportService $svc, GlMappingRepair $repair): RedirectResponse
     {
         $data = $request->validate([
             'file_name' => ['required', 'string', 'max:255'],
@@ -131,6 +132,11 @@ class DataWarehouseController extends Controller
         // SyncLog::record() menjumlahkan SEMUA nilai numerik pada array menjadi kolom `rows`,
         // jadi nilai uang harus dikirim sebagai string — kalau tidak, debit+kredit (miliaran)
         // ikut terjumlah dan meluap dari kolom integer.
+        // Impor menimpa satu periode penuh, sehingga baris yang isinya berubah memutus mapping
+        // klasifikasinya (hash ikut berubah). Sambungkan kembali lewat kunci alami SEKARANG juga,
+        // supaya klasifikasi manual tidak diam-diam menghilang.
+        $fix = $repair->relink();
+
         $seimbang = abs($r['balance']) < 1;
         SyncLog::record('dwh', 'Upload Buku Besar '.$r['period'], $seimbang ? 'success' : 'partial', [
             'rows' => $r['rows'],
@@ -139,12 +145,20 @@ class DataWarehouseController extends Controller
             'kredit' => number_format($r['credit'], 2, ',', '.'),
             'selisih' => number_format($r['balance'], 2, ',', '.'),
             'menimpa' => (string) $r['replaced'],
+            'mapping_disambung' => (string) $fix['relinked'],
+            'mapping_terputus' => (string) $fix['unresolved'],
             'file' => $r['period'].' — '.mb_substr($data['file_name'], 0, 80),
         ], $seimbang ? null : 'Debit−Kredit tidak seimbang: '.number_format($r['balance'], 2, ',', '.'),
             (int) ((microtime(true) - $t) * 1000), 'manual', $request->user()?->id);
 
         $msg = "Periode {$r['period']}: {$r['rows']} baris, {$r['accounts']} akun";
         $msg .= $r['replaced'] ? " (menimpa {$r['replaced']} baris lama)." : '.';
+        if ($fix['relinked'] > 0) {
+            $msg .= " {$fix['relinked']} mapping klasifikasi disambungkan ulang otomatis.";
+        }
+        if ($fix['unresolved'] > 0) {
+            $msg .= " PERHATIAN: {$fix['unresolved']} mapping masih terputus — tinjau di halaman Klasifikasi GL.";
+        }
         if (! $seimbang) {
             $msg .= ' PERHATIAN: debit−kredit = '.number_format($r['balance'], 2, ',', '.').' (tidak seimbang).';
         }

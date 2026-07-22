@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Services\Dwh\GlDescriptionParser;
+use App\Services\Dwh\GlMappingRepair;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,7 +27,7 @@ class GlClassificationController extends Controller
     /** Universe klasifikasi = pengeluaran & belanja modal (bukan kas/AR/AP/pendapatan/inventory). */
     protected const COST_TYPES = ['EXPENSE', 'OTHER_EXPENSE', 'COGS', 'FIXED_ASSET'];
 
-    public function index(Request $request): Response
+    public function index(Request $request, GlMappingRepair $repair): Response
     {
         [$year, $month] = $this->period($request);
 
@@ -64,7 +65,23 @@ class GlClassificationController extends Controller
             'summary' => $this->summary($year, $month),
             'periods' => DB::table('dwh_stg_gl')->distinct()->orderBy('period')->pluck('period'),
             'filter' => ['year' => $year, 'month' => $month],
+            'repair' => $repair->status(),
         ]);
+    }
+
+    /** Sambungkan ulang mapping yang terputus akibat impor ulang GL. */
+    public function repair(GlMappingRepair $repair): RedirectResponse
+    {
+        $r = $repair->relink();
+
+        if ($r['relinked'] === 0 && $r['unresolved'] === 0) {
+            return back()->with('success', 'Tidak ada mapping yang terputus.');
+        }
+
+        return back()->with('success', sprintf(
+            '%d mapping disambungkan ulang. %d perlu ditinjau manual (kandidat ganda), %d masih terputus.',
+            $r['relinked'], $r['ambiguous'], $r['unresolved'],
+        ));
     }
 
     /** Ambil & validasi filter periode dari request → [year|null, month|null]. */
@@ -224,7 +241,9 @@ class GlClassificationController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($data) {
+        $rk = $this->recoveryKey($data['hash']);
+
+        DB::transaction(function () use ($data, $rk) {
             DB::table('dwh_gl_row_split')->where('row_hash', $data['hash'])->delete();
             DB::table('dwh_gl_row_split')->insert(collect($data['items'])->values()->map(fn ($it, $i) => [
                 'row_hash' => $data['hash'],
@@ -233,7 +252,7 @@ class GlClassificationController extends Controller
                 'category_id' => $it['category_id'] ?? null,
                 'sort_order' => $i,
                 'created_at' => now(), 'updated_at' => now(),
-            ])->all());
+            ] + $rk)->all());
         });
 
         return back()->with('success', 'Baris dipecah menjadi '.count($data['items']).' sub-transaksi.');
@@ -283,7 +302,30 @@ class GlClassificationController extends Controller
         }
         DB::table('dwh_map_gl_classification')->updateOrInsert(
             ['scope' => $scope, 'match_key' => $key],
-            ['category_id' => $categoryId, 'updated_at' => now(), 'created_at' => now()],
+            ['category_id' => $categoryId, 'updated_at' => now(), 'created_at' => now()]
+                + ($scope === 'row' ? $this->recoveryKey($key) : []),
         );
+    }
+
+    /**
+     * Kunci alami baris GL, disimpan berdampingan dengan hash.
+     *
+     * Hash putus begitu isi baris berubah dan sifatnya satu arah, jadi tanpa ini mapping yatim
+     * tak bisa disambungkan kembali. Keterangan sengaja TIDAK ikut — edit teks justru penyebab
+     * putus tersering.
+     *
+     * @return array<string, mixed>
+     */
+    protected function recoveryKey(string $hash): array
+    {
+        $g = DB::table('dwh_stg_gl as g')->whereRaw(self::ROW_HASH.' = ?', [$hash])
+            ->selectRaw('g.account_code, g.doc_no, g.debit, g.credit')->first();
+
+        return $g ? [
+            'rk_account_code' => $g->account_code,
+            'rk_doc_no' => (string) ($g->doc_no ?? ''),
+            'rk_debit' => $g->debit,
+            'rk_credit' => $g->credit,
+        ] : [];
     }
 }

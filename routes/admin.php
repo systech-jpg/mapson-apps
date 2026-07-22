@@ -76,6 +76,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('data-warehouse/gl-classification/account', [GlClassificationController::class, 'storeAccount'])->name('dwh.gl-classification.account');
             Route::post('data-warehouse/gl-classification/row', [GlClassificationController::class, 'storeRow'])->name('dwh.gl-classification.row');
             Route::post('data-warehouse/gl-classification/split', [GlClassificationController::class, 'storeSplit'])->name('dwh.gl-classification.split');
+            Route::post('data-warehouse/gl-classification/repair', [GlClassificationController::class, 'repair'])->name('dwh.gl-classification.repair');
         });
     });
 

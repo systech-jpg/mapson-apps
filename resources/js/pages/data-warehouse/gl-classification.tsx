@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { ChevronRight, Scissors } from 'lucide-react';
+import { ChevronRight, Link2, Scissors } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 interface Node { id: number; parent_id: number | null; code: string; name: string; kind: 'capex' | 'opex' }
@@ -28,6 +28,7 @@ interface Props {
     summary: { capex: number; opex: number; operational_expense: number };
     periods: string[];
     filter: { year: string | null; month: string | null };
+    repair: { row_orphans: number; split_orphans: number; total: number };
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -69,7 +70,7 @@ function useOptions(tree: Node[]) {
     }, [tree]);
 }
 
-export default function GlClassification({ tree, accounts, summary, periods, filter }: Props) {
+export default function GlClassification({ tree, accounts, summary, periods, filter, repair }: Props) {
     const options = useOptions(tree);
     const nameById = useMemo(() => Object.fromEntries(tree.map((n) => [n.id, n.name])), [tree]);
     const kindById = useMemo(() => Object.fromEntries(tree.map((n) => [n.id, n.kind])), [tree]);
@@ -117,6 +118,20 @@ export default function GlClassification({ tree, accounts, summary, periods, fil
                         Cepat: <b>per akun</b>. Untuk akun campur (BBM sales/TS/gudang, atau Renovasi=CapEx di Office Maintenance) → buka record, <b>override per baris</b>.
                     </p>
                 </div>
+
+                {repair.total > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2.5 dark:bg-amber-950/30">
+                        <div className="text-xs text-amber-800 dark:text-amber-300">
+                            <b>{repair.total} mapping terputus dari baris GL-nya.</b> Ini terjadi saat impor ulang memuat baris yang isinya berubah
+                            (keterangan/nominal diperbaiki) — klasifikasinya tidak hilang, hanya kehilangan sambungan.
+                            {repair.split_orphans > 0 && <> Termasuk <b>{repair.split_orphans}</b> baris yang sudah dipecah.</>}
+                        </div>
+                        <Button size="sm" variant="outline" className="h-8 gap-1.5 border-amber-500"
+                            onClick={() => router.post(route('dwh.gl-classification.repair'), {}, { preserveScroll: true })}>
+                            <Link2 className="size-3.5" /> Sambungkan ulang
+                        </Button>
+                    </div>
+                )}
 
                 <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-2">
                     <div className="flex flex-wrap items-center gap-1.5">
