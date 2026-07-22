@@ -57,25 +57,23 @@ return new class extends Migration
             ]);
         };
 
-        $capex = $insert(null, 'CAPEX', 'CapEx', 'capex');
-        foreach (['cx-gedung' => 'Gedung', 'cx-kendaraan' => 'Kendaraan', 'cx-rak' => 'Rak Gudang', 'cx-software' => 'Software'] as $c => $n) {
+        // Taksonomi nyata yang dipakai (bukan ilustrasi awal): departemen disesuaikan dengan
+        // struktur perusahaan — Purchasing, Product Specialist, dan Regulatory berdiri sendiri;
+        // Warehouse & Logistic digabung; Corporate/Management tanpa anak karena pemisahan
+        // gaji direksi/legal/audit dilakukan lewat override baris, bukan kategori terpisah.
+        // Urutan insert SENGAJA dipertahankan agar id-nya 1–15 dan konsisten antar lingkungan.
+        $capex = $insert(null, 'CAPEX', 'CAPEX', 'capex');
+        foreach (['cx-gedung' => 'Gedung', 'cx-kendaraan' => 'Kendaraan', 'cx-gudang' => 'Gudang', 'cx-software' => 'Software'] as $c => $n) {
             $insert($capex, $c, $n, 'capex');
         }
 
-        $opex = $insert(null, 'OPEX', 'OpEx', 'opex');
+        $opex = $insert(null, 'OPEX', 'OPEX', 'opex');
         foreach ([
-            'ox-procurement' => 'Procurement', 'ox-warehouse' => 'Warehouse', 'ox-logistics' => 'Logistics',
-            'ox-sales' => 'Sales', 'ox-service' => 'Service', 'ox-finance' => 'Finance', 'ox-hr' => 'HR', 'ox-it' => 'IT',
+            'ox-purchasing' => 'Purchasing', 'ox-warehouse' => 'Warehouse Logistic',
+            'ox-product-spec' => 'Product Specialist', 'ox-sales' => 'Sales', 'ox-regulatory' => 'Regulatory',
+            'ox-finance' => 'Finance', 'ox-hr' => 'HR', 'ox-it' => 'IT', 'ox-corporate' => 'Corporate / Management',
         ] as $c => $n) {
             $insert($opex, $c, $n, 'opex');
-        }
-        $corp = $insert($opex, 'ox-corporate', 'Corporate / Management', 'opex');
-        foreach ([
-            'ox-corp-dir' => 'Gaji Direktur', 'ox-corp-kom' => 'Gaji Komisaris', 'ox-corp-sek' => 'Sekretaris Direksi',
-            'ox-corp-bod' => 'Meeting BOD', 'ox-corp-legal' => 'Legal', 'ox-corp-audit' => 'Audit',
-            'ox-corp-ir' => 'Investor Relation', 'ox-corp-tax' => 'Corporate Tax Consulting',
-        ] as $c => $n) {
-            $insert($corp, $c, $n, 'opex');
         }
     }
 
