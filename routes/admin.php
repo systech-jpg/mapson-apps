@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\CompanyController;
 use App\Http\Controllers\Admin\CostMappingController;
 use App\Http\Controllers\Admin\DataWarehouseController;
+use App\Http\Controllers\Admin\GlClassificationController;
 use App\Http\Controllers\Admin\ErpSettingController;
 use App\Http\Controllers\Admin\IntegrationController;
 use App\Http\Controllers\Admin\StockReconController;
@@ -64,6 +65,18 @@ Route::middleware(['auth'])->group(function () {
         Route::get('data-warehouse/cost-mapping', [CostMappingController::class, 'index'])->name('dwh.cost-mapping');
         Route::post('data-warehouse/cost-mapping/allocation', [CostMappingController::class, 'storeAllocation'])
             ->middleware('menu.access:dwh-cost-mapping,edit')->name('dwh.cost-mapping.allocation');
+    });
+
+    // Klasifikasi GL → CapEx/OpEx → departemen (per akun + override per record).
+    Route::middleware('menu.access:dwh-gl-classification,view')->group(function () {
+        Route::get('data-warehouse/gl-classification', [GlClassificationController::class, 'index'])->name('dwh.gl-classification');
+        Route::get('data-warehouse/gl-classification/rows', [GlClassificationController::class, 'rows'])->name('dwh.gl-classification.rows');
+        Route::get('data-warehouse/gl-classification/split', [GlClassificationController::class, 'splitDetail'])->name('dwh.gl-classification.split-detail');
+        Route::middleware('menu.access:dwh-gl-classification,edit')->group(function () {
+            Route::post('data-warehouse/gl-classification/account', [GlClassificationController::class, 'storeAccount'])->name('dwh.gl-classification.account');
+            Route::post('data-warehouse/gl-classification/row', [GlClassificationController::class, 'storeRow'])->name('dwh.gl-classification.row');
+            Route::post('data-warehouse/gl-classification/split', [GlClassificationController::class, 'storeSplit'])->name('dwh.gl-classification.split');
+        });
     });
 
     // Data Integration (ERP stock & sales)

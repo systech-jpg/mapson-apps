@@ -158,11 +158,13 @@ class MenuSeeder extends Seeder
         // list" crash (blank screen) when a stale menu points to a deleted route. Cascades role_menu.
         Menu::whereIn('key', ['pricing-approvals', 'finance-products', 'pricing-engine-v2'])->delete();
 
-        $this->menu(['key' => 'pricing-engine', 'title' => 'Pricing Engine', 'route' => 'pricing-engine.index', 'icon' => 'Calculator', 'sort_order' => 1], $finance->id);
-        $this->menu(['key' => 'pricing-approval', 'title' => 'Persetujuan Harga', 'route' => 'pricing-approval.index', 'icon' => 'BadgeCheck', 'sort_order' => 2], $finance->id);
-        $this->menu(['key' => 'pricelist', 'title' => 'Pricelist', 'route' => 'pricelist.index', 'icon' => 'ListChecks', 'sort_order' => 3], $finance->id);
-        $this->menu(['key' => 'pricing-profiles', 'title' => 'Kelola Profil', 'route' => 'pricing-profiles.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 4], $finance->id);
-        $this->menu(['key' => 'currencies', 'title' => 'Kelola Mata Uang', 'route' => 'currencies.index', 'icon' => 'Coins', 'sort_order' => 5], $finance->id);
+        // Sub-modul: Pricing — seluruh fungsi harga (engine → mata uang) di bawah satu grup.
+        $pricing = $this->menu(['key' => 'pricing', 'title' => 'Pricing', 'route' => null, 'icon' => 'Tags', 'sort_order' => 1], $finance->id);
+        $this->menu(['key' => 'pricing-engine', 'title' => 'Pricing Engine', 'route' => 'pricing-engine.index', 'icon' => 'Calculator', 'sort_order' => 1], $pricing->id);
+        $this->menu(['key' => 'pricing-approval', 'title' => 'Persetujuan Harga', 'route' => 'pricing-approval.index', 'icon' => 'BadgeCheck', 'sort_order' => 2], $pricing->id);
+        $this->menu(['key' => 'pricelist', 'title' => 'Pricelist', 'route' => 'pricelist.index', 'icon' => 'ListChecks', 'sort_order' => 3], $pricing->id);
+        $this->menu(['key' => 'pricing-profiles', 'title' => 'Kelola Profil', 'route' => 'pricing-profiles.index', 'icon' => 'SlidersHorizontal', 'sort_order' => 4], $pricing->id);
+        $this->menu(['key' => 'currencies', 'title' => 'Kelola Mata Uang', 'route' => 'currencies.index', 'icon' => 'Coins', 'sort_order' => 5], $pricing->id);
 
         // Module: Integrasi Data.
         $integrasi = $this->menu([
@@ -198,16 +200,28 @@ class MenuSeeder extends Seeder
         // Sync job log (ERP / Accurate / Hadirr).
         $this->menu(['key' => 'sync-logs', 'title' => 'Log Sinkronisasi', 'route' => 'integration.logs', 'icon' => 'ScrollText', 'sort_order' => 6], $integrasi->id);
 
-        // Module: Data Warehouse — sumber data terpadu (dwh_*) + unggah manual (GL).
+        // Sub-modul: Data Warehouse (kini di bawah Integrasi Data) — sumber data terpadu (dwh_*)
+        // + unggah manual (GL). Sementara isinya hanya Pipeline Data; klasifikasi/pemetaan biaya
+        // pindah ke modul Cost Control.
         $dwh = $this->menu([
             'key' => 'data-warehouse',
             'title' => 'Data Warehouse',
             'route' => null,
             'icon' => 'Warehouse',
             'sort_order' => 7,
-        ]);
+        ], $integrasi->id);
         $this->menu(['key' => 'dwh-pipeline', 'title' => 'Pipeline Data', 'route' => 'dwh.pipeline', 'icon' => 'DatabaseZap', 'sort_order' => 1], $dwh->id);
-        $this->menu(['key' => 'dwh-cost-mapping', 'title' => 'Pemetaan Biaya (ABC)', 'route' => 'dwh.cost-mapping', 'icon' => 'SlidersHorizontal', 'sort_order' => 2], $dwh->id);
+
+        // Module: Cost Control — klasifikasi GL & pembebanan biaya (dulu di bawah Data Warehouse).
+        $costControl = $this->menu([
+            'key' => 'cost-control',
+            'title' => 'Cost Control',
+            'route' => null,
+            'icon' => 'Coins',
+            'sort_order' => 8,
+        ]);
+        $this->menu(['key' => 'dwh-gl-classification', 'title' => 'Klasifikasi GL', 'route' => 'dwh.gl-classification', 'icon' => 'ListTree', 'sort_order' => 1], $costControl->id);
+        $this->menu(['key' => 'dwh-cost-mapping', 'title' => 'Pemetaan Biaya (ABC)', 'route' => 'dwh.cost-mapping', 'icon' => 'SlidersHorizontal', 'sort_order' => 2], $costControl->id);
 
         // Grant the Reporting role view access to the dashboard + analytics only.
         $reporting = Role::where('slug', 'reporting')->first();
