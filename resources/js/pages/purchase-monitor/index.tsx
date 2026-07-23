@@ -6,8 +6,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Button } from '@/components/ui/button';
-import { Head, Link } from '@inertiajs/react';
-import { ArrowLeftRight, Settings, TriangleAlert } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { ArrowLeftRight, RefreshCw, Settings, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Principal {
@@ -47,6 +47,14 @@ const num = (n: number, d = 0) => Number(n || 0).toLocaleString('id-ID', { maxim
 export default function PurchaseMonitor({ years, principals, summary, fx }: Props) {
     const [q, setQ] = useState('');
     const [drill, setDrill] = useState<{ principal: string; year: string } | null>(null);
+    const [fetchingFx, setFetchingFx] = useState(false);
+
+    const fetchFx = () =>
+        router.post(route('purchase-monitor.fetch-fx'), { currency: 'USD' }, {
+            preserveScroll: true,
+            onStart: () => setFetchingFx(true),
+            onFinish: () => setFetchingFx(false),
+        });
 
     const rows = useMemo(() => {
         const s = q.trim().toLowerCase();
@@ -78,13 +86,14 @@ export default function PurchaseMonitor({ years, principals, summary, fx }: Prop
                 </div>
 
                 {fx.external === 0 && (
-                    <div className="flex items-center gap-2 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-400 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                         <TriangleAlert className="size-4 shrink-0" />
-                        <span>
-                            Kurs masih <b>asumsi</b> (Rp {num(fx.default_rate)}/USD, {fx.manual} bulan manual). Jalankan
-                            <code className="mx-1 rounded bg-amber-100 px-1 dark:bg-amber-900/40">php artisan fx:fetch</code>
-                            di server untuk mengambil kurs historis sebenarnya.
+                        <span className="flex-1">
+                            Kurs masih <b>asumsi</b> (Rp {num(fx.default_rate)}/USD, {fx.manual} bulan manual). Ambil kurs historis USD→IDR yang sebenarnya:
                         </span>
+                        <Button size="sm" variant="outline" className="h-7 shrink-0 gap-1.5 border-amber-500" disabled={fetchingFx} onClick={fetchFx}>
+                            <RefreshCw className={`size-3.5 ${fetchingFx ? 'animate-spin' : ''}`} /> {fetchingFx ? 'Mengambil…' : 'Ambil kurs sekarang'}
+                        </Button>
                     </div>
                 )}
 

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { RefreshCw } from 'lucide-react';
+import { CloudDownload, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Vendor { vendor_name: string; n_lines: number; total_asli: number; principal_id: number | null; default_currency: string }
@@ -123,6 +123,12 @@ function FxSection({ fxRates, currencies }: { fxRates: FxRate[]; currencies: str
     const [currency, setCurrency] = useState(currencies[0] ?? 'USD');
     const [period, setPeriod] = useState('');
     const [rate, setRate] = useState('');
+    const [fetching, setFetching] = useState(false);
+
+    const fetchFx = () =>
+        router.post(route('purchase-monitor.fetch-fx'), { currency }, {
+            preserveScroll: true, onStart: () => setFetching(true), onFinish: () => setFetching(false),
+        });
 
     const submit = () => {
         if (!period || !rate) return;
@@ -133,9 +139,14 @@ function FxSection({ fxRates, currencies }: { fxRates: FxRate[]; currencies: str
     return (
         <Card>
             <CardHeader className="pb-2">
-                <CardTitle className="text-base">Kurs → IDR per Bulan</CardTitle>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-base">Kurs → IDR per Bulan</CardTitle>
+                    <Button variant="outline" size="sm" className="h-8 gap-1.5" disabled={fetching} onClick={fetchFx}>
+                        <CloudDownload className={`size-3.5 ${fetching ? 'animate-pulse' : ''}`} /> {fetching ? 'Mengambil…' : `Ambil kurs ${currency} otomatis`}
+                    </Button>
+                </div>
                 <p className="text-xs text-muted-foreground">
-                    Dipakai mengonversi pembelian mata uang asing. Isi manual di sini, atau jalankan <code className="rounded bg-muted px-1">php artisan fx:fetch</code> di server untuk mengambil kurs historis otomatis. Kurs yang belum ada memakai asumsi Rp 16.000.
+                    Dipakai mengonversi pembelian mata uang asing. Isi manual di bawah, atau klik <b>Ambil kurs otomatis</b> untuk menarik kurs historis dari internet (butuh koneksi di server). Kurs yang belum ada memakai asumsi Rp 16.000.
                 </p>
             </CardHeader>
             <CardContent className="space-y-3">

@@ -93,6 +93,7 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware('menu.access:purchase-monitor,edit')->group(function () {
             Route::post('integration/purchase-monitor/mapping', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeMapping'])->name('purchase-monitor.mapping');
             Route::post('integration/purchase-monitor/fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeFx'])->name('purchase-monitor.fx');
+            Route::post('integration/purchase-monitor/fetch-fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'fetchFx'])->name('purchase-monitor.fetch-fx');
             Route::post('integration/purchase-monitor/refresh-vendors', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'refreshVendors'])->name('purchase-monitor.refresh-vendors');
         });
     });

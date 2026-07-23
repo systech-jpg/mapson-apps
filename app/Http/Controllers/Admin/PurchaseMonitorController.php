@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -222,6 +223,29 @@ class PurchaseMonitorController extends Controller
             ->update(['currency_code' => $data['default_currency']]);
 
         return back()->with('success', 'Mapping vendor disimpan.');
+    }
+
+    /**
+     * Ambil kurs historis via command fx:fetch dari tombol (tanpa akses terminal server).
+     * Sinkron: tiap bulan satu panggilan API, jadi rentang penuh bisa belasan detik.
+     */
+    public function fetchFx(Request $request): RedirectResponse
+    {
+        @set_time_limit(0);
+        $currency = strtoupper((string) $request->input('currency', 'USD'));
+
+        try {
+            $exit = Artisan::call('fx:fetch', array_filter(['--currency' => $currency]));
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal mengambil kurs: '.$e->getMessage());
+        }
+
+        // Ringkasan diambil dari baris terakhir output command ("Selesai: X ..., Y gagal.").
+        $summary = collect(preg_split('/\r?\n/', trim(Artisan::output())))->last() ?: '';
+
+        return $exit === 0
+            ? back()->with('success', 'Kurs diperbarui. '.$summary)
+            : back()->with('error', 'Sebagian/semua kurs gagal diambil (server perlu akses internet). '.$summary);
     }
 
     /** Simpan/timpa kurs sebuah (mata uang, bulan) — ditandai manual. */
