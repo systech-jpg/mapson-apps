@@ -88,6 +88,12 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware('menu.access:purchase-monitor,view')->group(function () {
         Route::get('integration/purchase-monitor', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'index'])->name('purchase-monitor.index');
         Route::get('integration/purchase-monitor/drilldown', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'drilldown'])->name('purchase-monitor.drilldown');
+        Route::get('integration/purchase-monitor/settings', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'settings'])->name('purchase-monitor.settings');
+        Route::middleware('menu.access:purchase-monitor,edit')->group(function () {
+            Route::post('integration/purchase-monitor/mapping', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeMapping'])->name('purchase-monitor.mapping');
+            Route::post('integration/purchase-monitor/fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeFx'])->name('purchase-monitor.fx');
+            Route::post('integration/purchase-monitor/refresh-vendors', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'refreshVendors'])->name('purchase-monitor.refresh-vendors');
+        });
     });
     Route::post('integration/sync-sales', [IntegrationController::class, 'syncSales'])->middleware('menu.access:data-integration,edit')->name('integration.sync-sales');
     Route::get('integration/erp/settings', [ErpSettingController::class, 'settings'])->middleware('menu.access:erp-setting,view')->name('erp.settings');

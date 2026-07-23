@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -106,6 +107,88 @@ class PurchaseMonitorController extends Controller
             ]);
 
         return response()->json(['items' => $items]);
+    }
+
+    /** Halaman kelola: mapping vendor→principal + mata uang, dan kurs per bulan. */
+    public function settings(): Response
+    {
+        // Vendor dari staging + statistik + mapping saat ini.
+        $vendors = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+            ->whereNotNull('s.vendor_name')
+            ->groupBy('s.vendor_name', 'm.principal_id', 'm.default_currency')
+            ->selectRaw('s.vendor_name, COUNT(*) n_lines, ROUND(SUM(s.total),2) total_asli,
+                m.principal_id, COALESCE(m.default_currency, \'IDR\') default_currency')
+            ->orderByDesc(DB::raw('COUNT(*)'))
+            ->get();
+
+        return Inertia::render('purchase-monitor/settings', [
+            'vendors' => $vendors,
+            'principals' => DB::table('pricing_principals')->where('is_active', 1)->orderBy('name')->get(['id', 'name']),
+            'fxRates' => DB::table('dwh_fx_rate')->orderByDesc('period')->orderBy('currency')
+                ->get(['id', 'currency', 'period', 'rate_to_idr', 'source', 'note']),
+            'currencies' => ['IDR', 'USD', 'EUR', 'SGD', 'CNY', 'JPY', 'GBP'],
+        ]);
+    }
+
+    /** Simpan mapping satu vendor + turunkan mata uang ke baris staging-nya. */
+    public function storeMapping(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'vendor_name' => ['required', 'string'],
+            'principal_id' => ['nullable', 'integer', 'exists:pricing_principals,id'],
+            'default_currency' => ['required', 'string', 'size:3'],
+        ]);
+
+        DB::table('dwh_map_vendor_principal')->updateOrInsert(
+            ['vendor_name' => $data['vendor_name']],
+            ['principal_id' => $data['principal_id'] ?? null, 'default_currency' => $data['default_currency'], 'updated_at' => now(), 'created_at' => now()],
+        );
+
+        // Selaraskan mata uang baris pembelian vendor ini (kecuali yang sudah dari dokumen).
+        DB::table('dwh_stg_acc_purchase_invoice_item')->where('vendor_name', $data['vendor_name'])
+            ->update(['currency_code' => $data['default_currency']]);
+
+        return back()->with('success', 'Mapping vendor disimpan.');
+    }
+
+    /** Simpan/timpa kurs sebuah (mata uang, bulan) — ditandai manual. */
+    public function storeFx(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'currency' => ['required', 'string', 'size:3'],
+            'period' => ['required', 'string', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'rate_to_idr' => ['required', 'numeric', 'min:0'],
+        ]);
+
+        DB::table('dwh_fx_rate')->updateOrInsert(
+            ['currency' => strtoupper($data['currency']), 'period' => $data['period']],
+            ['rate_to_idr' => $data['rate_to_idr'], 'source' => 'manual', 'note' => 'diisi manual', 'updated_at' => now(), 'created_at' => now()],
+        );
+
+        return back()->with('success', 'Kurs disimpan.');
+    }
+
+    /**
+     * Daftarkan vendor baru dari staging yang belum ada di mapping, dengan tebakan mata uang
+     * (nilai baris USD jauh lebih kecil dari IDR), lalu turunkan currency_code. Idempoten.
+     */
+    public function refreshVendors(): RedirectResponse
+    {
+        $added = DB::affectingStatement("
+            INSERT IGNORE INTO dwh_map_vendor_principal (vendor_name, default_currency, created_at, updated_at)
+            SELECT vendor_name, CASE WHEN AVG(total) < 100000 THEN 'USD' ELSE 'IDR' END, NOW(), NOW()
+            FROM dwh_stg_acc_purchase_invoice_item WHERE vendor_name IS NOT NULL GROUP BY vendor_name
+        ");
+
+        // Isi currency_code baris yang belum bermata uang, dari mapping vendornya.
+        DB::statement('
+            UPDATE dwh_stg_acc_purchase_invoice_item s
+            JOIN dwh_map_vendor_principal m ON m.vendor_name = s.vendor_name
+            SET s.currency_code = m.default_currency WHERE s.currency_code IS NULL
+        ');
+
+        return back()->with('success', $added > 0 ? "{$added} vendor baru ditambahkan." : 'Tidak ada vendor baru.');
     }
 
     /** Ringkasan kualitas kurs: berapa bulan-mata-uang masih asumsi vs sumber eksternal. */

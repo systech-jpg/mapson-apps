@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
-import { Head } from '@inertiajs/react';
-import { TriangleAlert } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Head, Link } from '@inertiajs/react';
+import { Settings, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Principal {
@@ -58,12 +59,17 @@ export default function PurchaseMonitor({ years, principals, summary, fx }: Prop
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Monitoring Pembelian" />
             <div className="flex flex-1 flex-col gap-4 p-4">
-                <div>
-                    <h1 className="text-2xl font-semibold">Monitoring Pembelian</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Total pembelian per <b>principal</b> per <b>tahun</b> dari faktur pembelian Accurate. Nilai mata uang asing
-                        dikonversi ke IDR memakai kurs per bulan. Klik sel untuk melihat detail item.
-                    </p>
+                <div className="flex items-start justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-semibold">Monitoring Pembelian</h1>
+                        <p className="text-sm text-muted-foreground">
+                            Total pembelian per <b>principal</b> per <b>tahun</b> dari faktur pembelian Accurate. Nilai mata uang asing
+                            dikonversi ke IDR memakai kurs per bulan. Klik sel untuk melihat detail item.
+                        </p>
+                    </div>
+                    <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
+                        <Link href={route('purchase-monitor.settings')}><Settings className="size-3.5" /> Pengaturan</Link>
+                    </Button>
                 </div>
 
                 {fx.external === 0 && (
