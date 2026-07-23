@@ -197,8 +197,11 @@ class MenuSeeder extends Seeder
         // 3-way reconciliation: ERP vs Accurate vs physical stocktake.
         $this->menu(['key' => 'stocktake-recon', 'title' => 'Rekon vs Stocktake', 'route' => 'stocktake.recon', 'icon' => 'ClipboardCheck', 'sort_order' => 5], $integrasi->id);
 
+        // Monitoring Pembelian — total per principal per tahun (Accurate) + rekon Dolibarr.
+        $this->menu(['key' => 'purchase-monitor', 'title' => 'Monitoring Pembelian', 'route' => 'purchase-monitor.index', 'icon' => 'ShoppingCart', 'sort_order' => 6], $integrasi->id);
+
         // Sync job log (ERP / Accurate / Hadirr).
-        $this->menu(['key' => 'sync-logs', 'title' => 'Log Sinkronisasi', 'route' => 'integration.logs', 'icon' => 'ScrollText', 'sort_order' => 6], $integrasi->id);
+        $this->menu(['key' => 'sync-logs', 'title' => 'Log Sinkronisasi', 'route' => 'integration.logs', 'icon' => 'ScrollText', 'sort_order' => 7], $integrasi->id);
 
         // Sub-modul: Data Warehouse (kini di bawah Integrasi Data) — sumber data terpadu (dwh_*)
         // + unggah manual (GL). Sementara isinya hanya Pipeline Data; klasifikasi/pemetaan biaya
