@@ -197,7 +197,7 @@ class PurchaseMonitorController extends Controller
 
         return Inertia::render('purchase-monitor/settings', [
             'vendors' => $vendors,
-            'principals' => DB::table('pricing_principals')->where('is_active', 1)->orderBy('name')->get(['id', 'name']),
+            'principals' => $this->principalOptions(),
             'fxRates' => DB::table('dwh_fx_rate')->orderByDesc('period')->orderBy('currency')
                 ->get(['id', 'currency', 'period', 'rate_to_idr', 'source', 'note']),
             'currencies' => ['IDR', 'USD', 'EUR', 'SGD', 'CNY', 'JPY', 'GBP'],
@@ -234,14 +234,58 @@ class PurchaseMonitorController extends Controller
         return back()->with('success', 'Pembelian tersinkron.'.($added > 0 ? " {$added} vendor baru terdaftar," : '').' mata uang & konversi sudah diperbarui.');
     }
 
+    /**
+     * Pilihan principal utk dropdown: yang sudah terdaftar di app + supplier Dolibarr
+     * (fournisseur=1) yang belum tertaut — pola sama dengan PricingEngineController::principals().
+     * Memilih supplier Dolibarr akan otomatis membuat baris pricing_principals saat disimpan.
+     */
+    protected function principalOptions(): array
+    {
+        $app = DB::table('pricing_principals')->where('is_active', 1)->orderBy('name')
+            ->get(['id', 'erp_societe_id', 'name'])
+            ->map(fn ($p) => ['id' => (int) $p->id, 'erp_societe_id' => $p->erp_societe_id ? (int) $p->erp_societe_id : null, 'name' => $p->name, 'source' => $p->erp_societe_id ? 'erp' : 'app'])
+            ->all();
+
+        $linked = collect($app)->pluck('erp_societe_id')->filter()->all();
+
+        $vendors = [];
+        try {
+            $p = config('erp.prefix');
+            $entities = array_filter(array_map('trim', explode(',', (string) config('erp.entities', '1'))));
+            $vendors = DB::connection(config('erp.connection'))->table($p.'societe')
+                ->where('fournisseur', 1)
+                ->when($entities, fn ($q) => $q->whereIn('entity', $entities))
+                ->when($linked, fn ($q) => $q->whereNotIn('rowid', $linked))
+                ->orderBy('nom')
+                ->limit(2000)
+                ->get(['rowid as erp_societe_id', 'nom as name'])
+                ->map(fn ($v) => ['id' => null, 'erp_societe_id' => (int) $v->erp_societe_id, 'name' => $v->name, 'source' => 'erp'])
+                ->all();
+        } catch (\Throwable) {
+            // ERP offline — tampilkan principal app saja.
+        }
+
+        return [...$app, ...$vendors];
+    }
+
     /** Simpan mapping satu vendor + turunkan mata uang ke baris staging-nya. */
     public function storeMapping(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'vendor_name' => ['required', 'string'],
             'principal_id' => ['nullable', 'integer', 'exists:pricing_principals,id'],
+            'erp_societe_id' => ['nullable', 'integer'],
+            'principal_name' => ['nullable', 'string', 'max:255'],
             'default_currency' => ['required', 'string', 'size:3'],
         ]);
+
+        // Supplier Dolibarr yang belum terdaftar → buat/tautkan pricing_principals dulu.
+        if (empty($data['principal_id']) && ! empty($data['erp_societe_id'])) {
+            $data['principal_id'] = \App\Models\PricingPrincipal::updateOrCreate(
+                ['erp_societe_id' => $data['erp_societe_id']],
+                ['name' => $data['principal_name'] ?: 'Societe #'.$data['erp_societe_id']],
+            )->id;
+        }
 
         // Mata uang yang diset lewat UI = manual → dilindungi dari tebakan ulang saat sync.
         DB::table('dwh_map_vendor_principal')->updateOrInsert(

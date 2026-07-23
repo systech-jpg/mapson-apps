@@ -11,7 +11,7 @@ import { CloudDownload, DatabaseZap, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Vendor { vendor_name: string; n_lines: number; total_asli: number; principal_id: number | null; default_currency: string }
-interface Principal { id: number; name: string }
+interface Principal { id: number | null; erp_societe_id: number | null; name: string; source: 'app' | 'erp' }
 interface FxRate { id: number; currency: string; period: string; rate_to_idr: number; source: string; note: string | null }
 interface LastSync { created_at: string; summary: string | null }
 interface DataRange { dari: string | null; sampai: string | null; n: number }
@@ -25,6 +25,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 const NONE = 'none';
 const num = (n: number, d = 0) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: d });
+/** Nilai unik utk opsi dropdown: baris app pakai id-nya, supplier Dolibarr pakai id societe. */
+const principalKey = (p: Principal) => (p.id !== null ? `app:${p.id}` : `erp:${p.erp_societe_id}`);
 
 export default function PurchaseMonitorSettings({ vendors, principals, fxRates, currencies, lastSync, dataRange }: Props) {
     const [q, setQ] = useState('');
@@ -34,10 +36,14 @@ export default function PurchaseMonitorSettings({ vendors, principals, fxRates, 
         return s ? vendors.filter((v) => v.vendor_name.toLowerCase().includes(s)) : vendors;
     }, [vendors, q]);
 
-    const saveVendor = (v: Vendor, patch: Partial<Vendor>) =>
+    // Pilihan principal bisa berupa baris app (punya id) atau supplier Dolibarr yang belum
+    // terdaftar (hanya erp_societe_id) — yang terakhir dibuatkan pricing_principals oleh server.
+    const saveVendor = (v: Vendor, patch: { principal?: Principal | null; default_currency?: string }) =>
         router.post(route('purchase-monitor.mapping'), {
             vendor_name: v.vendor_name,
-            principal_id: patch.principal_id !== undefined ? patch.principal_id : v.principal_id,
+            principal_id: patch.principal !== undefined ? (patch.principal?.id ?? null) : v.principal_id,
+            erp_societe_id: patch.principal !== undefined ? (patch.principal?.erp_societe_id ?? null) : null,
+            principal_name: patch.principal !== undefined ? (patch.principal?.name ?? null) : null,
             default_currency: patch.default_currency ?? v.default_currency,
         }, { preserveScroll: true, preserveState: false });
 
@@ -100,12 +106,16 @@ export default function PurchaseMonitorSettings({ vendors, principals, fxRates, 
                                                 </Select>
                                             </TableCell>
                                             <TableCell>
-                                                <Select value={v.principal_id ? String(v.principal_id) : NONE}
-                                                    onValueChange={(val) => saveVendor(v, { principal_id: val === NONE ? null : Number(val) })}>
+                                                <Select value={v.principal_id ? `app:${v.principal_id}` : NONE}
+                                                    onValueChange={(val) => saveVendor(v, { principal: val === NONE ? null : principals.find((p) => principalKey(p) === val) ?? null })}>
                                                     <SelectTrigger className={`h-8 ${v.principal_id ? '' : 'text-muted-foreground'}`}><SelectValue /></SelectTrigger>
                                                     <SelectContent>
                                                         <SelectItem value={NONE}>— tanpa principal —</SelectItem>
-                                                        {principals.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                                                        {principals.map((p) => (
+                                                            <SelectItem key={principalKey(p)} value={principalKey(p)}>
+                                                                {p.name}{p.id === null && <span className="ml-1.5 text-[10px] text-muted-foreground">· Dolibarr</span>}
+                                                            </SelectItem>
+                                                        ))}
                                                     </SelectContent>
                                                 </Select>
                                             </TableCell>
