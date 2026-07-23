@@ -7,7 +7,7 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Head, Link } from '@inertiajs/react';
-import { Settings, TriangleAlert } from 'lucide-react';
+import { ArrowLeftRight, Settings, TriangleAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Principal {
@@ -67,9 +67,14 @@ export default function PurchaseMonitor({ years, principals, summary, fx }: Prop
                             dikonversi ke IDR memakai kurs per bulan. Klik sel untuk melihat detail item.
                         </p>
                     </div>
-                    <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
-                        <Link href={route('purchase-monitor.settings')}><Settings className="size-3.5" /> Pengaturan</Link>
-                    </Button>
+                    <div className="flex shrink-0 gap-2">
+                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5">
+                            <Link href={route('purchase-monitor.reconciliation')}><ArrowLeftRight className="size-3.5" /> Rekonsiliasi</Link>
+                        </Button>
+                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5">
+                            <Link href={route('purchase-monitor.settings')}><Settings className="size-3.5" /> Pengaturan</Link>
+                        </Button>
+                    </div>
                 </div>
 
                 {fx.external === 0 && (

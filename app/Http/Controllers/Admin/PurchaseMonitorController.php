@@ -109,6 +109,78 @@ class PurchaseMonitorController extends Controller
         return response()->json(['items' => $items]);
     }
 
+    /** Normalisasi nama vendor/supplier agar bisa dicocokkan lintas sistem. */
+    protected function normSql(string $col): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(LOWER($col),' ',''),'.',''),',',''),'pt','')";
+    }
+
+    /**
+     * Rekonsiliasi pembelian Accurate vs Dolibarr per vendor × tahun × mata uang.
+     *
+     * Kedua sistem tak berbagi kunci dokumen (nomor Accurate ≠ ref Dolibarr), jadi pencocokan
+     * memakai nama vendor ternormalisasi + tahun + mata uang, dan membandingkan NILAI ASLI
+     * (bukan IDR — kurs Dolibarr tak andal). Tiap baris ditandai: cocok / selisih / hanya di
+     * salah satu sisi.
+     */
+    public function reconciliation(): Response
+    {
+        // Sisi Accurate (mata uang dari mapping vendor).
+        $acc = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->whereNotNull('s.trans_date')
+            ->groupBy('s.vendor_name', 'norm', 'tahun', 'cur')
+            ->selectRaw('s.vendor_name, '.$this->normSql('s.vendor_name').' AS norm, LEFT(s.trans_date,4) AS tahun,
+                COALESCE(s.currency_code,\'IDR\') AS cur, SUM(s.total) AS total, COUNT(DISTINCT s.doc_number) AS docs')
+            ->get();
+
+        // Sisi Dolibarr (nilai asli = multicurrency_total_ttc, mata uang = multicurrency_code).
+        $p = config('erp.prefix');
+        $dol = collect(DB::connection(config('erp.connection'))->select("
+            SELECT so.nom AS vendor_name, ".$this->normSql('so.nom')." AS norm,
+                   LEFT(f.datef,4) AS tahun, COALESCE(NULLIF(f.multicurrency_code,''),'IDR') AS cur,
+                   SUM(f.multicurrency_total_ttc) AS total, COUNT(*) AS docs
+            FROM {$p}facture_fourn f
+            LEFT JOIN {$p}societe so ON so.rowid = f.fk_soc
+            WHERE f.datef IS NOT NULL
+            GROUP BY so.nom, norm, tahun, cur
+        "));
+
+        // Gabung berdasarkan (norm, tahun, mata uang).
+        $merged = [];
+        $key = fn ($r) => $r->norm.'|'.$r->tahun.'|'.$r->cur;
+        foreach ($acc as $r) {
+            $merged[$key($r)] = ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'cur' => $r->cur,
+                'acc' => (float) $r->total, 'acc_docs' => (int) $r->docs, 'dol' => 0.0, 'dol_docs' => 0];
+        }
+        foreach ($dol as $r) {
+            $k = $key($r);
+            $merged[$k] ??= ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'cur' => $r->cur,
+                'acc' => 0.0, 'acc_docs' => 0, 'dol' => 0.0, 'dol_docs' => 0];
+            $merged[$k]['dol'] = (float) $r->total;
+            $merged[$k]['dol_docs'] = (int) $r->docs;
+            $merged[$k]['vendor'] = $merged[$k]['vendor'] ?: $r->vendor_name;
+        }
+
+        $rows = collect($merged)->map(function ($m) {
+            $diff = round($m['acc'] - $m['dol'], 2);
+            $m['selisih'] = $diff;
+            $m['status'] = $m['dol'] == 0 ? 'acc_only' : ($m['acc'] == 0 ? 'dol_only' : (abs($diff) < 1 ? 'match' : 'diff'));
+
+            return $m;
+        })->sortBy([['tahun', 'desc'], ['vendor', 'asc']])->values();
+
+        return Inertia::render('purchase-monitor/reconciliation', [
+            'rows' => $rows,
+            'years' => $rows->pluck('tahun')->unique()->sort()->values(),
+            'summary' => [
+                'match' => $rows->where('status', 'match')->count(),
+                'diff' => $rows->where('status', 'diff')->count(),
+                'acc_only' => $rows->where('status', 'acc_only')->count(),
+                'dol_only' => $rows->where('status', 'dol_only')->count(),
+            ],
+        ]);
+    }
+
     /** Halaman kelola: mapping vendor→principal + mata uang, dan kurs per bulan. */
     public function settings(): Response
     {
