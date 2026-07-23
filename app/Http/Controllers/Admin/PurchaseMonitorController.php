@@ -213,9 +213,11 @@ class PurchaseMonitorController extends Controller
             'default_currency' => ['required', 'string', 'size:3'],
         ]);
 
+        // Mata uang yang diset lewat UI = manual → dilindungi dari tebakan ulang saat sync.
         DB::table('dwh_map_vendor_principal')->updateOrInsert(
             ['vendor_name' => $data['vendor_name']],
-            ['principal_id' => $data['principal_id'] ?? null, 'default_currency' => $data['default_currency'], 'updated_at' => now(), 'created_at' => now()],
+            ['principal_id' => $data['principal_id'] ?? null, 'default_currency' => $data['default_currency'],
+                'currency_source' => 'manual', 'updated_at' => now(), 'created_at' => now()],
         );
 
         // Selaraskan mata uang baris pembelian vendor ini (kecuali yang sudah dari dokumen).
@@ -265,26 +267,43 @@ class PurchaseMonitorController extends Controller
         return back()->with('success', 'Kurs disimpan.');
     }
 
+    /** Ambang harga satuan: baris < 600rb khas USD, ≥ 600rb khas IDR. */
+    protected const USD_LINE_THRESHOLD = 600000;
+
     /**
-     * Daftarkan vendor baru dari staging yang belum ada di mapping, dengan tebakan mata uang
-     * (nilai baris USD jauh lebih kecil dari IDR), lalu turunkan currency_code. Idempoten.
+     * Selaraskan mapping dengan staging: daftarkan vendor baru, tebak mata uang vendor 'auto'
+     * (dominan < 600rb → USD), lalu turunkan currency_code ke SEMUA baris. Vendor yang mata
+     * uangnya diset manual tidak diganggu. Idempoten — aman dijalankan tiap habis sync.
      */
     public function refreshVendors(): RedirectResponse
     {
-        $added = DB::affectingStatement("
-            INSERT IGNORE INTO dwh_map_vendor_principal (vendor_name, default_currency, created_at, updated_at)
-            SELECT vendor_name, CASE WHEN AVG(total) < 100000 THEN 'USD' ELSE 'IDR' END, NOW(), NOW()
-            FROM dwh_stg_acc_purchase_invoice_item WHERE vendor_name IS NOT NULL GROUP BY vendor_name
+        $t = self::USD_LINE_THRESHOLD;
+
+        $added = DB::affectingStatement('
+            INSERT IGNORE INTO dwh_map_vendor_principal (vendor_name, default_currency, currency_source, created_at, updated_at)
+            SELECT DISTINCT vendor_name, \'IDR\', \'auto\', NOW(), NOW()
+            FROM dwh_stg_acc_purchase_invoice_item WHERE vendor_name IS NOT NULL
+        ');
+
+        // Tebak mata uang per vendor via aturan DOMINAN (bukan per baris) — hanya yang 'auto'.
+        DB::statement("
+            UPDATE dwh_map_vendor_principal m
+            JOIN (
+                SELECT vendor_name, CASE WHEN SUM(total < {$t}) > SUM(total >= {$t}) THEN 'USD' ELSE 'IDR' END cur
+                FROM dwh_stg_acc_purchase_invoice_item GROUP BY vendor_name
+            ) g ON g.vendor_name = m.vendor_name
+            SET m.default_currency = g.cur, m.updated_at = NOW()
+            WHERE m.currency_source = 'auto'
         ");
 
-        // Isi currency_code baris yang belum bermata uang, dari mapping vendornya.
+        // Turunkan mata uang ke seluruh baris (data hasil sync tak menyimpan currency sendiri).
         DB::statement('
             UPDATE dwh_stg_acc_purchase_invoice_item s
             JOIN dwh_map_vendor_principal m ON m.vendor_name = s.vendor_name
-            SET s.currency_code = m.default_currency WHERE s.currency_code IS NULL
+            SET s.currency_code = m.default_currency
         ');
 
-        return back()->with('success', $added > 0 ? "{$added} vendor baru ditambahkan." : 'Tidak ada vendor baru.');
+        return back()->with('success', $added > 0 ? "{$added} vendor baru ditambahkan; mata uang & konversi diperbarui." : 'Mata uang & konversi diperbarui.');
     }
 
     /** Ringkasan kualitas kurs: berapa bulan-mata-uang masih asumsi vs sumber eksternal. */
