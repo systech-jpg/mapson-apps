@@ -201,7 +201,37 @@ class PurchaseMonitorController extends Controller
             'fxRates' => DB::table('dwh_fx_rate')->orderByDesc('period')->orderBy('currency')
                 ->get(['id', 'currency', 'period', 'rate_to_idr', 'source', 'note']),
             'currencies' => ['IDR', 'USD', 'EUR', 'SGD', 'CNY', 'JPY', 'GBP'],
+            'lastSync' => DB::table('sync_logs')->where('source', 'Sync faktur pembelian (HPP)')
+                ->where('status', 'success')->orderByDesc('created_at')->first(['created_at', 'summary']),
+            'dataRange' => DB::table('dwh_stg_acc_purchase_invoice_item')
+                ->selectRaw('MIN(trans_date) dari, MAX(trans_date) sampai, COUNT(*) n')->first(),
         ]);
+    }
+
+    /**
+     * Tarik faktur pembelian Accurate dari tombol (tanpa akses terminal server), lalu langsung
+     * selaraskan mapping vendor + mata uang. Sinkron & bisa lama (panggilan API per periode) —
+     * pola sama dengan fetchFx.
+     */
+    public function syncPurchases(Request $request): RedirectResponse
+    {
+        @set_time_limit(0);
+        $data = $request->validate(['from' => ['nullable', 'date_format:Y-m-d']]);
+
+        try {
+            $exit = Artisan::call('dwh:sync-product-cost', array_filter(['--from' => $data['from'] ?? null]));
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Gagal sync pembelian: '.$e->getMessage());
+        }
+        if ($exit !== 0) {
+            $summary = collect(preg_split('/\r?\n/', trim(Artisan::output())))->last() ?: '';
+
+            return back()->with('error', 'Sync pembelian gagal. '.$summary);
+        }
+
+        $added = $this->syncVendorMap();
+
+        return back()->with('success', 'Pembelian tersinkron.'.($added > 0 ? " {$added} vendor baru terdaftar," : '').' mata uang & konversi sudah diperbarui.');
     }
 
     /** Simpan mapping satu vendor + turunkan mata uang ke baris staging-nya. */
@@ -277,6 +307,14 @@ class PurchaseMonitorController extends Controller
      */
     public function refreshVendors(): RedirectResponse
     {
+        $added = $this->syncVendorMap();
+
+        return back()->with('success', $added > 0 ? "{$added} vendor baru ditambahkan; mata uang & konversi diperbarui." : 'Mata uang & konversi diperbarui.');
+    }
+
+    /** Inti refreshVendors, juga dipanggil otomatis setelah syncPurchases. Kembalikan jumlah vendor baru. */
+    protected function syncVendorMap(): int
+    {
         $t = self::USD_LINE_THRESHOLD;
 
         $added = DB::affectingStatement('
@@ -303,7 +341,7 @@ class PurchaseMonitorController extends Controller
             SET s.currency_code = m.default_currency
         ');
 
-        return back()->with('success', $added > 0 ? "{$added} vendor baru ditambahkan; mata uang & konversi diperbarui." : 'Mata uang & konversi diperbarui.');
+        return $added;
     }
 
     /** Ringkasan kualitas kurs: berapa bulan-mata-uang masih asumsi vs sumber eksternal. */

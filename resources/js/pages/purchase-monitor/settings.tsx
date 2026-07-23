@@ -7,13 +7,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { CloudDownload, RefreshCw } from 'lucide-react';
+import { CloudDownload, DatabaseZap, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 interface Vendor { vendor_name: string; n_lines: number; total_asli: number; principal_id: number | null; default_currency: string }
 interface Principal { id: number; name: string }
 interface FxRate { id: number; currency: string; period: string; rate_to_idr: number; source: string; note: string | null }
-interface Props { vendors: Vendor[]; principals: Principal[]; fxRates: FxRate[]; currencies: string[] }
+interface LastSync { created_at: string; summary: string | null }
+interface DataRange { dari: string | null; sampai: string | null; n: number }
+interface Props { vendors: Vendor[]; principals: Principal[]; fxRates: FxRate[]; currencies: string[]; lastSync: LastSync | null; dataRange: DataRange }
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Integrasi Data', href: '#' },
@@ -24,7 +26,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 const NONE = 'none';
 const num = (n: number, d = 0) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: d });
 
-export default function PurchaseMonitorSettings({ vendors, principals, fxRates, currencies }: Props) {
+export default function PurchaseMonitorSettings({ vendors, principals, fxRates, currencies, lastSync, dataRange }: Props) {
     const [q, setQ] = useState('');
 
     const rows = useMemo(() => {
@@ -49,6 +51,8 @@ export default function PurchaseMonitorSettings({ vendors, principals, fxRates, 
                         Petakan vendor ke principal &amp; tetapkan mata uangnya, dan kelola kurs per bulan yang dipakai untuk konversi ke IDR.
                     </p>
                 </div>
+
+                <SyncCard lastSync={lastSync} dataRange={dataRange} />
 
                 <Card>
                     <CardHeader className="pb-2">
@@ -116,6 +120,43 @@ export default function PurchaseMonitorSettings({ vendors, principals, fxRates, 
                 <FxSection fxRates={fxRates} currencies={currencies.filter((c) => c !== 'IDR')} />
             </div>
         </AppLayout>
+    );
+}
+
+function SyncCard({ lastSync, dataRange }: { lastSync: LastSync | null; dataRange: DataRange }) {
+    const [from, setFrom] = useState('');
+    const [syncing, setSyncing] = useState(false);
+
+    const sync = () =>
+        router.post(route('purchase-monitor.sync-purchases'), from ? { from } : {}, {
+            preserveScroll: true, onStart: () => setSyncing(true), onFinish: () => setSyncing(false),
+        });
+
+    return (
+        <Card>
+            <CardHeader className="pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-base">Sinkronisasi Pembelian Accurate</CardTitle>
+                    <div className="flex items-end gap-2">
+                        <div>
+                            <label className="text-[11px] text-muted-foreground">Mulai dari (opsional)</label>
+                            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 w-40" />
+                        </div>
+                        <Button size="sm" className="h-8 gap-1.5" disabled={syncing} onClick={sync}>
+                            <DatabaseZap className={`size-3.5 ${syncing ? 'animate-pulse' : ''}`} /> {syncing ? 'Menyinkronkan…' : 'Tarik pembelian'}
+                        </Button>
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    Menarik faktur pembelian dari Accurate (default 24 bulan terakhir; isi tanggal untuk menarik lebih jauh ke belakang),
+                    lalu otomatis mendaftarkan vendor baru & menyelaraskan mata uang. Proses bisa 1–2 menit — jangan tutup halaman.
+                </p>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+                <span>Sync sukses terakhir: <b className="text-foreground">{lastSync ? new Date(lastSync.created_at).toLocaleString('id-ID') : 'belum pernah'}</b></span>
+                <span>Data tersimpan: <b className="text-foreground">{num(dataRange.n)}</b> baris{dataRange.dari ? <> ({dataRange.dari} s/d {dataRange.sampai})</> : null}</span>
+            </CardContent>
+        </Card>
     );
 }
 

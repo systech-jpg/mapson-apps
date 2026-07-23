@@ -95,6 +95,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('integration/purchase-monitor/fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeFx'])->name('purchase-monitor.fx');
             Route::post('integration/purchase-monitor/fetch-fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'fetchFx'])->name('purchase-monitor.fetch-fx');
             Route::post('integration/purchase-monitor/refresh-vendors', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'refreshVendors'])->name('purchase-monitor.refresh-vendors');
+            Route::post('integration/purchase-monitor/sync-purchases', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'syncPurchases'])->name('purchase-monitor.sync-purchases');
         });
     });
     Route::post('integration/sync-sales', [IntegrationController::class, 'syncSales'])->middleware('menu.access:data-integration,edit')->name('integration.sync-sales');
