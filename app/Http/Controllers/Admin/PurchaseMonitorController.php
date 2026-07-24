@@ -123,7 +123,14 @@ class PurchaseMonitorController extends Controller
      * memakai nama vendor ternormalisasi + tahun + mata uang, dan membandingkan NILAI ASLI
      * (bukan IDR — kurs Dolibarr tak andal). Tiap baris ditandai: cocok / selisih / hanya di
      * salah satu sisi.
+     *
+     * Sisi Dolibarr = PO (commande_fournisseur) status ordered/partial/full receive, BUKAN
+     * faktur: pembayaran dicatat di Accurate sehingga faktur pembelian Dolibarr nyaris tak
+     * pernah dibuat (45 faktur vs 393 PO).
      */
+    /** Status PO Dolibarr yang dihitung: 3=ordered, 4=diterima sebagian, 5=diterima penuh. */
+    protected const DOL_PO_STATUSES = '3,4,5';
+
     public function reconciliation(): Response
     {
         // Sisi Accurate (mata uang dari mapping vendor).
@@ -134,16 +141,20 @@ class PurchaseMonitorController extends Controller
                 COALESCE(s.currency_code,\'IDR\') AS cur, SUM(s.total) AS total, COUNT(DISTINCT s.doc_number) AS docs')
             ->get();
 
-        // Sisi Dolibarr (nilai asli = multicurrency_total_ttc, mata uang = multicurrency_code).
+        // Sisi Dolibarr: PO status ordered/partial/full (nilai asli = multicurrency_total_ttc).
+        // PO lama 2021-2023 nilainya 0 semua — dibuang lewat HAVING agar tak jadi baris hampa.
         $p = config('erp.prefix');
         $dol = collect(DB::connection(config('erp.connection'))->select("
             SELECT so.nom AS vendor_name, ".$this->normSql('so.nom')." AS norm,
-                   LEFT(f.datef,4) AS tahun, COALESCE(NULLIF(f.multicurrency_code,''),'IDR') AS cur,
-                   SUM(f.multicurrency_total_ttc) AS total, COUNT(*) AS docs
-            FROM {$p}facture_fourn f
-            LEFT JOIN {$p}societe so ON so.rowid = f.fk_soc
-            WHERE f.datef IS NOT NULL
+                   LEFT(COALESCE(c.date_commande, c.date_creation),4) AS tahun,
+                   COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                   SUM(c.multicurrency_total_ttc) AS total, COUNT(*) AS docs
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
+              AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
             GROUP BY so.nom, norm, tahun, cur
+            HAVING SUM(c.multicurrency_total_ttc) <> 0
         "));
 
         // Gabung berdasarkan (norm, tahun, mata uang).

@@ -51,6 +51,7 @@ export default function PurchaseReconciliation({ rows, years, summary }: Props) 
                         <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs Dolibarr</h1>
                         <p className="text-sm text-muted-foreground">
                             Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli</b> mata uang.
+                            Sisi Dolibarr memakai <b>PO</b> berstatus ordered / partial / full receive — faktur pembelian tidak dibuat di Dolibarr karena pembayaran dicatat di Accurate.
                         </p>
                     </div>
                     <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
@@ -90,7 +91,7 @@ export default function PurchaseReconciliation({ rows, years, summary }: Props) 
                                         <TableHead>Tahun</TableHead>
                                         <TableHead>Mata Uang</TableHead>
                                         <TableHead className="text-right">Accurate</TableHead>
-                                        <TableHead className="text-right">Dolibarr</TableHead>
+                                        <TableHead className="text-right">Dolibarr (PO)</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
                                         <TableHead className="text-center">Status</TableHead>
                                     </TableRow>
