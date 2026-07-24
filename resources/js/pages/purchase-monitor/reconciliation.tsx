@@ -15,7 +15,7 @@ type Status = 'match' | 'diff' | 'acc_only' | 'dol_only';
 interface Row { vendor: string; tahun: string; cur: string; acc: number; acc_docs: number; dol: number; dol_docs: number; selisih: number; status: Status }
 interface BankAccount { id: number; label: string; currency: string | null }
 interface PaymentMode { id: number; code: string; label: string }
-interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; total: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
+interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
 interface Props {
     rows: Row[];
     years: string[];
@@ -59,8 +59,8 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                     <div>
                         <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs Dolibarr</h1>
                         <p className="text-sm text-muted-foreground">
-                            Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli</b> mata uang.
-                            Sisi Dolibarr memakai <b>PO</b> berstatus approved / ordered / partial / full receive — faktur pembelian tidak dibuat di Dolibarr karena pembayaran dicatat di Accurate.
+                            Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli non-PPN</b> —
+                            Accurate menyimpan nilai net, jadi sisi Dolibarr memakai total HT dari <b>PO</b> berstatus approved / ordered / partial / full receive.
                         </p>
                     </div>
                     <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
@@ -191,7 +191,8 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                 <TableHead>PO</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Total ({row?.cur})</TableHead>
+                                <TableHead className="text-right">Non-PPN ({row?.cur})</TableHead>
+                                <TableHead className="text-right">+PPN</TableHead>
                                 <TableHead>Faktur</TableHead>
                                 <TableHead />
                             </TableRow>
@@ -206,6 +207,9 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                     <TableCell className="whitespace-nowrap text-muted-foreground">{po.tanggal}</TableCell>
                                     <TableCell><Badge variant="outline" className="text-[10px]">{PO_STATUS[po.statut] ?? po.statut}</Badge></TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap">{num(po.total, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">
+                                        {po.total_ttc !== po.total ? num(po.total_ttc, 2) : <span className="text-muted-foreground/40">–</span>}
+                                    </TableCell>
                                     <TableCell className="whitespace-nowrap">
                                         {po.invoice_refs
                                             ? <Badge variant="outline" className={`text-[10px] ${po.invoice_paid ? 'border-emerald-400 text-emerald-600 dark:text-emerald-400' : 'border-amber-400 text-amber-600 dark:text-amber-400'}`}>
@@ -254,7 +258,10 @@ function PayForm({ po, cur, bankAccounts, paymentModes, onDone, onCancel }: {
 
     return (
         <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="mb-2 text-sm font-medium">Payment untuk {po.ref} — {cur} {num(po.total, 2)}</p>
+            <p className="mb-2 text-sm font-medium">
+                Payment untuk {po.ref} — {cur} {num(po.total_ttc, 2)}
+                {po.total_ttc !== po.total && <span className="ml-1 font-normal text-muted-foreground">(termasuk PPN; non-PPN {num(po.total, 2)})</span>}
+            </p>
             <div className="flex flex-wrap items-end gap-2">
                 <div>
                     <label className="text-[11px] text-muted-foreground">Tanggal bayar</label>

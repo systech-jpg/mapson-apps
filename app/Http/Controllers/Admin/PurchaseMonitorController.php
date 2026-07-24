@@ -145,20 +145,22 @@ class PurchaseMonitorController extends Controller
                 COALESCE(s.currency_code,\'IDR\') AS cur, SUM(s.total) AS total, COUNT(DISTINCT s.doc_number) AS docs')
             ->get();
 
-        // Sisi Dolibarr: PO status ordered/partial/full (nilai asli = multicurrency_total_ttc).
+        // Sisi Dolibarr: PO status approved/ordered/partial/full, nilai NON-PPN
+        // (multicurrency_total_ht) — staging Accurate menyimpan nilai net, sedangkan TTC PO
+        // campuran (sebagian ber-PPN 11%); pakai HT membuat kedua sisi apel-ke-apel.
         // PO lama 2021-2023 nilainya 0 semua — dibuang lewat HAVING agar tak jadi baris hampa.
         $p = config('erp.prefix');
         $dol = collect(DB::connection(config('erp.connection'))->select("
             SELECT so.nom AS vendor_name, ".$this->normSql('so.nom')." AS norm,
                    LEFT(COALESCE(c.date_commande, c.date_creation),4) AS tahun,
                    COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
-                   SUM(c.multicurrency_total_ttc) AS total, COUNT(*) AS docs
+                   SUM(c.multicurrency_total_ht) AS total, COUNT(*) AS docs
             FROM {$p}commande_fournisseur c
             LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
             WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
               AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
             GROUP BY so.nom, norm, tahun, cur
-            HAVING SUM(c.multicurrency_total_ttc) <> 0
+            HAVING SUM(c.multicurrency_total_ht) <> 0
         "));
 
         // Gabung berdasarkan (norm, tahun, mata uang).
@@ -249,7 +251,7 @@ class PurchaseMonitorController extends Controller
         $pos = DB::connection(config('erp.connection'))->select("
             SELECT c.rowid, c.ref, c.ref_supplier, c.fk_statut,
                    LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
-                   c.multicurrency_total_ttc AS total,
+                   c.multicurrency_total_ht AS total, c.multicurrency_total_ttc AS total_ttc,
                    GROUP_CONCAT(DISTINCT f.ref) AS invoice_refs,
                    MAX(f.paye) AS invoice_paid
             FROM {$p}commande_fournisseur c
@@ -260,12 +262,12 @@ class PurchaseMonitorController extends Controller
               AND {$norm} = {$normParam}
               AND LEFT(COALESCE(c.date_commande, c.date_creation),4) = ?
               AND COALESCE(NULLIF(c.multicurrency_code,''),'IDR') = ?
-            GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total
+            GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total, total_ttc
             ORDER BY tanggal", [$data['vendor'], $data['year'], strtoupper($data['cur'])]);
 
         return response()->json(['pos' => array_map(fn ($r) => [
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
-            'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'statut' => (int) $r->fk_statut,
+            'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
         ], $pos)]);
     }
