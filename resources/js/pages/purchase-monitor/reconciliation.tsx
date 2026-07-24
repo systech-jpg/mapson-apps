@@ -60,7 +60,7 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                         <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs Dolibarr</h1>
                         <p className="text-sm text-muted-foreground">
                             Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli</b> mata uang.
-                            Sisi Dolibarr memakai <b>PO</b> berstatus ordered / partial / full receive — faktur pembelian tidak dibuat di Dolibarr karena pembayaran dicatat di Accurate.
+                            Sisi Dolibarr memakai <b>PO</b> berstatus approved / ordered / partial / full receive — faktur pembelian tidak dibuat di Dolibarr karena pembayaran dicatat di Accurate.
                         </p>
                     </div>
                     <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
@@ -162,7 +162,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
             .catch(() => setPos([]));
     }, [row]);
 
-    const PO_STATUS: Record<number, string> = { 3: 'Ordered', 4: 'Diterima sebagian', 5: 'Diterima penuh' };
+    const PO_STATUS: Record<number, string> = { 2: 'Approved', 3: 'Ordered', 4: 'Diterima sebagian', 5: 'Diterima penuh' };
 
     return (
         <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
@@ -214,7 +214,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                             : <span className="text-[11px] text-muted-foreground/60">belum ada</span>}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        {!po.invoice_refs && (
+                                        {!po.invoice_refs && po.total !== 0 && (
                                             <Button size="sm" className="h-7 px-2.5 text-xs" disabled={!erpApiReady} onClick={() => setPayingPo(po)}>
                                                 Buat payment
                                             </Button>

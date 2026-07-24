@@ -17,8 +17,8 @@ use Illuminate\Support\Facades\Http;
  */
 class DolibarrPurchaseService
 {
-    /** Status PO yang boleh ditutup: 3=ordered, 4=diterima sebagian, 5=diterima penuh. */
-    public const PAYABLE_STATUSES = [3, 4, 5];
+    /** Status PO yang boleh ditutup: 2=approved, 3=ordered, 4=diterima sebagian, 5=diterima penuh. */
+    public const PAYABLE_STATUSES = [2, 3, 4, 5];
 
     public function enabled(): bool
     {
@@ -88,7 +88,7 @@ class DolibarrPurchaseService
             throw new \RuntimeException("PO #{$poId} tidak ditemukan.");
         }
         if (! in_array((int) $po->fk_statut, self::PAYABLE_STATUSES, true)) {
-            throw new \RuntimeException("PO {$po->ref} berstatus {$po->fk_statut} (bukan ordered/diterima) — tidak bisa dibuatkan faktur.");
+            throw new \RuntimeException("PO {$po->ref} berstatus {$po->fk_statut} (draft/batal) — tidak bisa dibuatkan faktur.");
         }
         if ($linked = $this->linkedInvoiceIds($poId)) {
             throw new \RuntimeException("PO {$po->ref} sudah punya faktur tertaut (id ".implode(',', $linked).') — tidak dibuat ulang.');

@@ -128,8 +128,12 @@ class PurchaseMonitorController extends Controller
      * faktur: pembayaran dicatat di Accurate sehingga faktur pembelian Dolibarr nyaris tak
      * pernah dibuat (45 faktur vs 393 PO).
      */
-    /** Status PO Dolibarr yang dihitung: 3=ordered, 4=diterima sebagian, 5=diterima penuh. */
-    protected const DOL_PO_STATUSES = '3,4,5';
+    /**
+     * Status PO Dolibarr yang dihitung: 2=approved, 3=ordered, 4=diterima sebagian,
+     * 5=diterima penuh. Status 2 ikut karena tim kadang berhenti di Approved tanpa
+     * menandai Ordered padahal pembeliannya jalan (kasus Arjaya PO/I/2501/00087).
+     */
+    protected const DOL_PO_STATUSES = '2,3,4,5';
 
     public function reconciliation(): Response
     {
