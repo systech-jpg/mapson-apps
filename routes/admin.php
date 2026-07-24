@@ -89,6 +89,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('integration/purchase-monitor', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'index'])->name('purchase-monitor.index');
         Route::get('integration/purchase-monitor/drilldown', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'drilldown'])->name('purchase-monitor.drilldown');
         Route::get('integration/purchase-monitor/reconciliation', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'reconciliation'])->name('purchase-monitor.reconciliation');
+        Route::get('integration/purchase-monitor/recon-pos', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'reconPos'])->name('purchase-monitor.recon-pos');
         Route::get('integration/purchase-monitor/settings', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'settings'])->name('purchase-monitor.settings');
         Route::middleware('menu.access:purchase-monitor,edit')->group(function () {
             Route::post('integration/purchase-monitor/mapping', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeMapping'])->name('purchase-monitor.mapping');
@@ -96,6 +97,7 @@ Route::middleware(['auth'])->group(function () {
             Route::post('integration/purchase-monitor/fetch-fx', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'fetchFx'])->name('purchase-monitor.fetch-fx');
             Route::post('integration/purchase-monitor/refresh-vendors', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'refreshVendors'])->name('purchase-monitor.refresh-vendors');
             Route::post('integration/purchase-monitor/sync-purchases', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'syncPurchases'])->name('purchase-monitor.sync-purchases');
+            Route::post('integration/purchase-monitor/pay-po', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'payPo'])->name('purchase-monitor.pay-po');
         });
     });
     Route::post('integration/sync-sales', [IntegrationController::class, 'syncSales'])->middleware('menu.access:data-integration,edit')->name('integration.sync-sales');

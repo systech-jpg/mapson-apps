@@ -12,4 +12,10 @@ return [
 
     // Public base URL of the ERP, for "view in ERP" deep links. Leave empty to disable.
     'base_url' => env('ERP_BASE_URL', ''),
+
+    // Dolibarr REST API (write ops: buat faktur supplier + payment dari PO).
+    // Butuh modul "Web services API REST" aktif di Dolibarr + API key user berhak
+    // (fournisseur facture creer). Kosongkan untuk menonaktifkan fitur tulis.
+    'api_url' => rtrim(env('ERP_API_URL', ''), '/'),
+    'api_key' => env('ERP_API_KEY', ''),
 ];

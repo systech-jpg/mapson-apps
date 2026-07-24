@@ -181,6 +181,8 @@ class PurchaseMonitorController extends Controller
             return $m;
         })->sortBy([['tahun', 'desc'], ['vendor', 'asc']])->values();
 
+        $erp = app(\App\Services\Erp\DolibarrPurchaseService::class);
+
         return Inertia::render('purchase-monitor/reconciliation', [
             'rows' => $rows,
             'years' => $rows->pluck('tahun')->unique()->sort()->values(),
@@ -190,7 +192,102 @@ class PurchaseMonitorController extends Controller
                 'acc_only' => $rows->where('status', 'acc_only')->count(),
                 'dol_only' => $rows->where('status', 'dol_only')->count(),
             ],
+            // Pendukung fitur "buat faktur + payment dari PO" (tulis via REST API Dolibarr).
+            'erpApiReady' => $erp->enabled(),
+            'bankAccounts' => $this->erpBankAccounts(),
+            'paymentModes' => $this->erpPaymentModes(),
         ]);
+    }
+
+    /** Rekening bank Dolibarr yang masih buka (untuk dialog payment). */
+    protected function erpBankAccounts(): array
+    {
+        try {
+            $p = config('erp.prefix');
+
+            return array_map(fn ($r) => ['id' => (int) $r->rowid, 'label' => $r->label, 'currency' => $r->currency_code],
+                DB::connection(config('erp.connection'))->select(
+                    "SELECT rowid, label, currency_code FROM {$p}bank_account WHERE clos = 0 ORDER BY label"));
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /** Cara pembayaran aktif Dolibarr (transfer, tunai, dst). */
+    protected function erpPaymentModes(): array
+    {
+        try {
+            $p = config('erp.prefix');
+
+            return array_map(fn ($r) => ['id' => (int) $r->id, 'code' => $r->code, 'label' => $r->libelle],
+                DB::connection(config('erp.connection'))->select(
+                    "SELECT id, code, libelle FROM {$p}c_paiement WHERE active = 1 ORDER BY id"));
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Daftar PO Dolibarr utk satu sel rekon (vendor ternormalisasi × tahun × mata uang),
+     * plus status sudah/belum punya faktur tertaut — sumber tombol "buat payment".
+     */
+    public function reconPos(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'vendor' => ['required', 'string'],
+            'year' => ['required', 'string', 'size:4'],
+            'cur' => ['required', 'string', 'size:3'],
+        ]);
+
+        $p = config('erp.prefix');
+        $norm = $this->normSql('so.nom');
+        $normParam = $this->normSql('?');
+        $pos = DB::connection(config('erp.connection'))->select("
+            SELECT c.rowid, c.ref, c.ref_supplier, c.fk_statut,
+                   LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   c.multicurrency_total_ttc AS total,
+                   GROUP_CONCAT(DISTINCT f.ref) AS invoice_refs,
+                   MAX(f.paye) AS invoice_paid
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            LEFT JOIN {$p}element_element ee ON ee.sourcetype = 'order_supplier' AND ee.fk_source = c.rowid AND ee.targettype = 'invoice_supplier'
+            LEFT JOIN {$p}facture_fourn f ON f.rowid = ee.fk_target
+            WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
+              AND {$norm} = {$normParam}
+              AND LEFT(COALESCE(c.date_commande, c.date_creation),4) = ?
+              AND COALESCE(NULLIF(c.multicurrency_code,''),'IDR') = ?
+            GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total
+            ORDER BY tanggal", [$data['vendor'], $data['year'], strtoupper($data['cur'])]);
+
+        return response()->json(['pos' => array_map(fn ($r) => [
+            'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
+            'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'statut' => (int) $r->fk_statut,
+            'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
+        ], $pos)]);
+    }
+
+    /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */
+    public function payPo(Request $request, \App\Services\Erp\DolibarrPurchaseService $erp): RedirectResponse
+    {
+        $data = $request->validate([
+            'po_id' => ['required', 'integer'],
+            'date' => ['required', 'date_format:Y-m-d'],
+            'bank_account_id' => ['required', 'integer'],
+            'payment_mode_id' => ['required', 'integer'],
+            'note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if (! $erp->enabled()) {
+            return back()->with('error', 'REST API Dolibarr belum dikonfigurasi (isi ERP_API_URL & ERP_API_KEY di .env).');
+        }
+
+        try {
+            $res = $erp->payPo($data['po_id'], $data['date'], $data['bank_account_id'], $data['payment_mode_id'], (string) ($data['note'] ?? ''));
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', "Faktur {$res['ref']} dibuat & payment dicatat di Dolibarr.");
     }
 
     /** Halaman kelola: mapping vendor→principal + mata uang, dan kurs per bulan. */
