@@ -19,6 +19,7 @@ interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: st
 interface AccPayment { number: string; trans_date: string; bank_no: string | null; bank_name: string | null; payment_method: string | null; invoice_number: string | null; bill_number: string | null; amount: number }
 interface AccDoc { doc_number: string; trans_date: string; po_number: string | null; total: number; n_items: number }
 interface AccPo { status_name: string | null; percent_shipped: number | null; currency: string | null; rate: number | null; total: number }
+interface DolPoInfo { tanggal: string | null; cur: string; statut: number }
 interface Props {
     rows: Row[];
     years: string[];
@@ -160,14 +161,15 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
     const [pos, setPos] = useState<Po[] | null>(null);
     const [accDocs, setAccDocs] = useState<AccDoc[]>([]);
     const [accPos, setAccPos] = useState<Record<string, AccPo>>({});
+    const [dolAllPos, setDolAllPos] = useState<Record<string, DolPoInfo>>({});
     const [payments, setPayments] = useState<AccPayment[]>([]);
     const [payingPo, setPayingPo] = useState<Po | null>(null);
 
     useEffect(() => {
-        if (!row) { setPos(null); setAccDocs([]); setAccPos({}); setPayments([]); setPayingPo(null); return; }
+        if (!row) { setPos(null); setAccDocs([]); setAccPos({}); setDolAllPos({}); setPayments([]); setPayingPo(null); return; }
         fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}&cur=${row.cur}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
-            .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setAccPos(d.accPos ?? {}); setPayments(d.payments ?? []); })
+            .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setAccPos(d.accPos ?? {}); setDolAllPos(d.dolAllPos ?? {}); setPayments(d.payments ?? []); })
             .catch(() => setPos([]));
     }, [row]);
 
@@ -303,7 +305,16 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                     <span className="min-w-0">
                                         <span className="font-medium">{d.doc_number}</span>
                                         <span className="ml-1.5 text-muted-foreground">{d.trans_date} · {d.n_items} item</span>
-                                        {d.po_number && <span className="ml-1.5 text-sky-600 dark:text-sky-400">→ {d.po_number}</span>}
+                                        {d.po_number && (() => {
+                                            const info = dolAllPos[d.po_number];
+                                            if (!info) return <span className="ml-1.5 text-red-600 dark:text-red-400">→ {d.po_number} (tak ada di ERP)</span>;
+                                            return (
+                                                <span className="ml-1.5 text-sky-600 dark:text-sky-400">
+                                                    → {d.po_number}
+                                                    <span className="text-muted-foreground"> ada di ERP: {info.cur} · {info.tanggal} — di luar sel ini</span>
+                                                </span>
+                                            );
+                                        })()}
                                     </span>
                                     <span className="shrink-0 tabular-nums">{num(d.total, 2)}</span>
                                 </div>

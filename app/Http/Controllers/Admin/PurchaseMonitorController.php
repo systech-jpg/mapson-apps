@@ -279,14 +279,26 @@ class PurchaseMonitorController extends Controller
             ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date,
                 'po_number' => $r->po_number, 'total' => (float) $r->total, 'n_items' => (int) $r->n_items]);
 
-        // PO Accurate vendor ini (kunci: number = ref PO Dolibarr) — status proses & kurs riil.
+        // PO Accurate utk badge status — lookup by NOMOR saja (tanpa filter tahun/vendor):
+        // tanggal bisa beda antar sistem (kasus PO/I/2508/00198: ERP 2026-04, Accurate 2025-08).
         $accPos = DB::table('dwh_stg_acc_purchase_order')
-            ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
-            ->whereRaw('LEFT(trans_date,4) = ?', [$data['year']])
+            ->whereIn('number', array_map(fn ($r) => $r->ref, $pos))
             ->get(['number', 'status_name', 'percent_shipped', 'currency_code', 'rate', 'total_amount'])
             ->keyBy('number')
             ->map(fn ($r) => ['status_name' => $r->status_name, 'percent_shipped' => $r->percent_shipped !== null ? (float) $r->percent_shipped : null,
                 'currency' => $r->currency_code, 'rate' => $r->rate !== null ? (float) $r->rate : null, 'total' => (float) $r->total_amount]);
+
+        // Semua PO Dolibarr vendor ini (tanpa filter tahun/mata uang/status) — untuk menjelaskan
+        // dokumen "tanpa pasangan": PO-nya ada di ERP tapi di luar sel (beda mata uang/tahun,
+        // kasus PO/I/2606/000052 salah input USD), atau memang tak ada sama sekali.
+        $dolAllPos = collect(DB::connection(config('erp.connection'))->select("
+            SELECT c.ref, LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur, c.fk_statut
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            WHERE ".$this->normSql('so.nom').' = '.$this->normSql('?'), [$data['vendor']]))
+            ->keyBy('ref')
+            ->map(fn ($r) => ['tanggal' => $r->tanggal, 'cur' => $r->cur, 'statut' => (int) $r->fk_statut]);
 
         // Payment Accurate vendor ini (staging) — sumber tanggal bayar & bank riil di form.
         $payments = DB::table('dwh_stg_acc_purchase_payment')
@@ -305,7 +317,7 @@ class PurchaseMonitorController extends Controller
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
             'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
-        ], $pos), 'accDocs' => $accDocs, 'accPos' => $accPos, 'payments' => $payments]);
+        ], $pos), 'accDocs' => $accDocs, 'accPos' => $accPos, 'dolAllPos' => $dolAllPos, 'payments' => $payments]);
     }
 
     /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */
