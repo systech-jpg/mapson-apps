@@ -1,0 +1,1 @@
+import{K as t,j as n}from"./app-BSU0zNmQ.js";import{c as a}from"./utils-CiMRq3MP.js";function m({className:o,...s}){const{logo:r}=t().props;return n.jsx("img",{...s,src:r,alt:"Mapson Arya",className:a("object-contain",o)})}export{m as A};
