@@ -265,6 +265,20 @@ class PurchaseMonitorController extends Controller
             GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total, total_ttc
             ORDER BY tanggal", [$data['vendor'], $data['year'], strtoupper($data['cur'])]);
 
+        // Dokumen faktur Accurate sel yang sama, dipecah per (dokumen × nomor PO) — po_number
+        // per baris = ref PO Dolibarr (alur bisnis: PO lahir di Dolibarr → di-input ke Accurate),
+        // sehingga faktur multi-PO dan realisasi parsial terurai eksak per PO.
+        $accDocs = DB::table('dwh_stg_acc_purchase_invoice_item')
+            ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
+            ->whereRaw('LEFT(trans_date,4) = ?', [$data['year']])
+            ->whereRaw("COALESCE(currency_code,'IDR') = ?", [strtoupper($data['cur'])])
+            ->groupBy('doc_number', 'trans_date', 'po_number')
+            ->orderBy('trans_date')
+            ->selectRaw('doc_number, trans_date, po_number, ROUND(SUM(total),2) AS total, COUNT(*) AS n_items')
+            ->get()
+            ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date,
+                'po_number' => $r->po_number, 'total' => (float) $r->total, 'n_items' => (int) $r->n_items]);
+
         // Payment Accurate vendor ini (staging) — sumber tanggal bayar & bank riil di form.
         $payments = DB::table('dwh_stg_acc_purchase_payment')
             ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
@@ -282,7 +296,7 @@ class PurchaseMonitorController extends Controller
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
             'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
-        ], $pos), 'payments' => $payments]);
+        ], $pos), 'accDocs' => $accDocs, 'payments' => $payments]);
     }
 
     /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */

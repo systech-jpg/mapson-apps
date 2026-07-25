@@ -687,6 +687,8 @@ class AccurateSyncService
                         'erp_id' => $it['id'],
                         'erp_doc_id' => $d['id'] ?? null,
                         'doc_number' => $d['number'] ?? null,
+                        // Nomor PO per baris = ref PO Dolibarr (alur: PO lahir di Dolibarr → input Accurate).
+                        'po_number' => is_array($it['purchaseOrder'] ?? null) ? ($it['purchaseOrder']['number'] ?? null) : null,
                         'trans_date' => $td,
                         'vendor_name' => $vendor,
                         'item_no' => $itemNo,
@@ -701,7 +703,7 @@ class AccurateSyncService
 
                 if ($batch) {
                     DB::table('dwh_stg_acc_purchase_invoice_item')->upsert($batch, ['erp_id'],
-                        ['erp_doc_id', 'doc_number', 'trans_date', 'vendor_name', 'item_no', 'item_name', 'qty', 'unit', 'unit_price', 'total', 'synced_at']);
+                        ['erp_doc_id', 'doc_number', 'po_number', 'trans_date', 'vendor_name', 'item_no', 'item_name', 'qty', 'unit', 'unit_price', 'total', 'synced_at']);
                     $lines += count($batch);
                     $docs++;
                 }
