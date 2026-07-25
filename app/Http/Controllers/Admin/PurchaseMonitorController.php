@@ -211,9 +211,9 @@ class PurchaseMonitorController extends Controller
         try {
             $p = config('erp.prefix');
 
-            return array_map(fn ($r) => ['id' => (int) $r->rowid, 'label' => $r->label, 'currency' => $r->currency_code],
+            return array_map(fn ($r) => ['id' => (int) $r->rowid, 'ref' => $r->ref, 'label' => $r->label, 'currency' => $r->currency_code],
                 DB::connection(config('erp.connection'))->select(
-                    "SELECT rowid, label, currency_code FROM {$p}bank_account WHERE clos = 0 ORDER BY label"));
+                    "SELECT rowid, ref, label, currency_code FROM {$p}bank_account WHERE clos = 0 ORDER BY label"));
         } catch (\Throwable) {
             return [];
         }
@@ -265,11 +265,24 @@ class PurchaseMonitorController extends Controller
             GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total, total_ttc
             ORDER BY tanggal", [$data['vendor'], $data['year'], strtoupper($data['cur'])]);
 
+        // Payment Accurate vendor ini (staging) — sumber tanggal bayar & bank riil di form.
+        $payments = DB::table('dwh_stg_acc_purchase_payment')
+            ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
+            ->whereRaw('LEFT(trans_date,4) >= ?', [$data['year']])
+            ->orderByDesc('trans_date')->limit(200)
+            ->get(['number', 'trans_date', 'bank_no', 'bank_name', 'payment_method', 'invoice_number', 'bill_number', 'payment_amount'])
+            ->map(fn ($r) => [
+                'number' => $r->number, 'trans_date' => $r->trans_date, 'bank_no' => $r->bank_no,
+                'bank_name' => $r->bank_name, 'payment_method' => $r->payment_method,
+                'invoice_number' => $r->invoice_number, 'bill_number' => $r->bill_number,
+                'amount' => (float) $r->payment_amount,
+            ]);
+
         return response()->json(['pos' => array_map(fn ($r) => [
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
             'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
-        ], $pos)]);
+        ], $pos), 'payments' => $payments]);
     }
 
     /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */
@@ -345,7 +358,18 @@ class PurchaseMonitorController extends Controller
 
         $added = $this->syncVendorMap();
 
-        return back()->with('success', 'Pembelian tersinkron.'.($added > 0 ? " {$added} vendor baru terdaftar," : '').' mata uang & konversi sudah diperbarui.');
+        // Tarik juga pembayaran pembelian (tanggal bayar + bank riil utk fitur payment PO).
+        $payMsg = '';
+        try {
+            $from = $data['from'] ? \Illuminate\Support\Carbon::parse($data['from']) : now()->subMonths(24);
+            $pay = app(\App\Services\Accurate\AccurateSyncService::class)
+                ->syncPurchasePayments($from->format('d/m/Y'), now()->format('d/m/Y'));
+            $payMsg = " {$pay['payment_docs']} payment Accurate tersinkron.";
+        } catch (\Throwable $e) {
+            $payMsg = ' (Sync payment gagal: '.mb_substr($e->getMessage(), 0, 120).')';
+        }
+
+        return back()->with('success', 'Pembelian tersinkron.'.($added > 0 ? " {$added} vendor baru terdaftar," : '').' mata uang & konversi sudah diperbarui.'.$payMsg);
     }
 
     /**

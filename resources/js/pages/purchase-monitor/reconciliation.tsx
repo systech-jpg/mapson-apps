@@ -13,9 +13,10 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 type Status = 'match' | 'diff' | 'acc_only' | 'dol_only';
 interface Row { vendor: string; tahun: string; cur: string; acc: number; acc_docs: number; dol: number; dol_docs: number; selisih: number; status: Status }
-interface BankAccount { id: number; label: string; currency: string | null }
+interface BankAccount { id: number; ref: string; label: string; currency: string | null }
 interface PaymentMode { id: number; code: string; label: string }
 interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
+interface AccPayment { number: string; trans_date: string; bank_no: string | null; bank_name: string | null; payment_method: string | null; invoice_number: string | null; bill_number: string | null; amount: number }
 interface Props {
     rows: Row[];
     years: string[];
@@ -152,13 +153,14 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
     row: Row | null; onClose: () => void; erpApiReady: boolean; bankAccounts: BankAccount[]; paymentModes: PaymentMode[];
 }) {
     const [pos, setPos] = useState<Po[] | null>(null);
+    const [payments, setPayments] = useState<AccPayment[]>([]);
     const [payingPo, setPayingPo] = useState<Po | null>(null);
 
     useEffect(() => {
-        if (!row) { setPos(null); setPayingPo(null); return; }
+        if (!row) { setPos(null); setPayments([]); setPayingPo(null); return; }
         fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}&cur=${row.cur}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
-            .then((d) => setPos(d.pos ?? []))
+            .then((d) => { setPos(d.pos ?? []); setPayments(d.payments ?? []); })
             .catch(() => setPos([]));
     }, [row]);
 
@@ -231,7 +233,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                 )}
 
                 {payingPo && (
-                    <PayForm po={payingPo} cur={row?.cur ?? 'IDR'} bankAccounts={bankAccounts} paymentModes={paymentModes}
+                    <PayForm po={payingPo} cur={row?.cur ?? 'IDR'} bankAccounts={bankAccounts} paymentModes={paymentModes} accPayments={payments}
                         onDone={() => { setPayingPo(null); onClose(); }} onCancel={() => setPayingPo(null)} />
                 )}
             </DialogContent>
@@ -239,9 +241,12 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
     );
 }
 
-/** Form kecil: tanggal bayar, rekening, cara bayar → POST pay-po. */
-function PayForm({ po, cur, bankAccounts, paymentModes, onDone, onCancel }: {
-    po: Po; cur: string; bankAccounts: BankAccount[]; paymentModes: PaymentMode[]; onDone: () => void; onCancel: () => void;
+/** Peta cara bayar Accurate → kode c_paiement Dolibarr. */
+const METHOD_TO_CODE: Record<string, string> = { BANK_TRANSFER: 'VIR', CASH: 'LIQ', CHEQUE: 'CHQ', CREDIT_CARD: 'CB' };
+
+/** Form kecil: tanggal bayar, rekening, cara bayar → POST pay-po. Klik payment Accurate = isi otomatis. */
+function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onCancel }: {
+    po: Po; cur: string; bankAccounts: BankAccount[]; paymentModes: PaymentMode[]; accPayments: AccPayment[]; onDone: () => void; onCancel: () => void;
 }) {
     // Default rekening: yang mata uangnya sama dengan PO, kalau ada.
     const defaultBank = bankAccounts.find((b) => (b.currency ?? 'IDR') === cur) ?? bankAccounts[0];
@@ -249,7 +254,22 @@ function PayForm({ po, cur, bankAccounts, paymentModes, onDone, onCancel }: {
     const [bank, setBank] = useState(defaultBank ? String(defaultBank.id) : '');
     const [mode, setMode] = useState(paymentModes.find((m) => m.code === 'VIR') ? String(paymentModes.find((m) => m.code === 'VIR')!.id) : (paymentModes[0] ? String(paymentModes[0].id) : ''));
     const [note, setNote] = useState('');
+    const [picked, setPicked] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+
+    // Payment yang jumlahnya sama dengan PO (non-PPN atau +PPN) ditaruh paling atas.
+    const matches = (p: AccPayment) => Math.abs(p.amount - po.total) < 1 || Math.abs(p.amount - po.total_ttc) < 1;
+    const sortedPayments = [...accPayments].sort((a, b) => Number(matches(b)) - Number(matches(a)) || (b.trans_date ?? '').localeCompare(a.trans_date ?? ''));
+
+    const pickPayment = (p: AccPayment) => {
+        setPicked(p.number);
+        if (p.trans_date) setDate(p.trans_date);
+        const b = bankAccounts.find((x) => x.ref === p.bank_no);
+        if (b) setBank(String(b.id));
+        const m = paymentModes.find((x) => x.code === METHOD_TO_CODE[p.payment_method ?? '']);
+        if (m) setMode(String(m.id));
+        setNote(`Accurate ${p.number}${p.bill_number ? ` (${p.bill_number})` : ''}`);
+    };
 
     const submit = () =>
         router.post(route('purchase-monitor.pay-po'), {
@@ -262,6 +282,28 @@ function PayForm({ po, cur, bankAccounts, paymentModes, onDone, onCancel }: {
                 Payment untuk {po.ref} — {cur} {num(po.total_ttc, 2)}
                 {po.total_ttc !== po.total && <span className="ml-1 font-normal text-muted-foreground">(termasuk PPN; non-PPN {num(po.total, 2)})</span>}
             </p>
+
+            {sortedPayments.length > 0 && (
+                <div className="mb-3">
+                    <p className="mb-1 text-[11px] text-muted-foreground">Payment di Accurate — klik untuk mengisi tanggal, rekening &amp; cara bayar otomatis:</p>
+                    <div className="max-h-40 overflow-y-auto rounded-md border">
+                        {sortedPayments.map((p, i) => (
+                            <button key={`${p.number}-${i}`} type="button" onClick={() => pickPayment(p)}
+                                className={`flex w-full items-center justify-between gap-2 border-b px-2.5 py-1.5 text-left text-xs transition-colors last:border-b-0 hover:bg-accent ${picked === p.number ? 'bg-primary/10' : ''}`}>
+                                <span className="min-w-0">
+                                    <span className="font-medium">{p.trans_date}</span>
+                                    <span className="ml-1.5 text-muted-foreground">{p.bank_name ?? p.bank_no ?? '?'}</span>
+                                    {p.bill_number && <span className="ml-1.5 text-muted-foreground/70">· {p.bill_number}</span>}
+                                </span>
+                                <span className={`shrink-0 tabular-nums ${matches(p) ? 'font-semibold text-emerald-600 dark:text-emerald-400' : ''}`}>
+                                    {num(p.amount, 0)}{matches(p) && ' ✓'}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-wrap items-end gap-2">
                 <div>
                     <label className="text-[11px] text-muted-foreground">Tanggal bayar</label>

@@ -714,6 +714,76 @@ class AccurateSyncService
     }
 
     /**
+     * Tarik pembayaran pembelian (purchase-payment) → dwh_stg_acc_purchase_payment,
+     * satu baris per (payment, faktur yang dibayar). Sumber tanggal bayar & bank riil
+     * untuk fitur "buat payment di Dolibarr" di Monitoring Pembelian.
+     *
+     * @param  string  $from  dd/MM/yyyy
+     * @param  string  $to    dd/MM/yyyy
+     * @param  callable(string):void|null  $progress
+     * @return array<string, int>
+     */
+    public function syncPurchasePayments(string $from, string $to, ?callable $progress = null): array
+    {
+        @set_time_limit(0);
+        $s = AccurateSetting::current();
+        $now = now()->toDateTimeString();
+        $log = fn (string $m) => $progress && $progress($m);
+        $docs = 0;
+        $rows = 0;
+        $page = 1;
+
+        do {
+            $list = $this->retry(fn () => $this->listPage($s, 'purchase-payment/list.do', $from, $to, $page));
+            $pageCount = $list['sp']['pageCount'] ?? 1;
+            $log("Pembayaran pembelian halaman {$page}/{$pageCount} ({$docs} payment)…");
+
+            foreach ($list['d'] ?? [] as $row) {
+                $d = $this->retry(fn () => $this->acc->apiGet($s, 'purchase-payment/detail.do', ['id' => $row['id']])['d'] ?? null);
+                if (! is_array($d)) {
+                    continue;
+                }
+
+                $base = [
+                    'erp_payment_id' => $d['id'],
+                    'number' => $d['number'] ?? null,
+                    'trans_date' => $this->date($d['transDate'] ?? null),
+                    'vendor_name' => is_array($d['vendor'] ?? null) ? ($d['vendor']['name'] ?? null) : null,
+                    'bank_no' => is_array($d['bank'] ?? null) ? ($d['bank']['no'] ?? null) : null,
+                    'bank_name' => is_array($d['bank'] ?? null) ? ($d['bank']['name'] ?? null) : null,
+                    'payment_method' => $d['paymentMethod'] ?? null,
+                    'synced_at' => $now,
+                ];
+
+                // Satu payment bisa melunasi beberapa faktur; tanpa detail pun tetap dicatat.
+                $batch = [];
+                foreach ($d['detailInvoice'] ?? [] as $di) {
+                    $inv = is_array($di['invoice'] ?? null) ? $di['invoice'] : [];
+                    $batch[] = $base + [
+                        'erp_invoice_id' => $inv['id'] ?? null,
+                        'invoice_number' => $inv['number'] ?? null,
+                        'bill_number' => $inv['billNumber'] ?? null,
+                        'payment_amount' => $di['paymentAmount'] ?? 0,
+                    ];
+                }
+                if (! $batch) {
+                    $batch[] = $base + ['erp_invoice_id' => null, 'invoice_number' => null, 'bill_number' => null,
+                        'payment_amount' => $d['totalPayment'] ?? 0];
+                }
+
+                DB::table('dwh_stg_acc_purchase_payment')->upsert($batch, ['erp_payment_id', 'erp_invoice_id'],
+                    ['number', 'trans_date', 'vendor_name', 'bank_no', 'bank_name', 'payment_method', 'invoice_number', 'bill_number', 'payment_amount', 'synced_at']);
+                $rows += count($batch);
+                $docs++;
+            }
+
+            $page++;
+        } while ($page <= $pageCount);
+
+        return ['payment_docs' => $docs, 'payment_rows' => $rows];
+    }
+
+    /**
      * Turunkan HPP per item dari dwh_stg_acc_purchase_invoice_item → dwh_map_product_cost.
      * avg_cost = SUM(total)/SUM(qty) (rata-rata tertimbang), plus harga & tanggal beli terakhir.
      * Baris qty<=0 diabaikan agar tak membagi nol / mengotori rata-rata (retur/koreksi).
