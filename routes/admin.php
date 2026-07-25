@@ -90,6 +90,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('integration/purchase-monitor/drilldown', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'drilldown'])->name('purchase-monitor.drilldown');
         Route::get('integration/purchase-monitor/reconciliation', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'reconciliation'])->name('purchase-monitor.reconciliation');
         Route::get('integration/purchase-monitor/recon-pos', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'reconPos'])->name('purchase-monitor.recon-pos');
+        Route::get('integration/purchase-monitor/po-reconciliation', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'poReconciliation'])->name('purchase-monitor.po-reconciliation');
         Route::get('integration/purchase-monitor/settings', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'settings'])->name('purchase-monitor.settings');
         Route::middleware('menu.access:purchase-monitor,edit')->group(function () {
             Route::post('integration/purchase-monitor/mapping', [\App\Http\Controllers\Admin\PurchaseMonitorController::class, 'storeMapping'])->name('purchase-monitor.mapping');

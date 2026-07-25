@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { Banknote, LayoutGrid, Loader2 } from 'lucide-react';
+import { Banknote, GitCompareArrows, LayoutGrid, Loader2 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 type Status = 'match' | 'diff' | 'acc_only' | 'dol_only';
@@ -66,9 +66,14 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                             Accurate menyimpan nilai net, jadi sisi Dolibarr memakai total HT dari <b>PO</b> berstatus approved / ordered / partial / full receive.
                         </p>
                     </div>
-                    <Button asChild variant="outline" size="sm" className="h-8 shrink-0 gap-1.5">
-                        <Link href={route('purchase-monitor.index')}><LayoutGrid className="size-3.5" /> Dashboard</Link>
-                    </Button>
+                    <div className="flex shrink-0 gap-2">
+                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5">
+                            <Link href={route('purchase-monitor.po-reconciliation')}><GitCompareArrows className="size-3.5" /> Rekon PO</Link>
+                        </Button>
+                        <Button asChild variant="outline" size="sm" className="h-8 gap-1.5">
+                            <Link href={route('purchase-monitor.index')}><LayoutGrid className="size-3.5" /> Dashboard</Link>
+                        </Button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

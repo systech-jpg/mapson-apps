@@ -332,6 +332,66 @@ class PurchaseMonitorController extends Controller
         return back()->with('success', "Faktur {$res['ref']} dibuat & payment dicatat di Dolibarr.");
     }
 
+    /**
+     * Rekonsiliasi LEVEL PO: satu baris per nomor PO, ERP (Dolibarr) vs Accurate berdampingan.
+     * Kuncinya eksak — nomor PO Accurate = ref PO Dolibarr (alur: PO lahir di Dolibarr →
+     * di-input ke Accurate). Nilai yang dibanding: TTC dokumen (multicurrency_total_ttc vs
+     * totalAmount Accurate — keduanya total dokumen termasuk pajak bila ada).
+     */
+    public function poReconciliation(): Response
+    {
+        $p = config('erp.prefix');
+        $dol = DB::connection(config('erp.connection'))->select("
+            SELECT c.ref, so.nom AS vendor, LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   c.fk_statut, COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                   c.multicurrency_total_ttc AS ttc, c.multicurrency_total_ht AS ht
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
+              AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
+        ");
+        $acc = DB::table('dwh_stg_acc_purchase_order')->get();
+
+        $merged = [];
+        foreach ($dol as $r) {
+            $merged[$r->ref] = [
+                'number' => $r->ref, 'vendor' => $r->vendor, 'tanggal' => $r->tanggal, 'cur' => $r->cur,
+                'dol_ttc' => (float) $r->ttc, 'dol_ht' => (float) $r->ht, 'dol_statut' => (int) $r->fk_statut,
+                'acc_total' => null, 'acc_status' => null, 'acc_percent' => null, 'acc_cur' => null,
+            ];
+        }
+        foreach ($acc as $r) {
+            $m = &$merged[$r->number];
+            $m ??= ['number' => $r->number, 'vendor' => $r->vendor_name, 'tanggal' => $r->trans_date, 'cur' => $r->currency_code ?? 'IDR',
+                'dol_ttc' => null, 'dol_ht' => null, 'dol_statut' => null,
+                'acc_total' => null, 'acc_status' => null, 'acc_percent' => null, 'acc_cur' => null];
+            $m['acc_total'] = (float) $r->total_amount;
+            $m['acc_status'] = $r->status_name;
+            $m['acc_percent'] = $r->percent_shipped !== null ? (float) $r->percent_shipped : null;
+            $m['acc_cur'] = $r->currency_code;
+            unset($m);
+        }
+
+        $rows = collect($merged)->map(function ($m) {
+            $m['selisih'] = $m['dol_ttc'] !== null && $m['acc_total'] !== null ? round($m['dol_ttc'] - $m['acc_total'], 2) : null;
+            $m['status'] = $m['acc_total'] === null ? 'erp_only'
+                : ($m['dol_ttc'] === null ? 'acc_only' : (abs($m['selisih']) < 1 ? 'match' : 'diff'));
+
+            return $m;
+        })->sortByDesc('tanggal')->values();
+
+        return Inertia::render('purchase-monitor/po-reconciliation', [
+            'rows' => $rows,
+            'years' => $rows->pluck('tanggal')->filter()->map(fn ($t) => substr($t, 0, 4))->unique()->sort()->values(),
+            'summary' => [
+                'match' => $rows->where('status', 'match')->count(),
+                'diff' => $rows->where('status', 'diff')->count(),
+                'erp_only' => $rows->where('status', 'erp_only')->count(),
+                'acc_only' => $rows->where('status', 'acc_only')->count(),
+            ],
+        ]);
+    }
+
     /** Halaman kelola: mapping vendor→principal + mata uang, dan kurs per bulan. */
     public function settings(): Response
     {
