@@ -163,26 +163,45 @@ class PurchaseMonitorController extends Controller
             HAVING SUM(c.multicurrency_total_ht) <> 0
         "));
 
-        // Gabung berdasarkan (norm, tahun, mata uang).
+        // Gabung berdasarkan (norm, tahun) SAJA — mata uang bisa beda antar sistem untuk vendor
+        // yang sama (Globus↔AAI by design; Dwipa kasus salah input), jadi tiap sisi menyimpan
+        // rincian per mata uang dan nilai hanya dibandingkan bila mata uang kedua sisi sama.
         $merged = [];
-        $key = fn ($r) => $r->norm.'|'.$r->tahun.'|'.$r->cur;
+        $key = fn ($r) => $r->norm.'|'.$r->tahun;
         foreach ($acc as $r) {
-            $merged[$key($r)] = ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'cur' => $r->cur,
-                'acc' => (float) $r->total, 'acc_docs' => (int) $r->docs, 'dol' => 0.0, 'dol_docs' => 0];
+            $m = &$merged[$key($r)];
+            $m ??= ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'acc_parts' => [], 'dol_parts' => []];
+            $m['acc_parts'][$r->cur] = ['cur' => $r->cur, 'total' => (float) $r->total, 'docs' => (int) $r->docs];
+            unset($m);
         }
         foreach ($dol as $r) {
-            $k = $key($r);
-            $merged[$k] ??= ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'cur' => $r->cur,
-                'acc' => 0.0, 'acc_docs' => 0, 'dol' => 0.0, 'dol_docs' => 0];
-            $merged[$k]['dol'] = (float) $r->total;
-            $merged[$k]['dol_docs'] = (int) $r->docs;
-            $merged[$k]['vendor'] = $merged[$k]['vendor'] ?: $r->vendor_name;
+            $m = &$merged[$key($r)];
+            $m ??= ['vendor' => $r->vendor_name, 'tahun' => $r->tahun, 'acc_parts' => [], 'dol_parts' => []];
+            $m['dol_parts'][$r->cur] = ['cur' => $r->cur, 'total' => (float) $r->total, 'docs' => (int) $r->docs];
+            $m['vendor'] = $m['vendor'] ?: $r->vendor_name;
+            unset($m);
         }
 
         $rows = collect($merged)->map(function ($m) {
-            $diff = round($m['acc'] - $m['dol'], 2);
-            $m['selisih'] = $diff;
-            $m['status'] = $m['dol'] == 0 ? 'acc_only' : ($m['acc'] == 0 ? 'dol_only' : (abs($diff) < 1 ? 'match' : 'diff'));
+            $accCurs = array_keys($m['acc_parts']);
+            $dolCurs = array_keys($m['dol_parts']);
+            if (! $m['dol_parts']) {
+                $m['status'] = 'acc_only';
+                $m['selisih'] = null;
+            } elseif (! $m['acc_parts']) {
+                $m['status'] = 'dol_only';
+                $m['selisih'] = null;
+            } elseif ($accCurs === $dolCurs && count($accCurs) === 1) {
+                $cur = $accCurs[0];
+                $m['selisih'] = round($m['acc_parts'][$cur]['total'] - $m['dol_parts'][$cur]['total'], 2);
+                $m['status'] = abs($m['selisih']) < 1 ? 'match' : 'diff';
+            } else {
+                // Mata uang tak sejajar antar sisi — nilai tak bisa dibanding langsung; rincian di drill.
+                $m['status'] = 'cur_mix';
+                $m['selisih'] = null;
+            }
+            $m['acc_parts'] = array_values($m['acc_parts']);
+            $m['dol_parts'] = array_values($m['dol_parts']);
 
             return $m;
         })->sortBy([['tahun', 'desc'], ['vendor', 'asc']])->values();
@@ -195,6 +214,7 @@ class PurchaseMonitorController extends Controller
             'summary' => [
                 'match' => $rows->where('status', 'match')->count(),
                 'diff' => $rows->where('status', 'diff')->count(),
+                'cur_mix' => $rows->where('status', 'cur_mix')->count(),
                 'acc_only' => $rows->where('status', 'acc_only')->count(),
                 'dol_only' => $rows->where('status', 'dol_only')->count(),
             ],
@@ -239,10 +259,10 @@ class PurchaseMonitorController extends Controller
      */
     public function reconPos(Request $request): JsonResponse
     {
+        // Sel drill = vendor × tahun (TANPA mata uang — bisa beda antar sistem utk vendor sama).
         $data = $request->validate([
             'vendor' => ['required', 'string'],
             'year' => ['required', 'string', 'size:4'],
-            'cur' => ['required', 'string', 'size:3'],
         ]);
 
         $p = config('erp.prefix');
@@ -251,6 +271,7 @@ class PurchaseMonitorController extends Controller
         $pos = DB::connection(config('erp.connection'))->select("
             SELECT c.rowid, c.ref, c.ref_supplier, c.fk_statut,
                    LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
                    c.multicurrency_total_ht AS total, c.multicurrency_total_ttc AS total_ttc,
                    GROUP_CONCAT(DISTINCT f.ref) AS invoice_refs,
                    MAX(f.paye) AS invoice_paid
@@ -261,9 +282,8 @@ class PurchaseMonitorController extends Controller
             WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
               AND {$norm} = {$normParam}
               AND LEFT(COALESCE(c.date_commande, c.date_creation),4) = ?
-              AND COALESCE(NULLIF(c.multicurrency_code,''),'IDR') = ?
-            GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, total, total_ttc
-            ORDER BY tanggal", [$data['vendor'], $data['year'], strtoupper($data['cur'])]);
+            GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, cur, total, total_ttc
+            ORDER BY tanggal", [$data['vendor'], $data['year']]);
 
         // Dokumen faktur Accurate sel yang sama, dipecah per (dokumen × nomor PO) — po_number
         // per baris = ref PO Dolibarr (alur bisnis: PO lahir di Dolibarr → di-input ke Accurate),
@@ -271,12 +291,11 @@ class PurchaseMonitorController extends Controller
         $accDocs = DB::table('dwh_stg_acc_purchase_invoice_item')
             ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
             ->whereRaw('LEFT(trans_date,4) = ?', [$data['year']])
-            ->whereRaw("COALESCE(currency_code,'IDR') = ?", [strtoupper($data['cur'])])
-            ->groupBy('doc_number', 'trans_date', 'po_number')
+            ->groupBy('doc_number', 'trans_date', 'po_number', 'currency_code')
             ->orderBy('trans_date')
-            ->selectRaw('doc_number, trans_date, po_number, ROUND(SUM(total),2) AS total, COUNT(*) AS n_items')
+            ->selectRaw("doc_number, trans_date, po_number, COALESCE(currency_code,'IDR') AS cur, ROUND(SUM(total),2) AS total, COUNT(*) AS n_items")
             ->get()
-            ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date,
+            ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date, 'cur' => $r->cur,
                 'po_number' => $r->po_number, 'total' => (float) $r->total, 'n_items' => (int) $r->n_items]);
 
         // PO Accurate utk badge status — lookup by NOMOR saja (tanpa filter tahun/vendor):

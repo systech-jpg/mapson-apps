@@ -11,19 +11,20 @@ import { Head, Link, router } from '@inertiajs/react';
 import { Banknote, GitCompareArrows, LayoutGrid, Loader2 } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
-type Status = 'match' | 'diff' | 'acc_only' | 'dol_only';
-interface Row { vendor: string; tahun: string; cur: string; acc: number; acc_docs: number; dol: number; dol_docs: number; selisih: number; status: Status }
+type Status = 'match' | 'diff' | 'cur_mix' | 'acc_only' | 'dol_only';
+interface Part { cur: string; total: number; docs: number }
+interface Row { vendor: string; tahun: string; acc_parts: Part[]; dol_parts: Part[]; selisih: number | null; status: Status }
 interface BankAccount { id: number; ref: string; label: string; currency: string | null }
 interface PaymentMode { id: number; code: string; label: string }
-interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
+interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; cur: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
 interface AccPayment { number: string; trans_date: string; bank_no: string | null; bank_name: string | null; payment_method: string | null; invoice_number: string | null; bill_number: string | null; amount: number }
-interface AccDoc { doc_number: string; trans_date: string; po_number: string | null; total: number; n_items: number }
+interface AccDoc { doc_number: string; trans_date: string; cur: string; po_number: string | null; total: number; n_items: number }
 interface AccPo { status_name: string | null; percent_shipped: number | null; currency: string | null; rate: number | null; total: number }
 interface DolPoInfo { tanggal: string | null; cur: string; statut: number }
 interface Props {
     rows: Row[];
     years: string[];
-    summary: { match: number; diff: number; acc_only: number; dol_only: number };
+    summary: { match: number; diff: number; cur_mix: number; acc_only: number; dol_only: number };
     erpApiReady: boolean;
     bankAccounts: BankAccount[];
     paymentModes: PaymentMode[];
@@ -36,10 +37,17 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 const num = (n: number, d = 0) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: d });
+/** Ringkas total campuran mata uang: "IDR 833.756.000 + USD 21.630". */
+const sumByCur = (items: { cur: string; total: number }[]) => {
+    const acc: Record<string, number> = {};
+    for (const it of items) acc[it.cur] = (acc[it.cur] ?? 0) + it.total;
+    return Object.entries(acc).map(([c, t]) => `${c} ${num(t, 0)}`).join(' + ') || '0';
+};
 
 const STATUS: Record<Status, { label: string; cls: string }> = {
     match: { label: 'Cocok', cls: 'border-emerald-400 text-emerald-600 dark:text-emerald-400' },
     diff: { label: 'Selisih', cls: 'border-amber-400 text-amber-600 dark:text-amber-400' },
+    cur_mix: { label: 'Beda Mata Uang', cls: 'border-slate-400 text-slate-600 dark:text-slate-400' },
     acc_only: { label: 'Hanya Accurate', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
     dol_only: { label: 'Hanya Dolibarr', cls: 'border-violet-400 text-violet-600 dark:text-violet-400' },
 };
@@ -77,9 +85,10 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                     <StatCard label="Cocok" value={summary.match} active={status === 'match'} onClick={() => setStatus(status === 'match' ? null : 'match')} tone="match" />
                     <StatCard label="Selisih Nilai" value={summary.diff} active={status === 'diff'} onClick={() => setStatus(status === 'diff' ? null : 'diff')} tone="diff" />
+                    <StatCard label="Beda Mata Uang" value={summary.cur_mix} active={status === 'cur_mix'} onClick={() => setStatus(status === 'cur_mix' ? null : 'cur_mix')} tone="cur_mix" />
                     <StatCard label="Hanya di Accurate" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
                     <StatCard label="Hanya di Dolibarr" value={summary.dol_only} active={status === 'dol_only'} onClick={() => setStatus(status === 'dol_only' ? null : 'dol_only')} tone="dol_only" />
                 </div>
@@ -120,17 +129,27 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                                         <TableRow key={i}>
                                             <TableCell className="font-medium">{r.vendor}</TableCell>
                                             <TableCell className="text-muted-foreground">{r.tahun}</TableCell>
-                                            <TableCell>{r.cur}</TableCell>
-                                            <TableCell className="text-right tabular-nums whitespace-nowrap">
-                                                {r.acc ? num(r.acc, 2) : <span className="text-muted-foreground/40">–</span>}
-                                                {r.acc_docs > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({r.acc_docs})</span>}
+                                            <TableCell className="whitespace-nowrap">
+                                                {[...new Set([...r.acc_parts, ...r.dol_parts].map((p) => p.cur))].join(' / ')}
                                             </TableCell>
                                             <TableCell className="text-right tabular-nums whitespace-nowrap">
-                                                {r.dol ? num(r.dol, 2) : <span className="text-muted-foreground/40">–</span>}
-                                                {r.dol_docs > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({r.dol_docs})</span>}
+                                                {r.acc_parts.length === 0 ? <span className="text-muted-foreground/40">–</span> : r.acc_parts.map((p) => (
+                                                    <div key={p.cur}>
+                                                        {r.acc_parts.length + r.dol_parts.length > 2 && <span className="mr-1 text-[10px] text-muted-foreground">{p.cur}</span>}
+                                                        {num(p.total, 2)}<span className="ml-1 text-[10px] text-muted-foreground">({p.docs})</span>
+                                                    </div>
+                                                ))}
                                             </TableCell>
-                                            <TableCell className={`text-right tabular-nums whitespace-nowrap ${Math.abs(r.selisih) >= 1 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-                                                {num(r.selisih, 2)}
+                                            <TableCell className="text-right tabular-nums whitespace-nowrap">
+                                                {r.dol_parts.length === 0 ? <span className="text-muted-foreground/40">–</span> : r.dol_parts.map((p) => (
+                                                    <div key={p.cur}>
+                                                        {r.acc_parts.length + r.dol_parts.length > 2 && <span className="mr-1 text-[10px] text-muted-foreground">{p.cur}</span>}
+                                                        {num(p.total, 2)}<span className="ml-1 text-[10px] text-muted-foreground">({p.docs})</span>
+                                                    </div>
+                                                ))}
+                                            </TableCell>
+                                            <TableCell className={`text-right tabular-nums whitespace-nowrap ${r.selisih !== null && Math.abs(r.selisih) >= 1 ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                                                {r.selisih !== null ? num(r.selisih, 2) : '–'}
                                             </TableCell>
                                             <TableCell className="text-center">
                                                 <Badge variant="outline" className={`text-[10px] ${STATUS[r.status].cls}`}>{STATUS[r.status].label}</Badge>
@@ -167,7 +186,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
 
     useEffect(() => {
         if (!row) { setPos(null); setAccDocs([]); setAccPos({}); setDolAllPos({}); setPayments([]); setPayingPo(null); return; }
-        fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}&cur=${row.cur}`, { headers: { Accept: 'application/json' } })
+        fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
             .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setAccPos(d.accPos ?? {}); setDolAllPos(d.dolAllPos ?? {}); setPayments(d.payments ?? []); })
             .catch(() => setPos([]));
@@ -188,7 +207,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
         }
         for (const po of pos ?? []) {
             if (map.has(po.id)) continue;
-            const i = accDocs.findIndex((d, idx) => !used.has(idx) && !d.po_number && Math.abs(d.total - po.total) < 1);
+            const i = accDocs.findIndex((d, idx) => !used.has(idx) && !d.po_number && d.cur === po.cur && Math.abs(d.total - po.total) < 1);
             if (i >= 0) { used.add(i); map.set(po.id, [accDocs[i]]); }
         }
         return { pairedDocs: map, unpairedDocs: accDocs.filter((_, idx) => !used.has(idx)) };
@@ -200,9 +219,9 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
         <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>PO Dolibarr vs Dokumen Accurate — {row?.vendor} · {row?.tahun} · {row?.cur}</DialogTitle>
+                    <DialogTitle>PO Dolibarr vs Dokumen Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
                     <DialogDescription>
-                        Tiap PO dipasangkan dengan dokumen Accurate bernilai sama (non-PPN). Dari PO juga bisa dibuat faktur + payment lunas di Dolibarr.
+                        Tiap PO dipasangkan dengan dokumen Accurate lewat <b>nomor PO</b> (data lama tanpa nomor: lewat kesamaan nilai). Dari PO juga bisa dibuat faktur + payment lunas di Dolibarr.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -223,7 +242,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                 <TableHead>PO</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead>Status</TableHead>
-                                <TableHead className="text-right">Non-PPN ({row?.cur})</TableHead>
+                                <TableHead className="text-right">Non-PPN</TableHead>
                                 <TableHead className="text-right">+PPN</TableHead>
                                 <TableHead>Dok Accurate</TableHead>
                                 <TableHead>Faktur</TableHead>
@@ -250,7 +269,9 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap text-muted-foreground">{po.tanggal}</TableCell>
                                     <TableCell><Badge variant="outline" className="text-[10px]">{PO_STATUS[po.statut] ?? po.statut}</Badge></TableCell>
-                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(po.total, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">
+                                        <span className="mr-1 text-[10px] text-muted-foreground">{po.cur}</span>{num(po.total, 2)}
+                                    </TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">
                                         {po.total_ttc !== po.total ? num(po.total_ttc, 2) : <span className="text-muted-foreground/40">–</span>}
                                     </TableCell>
@@ -290,8 +311,8 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
 
                 {pos !== null && (pos.length > 0 || accDocs.length > 0) && (
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                        <span>PO Dolibarr: <b className="text-foreground">{pos.length}</b> ({num((pos ?? []).reduce((s, p) => s + p.total, 0), 0)} non-PPN)</span>
-                        <span>Dok Accurate: <b className="text-foreground">{accDocs.length}</b> ({num(accDocs.reduce((s, d) => s + d.total, 0), 0)})</span>
+                        <span>PO Dolibarr: <b className="text-foreground">{pos.length}</b> ({sumByCur(pos ?? [])} non-PPN)</span>
+                        <span>Dok Accurate: <b className="text-foreground">{accDocs.length}</b> ({sumByCur(accDocs)})</span>
                         <span>PO berpasangan: <b className="text-foreground">{pairedDocs.size}</b></span>
                     </div>
                 )}
@@ -316,7 +337,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                             );
                                         })()}
                                     </span>
-                                    <span className="shrink-0 tabular-nums">{num(d.total, 2)}</span>
+                                    <span className="shrink-0 tabular-nums"><span className="mr-1 text-[10px] text-muted-foreground">{d.cur}</span>{num(d.total, 2)}</span>
                                 </div>
                             ))}
                         </div>
@@ -324,7 +345,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                 )}
 
                 {payingPo && (
-                    <PayForm po={payingPo} cur={row?.cur ?? 'IDR'} bankAccounts={bankAccounts} paymentModes={paymentModes} accPayments={payments}
+                    <PayForm po={payingPo} cur={payingPo.cur} bankAccounts={bankAccounts} paymentModes={paymentModes} accPayments={payments}
                         onDone={() => { setPayingPo(null); onClose(); }} onCancel={() => setPayingPo(null)} />
                 )}
             </DialogContent>
