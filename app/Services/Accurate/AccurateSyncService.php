@@ -716,6 +716,72 @@ class AccurateSyncService
     }
 
     /**
+     * Tarik pesanan pembelian (purchase-order) → dwh_stg_acc_purchase_order.
+     * Nomor PO Accurate = ref PO Dolibarr; dokumen menyimpan mata uang asli + kurs riil.
+     * Setelah sync, kurs riil diringkas ke dwh_fx_rate (source 'document') per bulan —
+     * menimpa kurs asumsi/lookup tapi TIDAK menimpa kurs manual.
+     *
+     * @param  string  $from  dd/MM/yyyy
+     * @param  string  $to    dd/MM/yyyy
+     * @param  callable(string):void|null  $progress
+     * @return array<string, int>
+     */
+    public function syncPurchaseOrders(string $from, string $to, ?callable $progress = null): array
+    {
+        @set_time_limit(0);
+        $s = AccurateSetting::current();
+        $now = now()->toDateTimeString();
+        $log = fn (string $m) => $progress && $progress($m);
+        $docs = 0;
+        $page = 1;
+
+        do {
+            $list = $this->retry(fn () => $this->listPage($s, 'purchase-order/list.do', $from, $to, $page));
+            $pageCount = $list['sp']['pageCount'] ?? 1;
+            $log("Pesanan pembelian halaman {$page}/{$pageCount} ({$docs} PO)…");
+
+            foreach ($list['d'] ?? [] as $row) {
+                $d = $this->retry(fn () => $this->acc->apiGet($s, 'purchase-order/detail.do', ['id' => $row['id']])['d'] ?? null);
+                if (! is_array($d)) {
+                    continue;
+                }
+                DB::table('dwh_stg_acc_purchase_order')->upsert([[
+                    'erp_id' => $d['id'],
+                    'number' => $d['number'] ?? null,
+                    'trans_date' => $this->date($d['transDate'] ?? null),
+                    'vendor_name' => is_array($d['vendor'] ?? null) ? ($d['vendor']['name'] ?? null) : null,
+                    'status_name' => $d['statusName'] ?? null,
+                    'status_code' => $d['status'] ?? null,
+                    'percent_shipped' => $d['percentShipped'] ?? null,
+                    'currency_code' => is_array($d['currency'] ?? null) ? ($d['currency']['code'] ?? null) : null,
+                    'rate' => $d['rate'] ?? null,
+                    'total_amount' => $d['totalAmount'] ?? 0,
+                    'synced_at' => $now,
+                ]], ['erp_id'], ['number', 'trans_date', 'vendor_name', 'status_name', 'status_code', 'percent_shipped', 'currency_code', 'rate', 'total_amount', 'synced_at']);
+                $docs++;
+            }
+
+            $page++;
+        } while ($page <= $pageCount);
+
+        // Kurs riil per (mata uang, bulan) dari PO — sumber terbaik yang ada. Jangan ganggu manual.
+        DB::statement("
+            INSERT INTO dwh_fx_rate (currency, period, rate_to_idr, source, note, created_at, updated_at)
+            SELECT currency_code, LEFT(trans_date, 7), ROUND(AVG(rate), 2), 'document', 'rata-rata kurs PO Accurate', NOW(), NOW()
+            FROM dwh_stg_acc_purchase_order
+            WHERE currency_code IS NOT NULL AND currency_code <> 'IDR' AND rate > 1 AND trans_date IS NOT NULL
+            GROUP BY currency_code, LEFT(trans_date, 7)
+            ON DUPLICATE KEY UPDATE
+                rate_to_idr = IF(dwh_fx_rate.source = 'manual', dwh_fx_rate.rate_to_idr, VALUES(rate_to_idr)),
+                source = IF(dwh_fx_rate.source = 'manual', 'manual', 'document'),
+                note = IF(dwh_fx_rate.source = 'manual', dwh_fx_rate.note, VALUES(note)),
+                updated_at = IF(dwh_fx_rate.source = 'manual', dwh_fx_rate.updated_at, NOW())
+        ");
+
+        return ['po_docs' => $docs];
+    }
+
+    /**
      * Tarik pembayaran pembelian (purchase-payment) → dwh_stg_acc_purchase_payment,
      * satu baris per (payment, faktur yang dibayar). Sumber tanggal bayar & bank riil
      * untuk fitur "buat payment di Dolibarr" di Monitoring Pembelian.

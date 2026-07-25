@@ -18,6 +18,7 @@ interface PaymentMode { id: number; code: string; label: string }
 interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
 interface AccPayment { number: string; trans_date: string; bank_no: string | null; bank_name: string | null; payment_method: string | null; invoice_number: string | null; bill_number: string | null; amount: number }
 interface AccDoc { doc_number: string; trans_date: string; po_number: string | null; total: number; n_items: number }
+interface AccPo { status_name: string | null; percent_shipped: number | null; currency: string | null; rate: number | null; total: number }
 interface Props {
     rows: Row[];
     years: string[];
@@ -153,14 +154,15 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
 }) {
     const [pos, setPos] = useState<Po[] | null>(null);
     const [accDocs, setAccDocs] = useState<AccDoc[]>([]);
+    const [accPos, setAccPos] = useState<Record<string, AccPo>>({});
     const [payments, setPayments] = useState<AccPayment[]>([]);
     const [payingPo, setPayingPo] = useState<Po | null>(null);
 
     useEffect(() => {
-        if (!row) { setPos(null); setAccDocs([]); setPayments([]); setPayingPo(null); return; }
+        if (!row) { setPos(null); setAccDocs([]); setAccPos({}); setPayments([]); setPayingPo(null); return; }
         fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}&cur=${row.cur}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
-            .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setPayments(d.payments ?? []); })
+            .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setAccPos(d.accPos ?? {}); setPayments(d.payments ?? []); })
             .catch(() => setPos([]));
     }, [row]);
 
@@ -227,6 +229,17 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                     <TableCell className="font-medium whitespace-nowrap">
                                         {po.ref}
                                         {po.ref_supplier && <span className="ml-1 text-[10px] text-muted-foreground">({po.ref_supplier})</span>}
+                                        {(() => {
+                                            const ap = accPos[po.ref];
+                                            if (!ap) return <div className="text-[10px] font-normal text-muted-foreground/60">tak ada di PO Accurate</div>;
+                                            const done = ap.status_name === 'Terproses';
+                                            return (
+                                                <div className={`text-[10px] font-normal ${done ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                    Acc: {ap.status_name}{ap.percent_shipped !== null && ap.percent_shipped > 0 && ap.percent_shipped < 100 ? ` ${ap.percent_shipped}%` : ''}
+                                                    {ap.currency && ap.currency !== 'IDR' && <span className="ml-1 text-muted-foreground">{ap.currency}{ap.rate ? ` @${num(ap.rate, 0)}` : ''}</span>}
+                                                </div>
+                                            );
+                                        })()}
                                     </TableCell>
                                     <TableCell className="whitespace-nowrap text-muted-foreground">{po.tanggal}</TableCell>
                                     <TableCell><Badge variant="outline" className="text-[10px]">{PO_STATUS[po.statut] ?? po.statut}</Badge></TableCell>

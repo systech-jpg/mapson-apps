@@ -279,6 +279,15 @@ class PurchaseMonitorController extends Controller
             ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date,
                 'po_number' => $r->po_number, 'total' => (float) $r->total, 'n_items' => (int) $r->n_items]);
 
+        // PO Accurate vendor ini (kunci: number = ref PO Dolibarr) — status proses & kurs riil.
+        $accPos = DB::table('dwh_stg_acc_purchase_order')
+            ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
+            ->whereRaw('LEFT(trans_date,4) = ?', [$data['year']])
+            ->get(['number', 'status_name', 'percent_shipped', 'currency_code', 'rate', 'total_amount'])
+            ->keyBy('number')
+            ->map(fn ($r) => ['status_name' => $r->status_name, 'percent_shipped' => $r->percent_shipped !== null ? (float) $r->percent_shipped : null,
+                'currency' => $r->currency_code, 'rate' => $r->rate !== null ? (float) $r->rate : null, 'total' => (float) $r->total_amount]);
+
         // Payment Accurate vendor ini (staging) — sumber tanggal bayar & bank riil di form.
         $payments = DB::table('dwh_stg_acc_purchase_payment')
             ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
@@ -296,7 +305,7 @@ class PurchaseMonitorController extends Controller
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
             'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
-        ], $pos), 'accDocs' => $accDocs, 'payments' => $payments]);
+        ], $pos), 'accDocs' => $accDocs, 'accPos' => $accPos, 'payments' => $payments]);
     }
 
     /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */
@@ -372,15 +381,18 @@ class PurchaseMonitorController extends Controller
 
         $added = $this->syncVendorMap();
 
-        // Tarik juga pembayaran pembelian (tanggal bayar + bank riil utk fitur payment PO).
+        // Tarik juga PO Accurate (status proses + mata uang & kurs riil dokumen) dan
+        // pembayaran pembelian (tanggal bayar + bank riil utk fitur payment PO).
         $payMsg = '';
         try {
             $from = $data['from'] ? \Illuminate\Support\Carbon::parse($data['from']) : now()->subMonths(24);
-            $pay = app(\App\Services\Accurate\AccurateSyncService::class)
-                ->syncPurchasePayments($from->format('d/m/Y'), now()->format('d/m/Y'));
-            $payMsg = " {$pay['payment_docs']} payment Accurate tersinkron.";
+            $svc = app(\App\Services\Accurate\AccurateSyncService::class);
+            $po = $svc->syncPurchaseOrders($from->format('d/m/Y'), now()->format('d/m/Y'));
+            $pay = $svc->syncPurchasePayments($from->format('d/m/Y'), now()->format('d/m/Y'));
+            $payMsg = " {$po['po_docs']} PO & {$pay['payment_docs']} payment Accurate tersinkron.";
+            $this->syncVendorMap(); // ulangi: mata uang vendor kini bisa dari dokumen PO
         } catch (\Throwable $e) {
-            $payMsg = ' (Sync payment gagal: '.mb_substr($e->getMessage(), 0, 120).')';
+            $payMsg = ' (Sync PO/payment gagal: '.mb_substr($e->getMessage(), 0, 120).')';
         }
 
         return back()->with('success', 'Pembelian tersinkron.'.($added > 0 ? " {$added} vendor baru terdaftar," : '').' mata uang & konversi sudah diperbarui.'.$payMsg);
@@ -519,7 +531,24 @@ class PurchaseMonitorController extends Controller
             FROM dwh_stg_acc_purchase_invoice_item WHERE vendor_name IS NOT NULL
         ');
 
-        // Tebak mata uang per vendor via aturan DOMINAN (bukan per baris) — hanya yang 'auto'.
+        // Mata uang vendor dari DOKUMEN PO Accurate bila ada (mayoritas dokumen) — sumber
+        // paling akurat; heuristik <600rb di bawah hanya utk vendor tanpa data PO.
+        DB::statement("
+            UPDATE dwh_map_vendor_principal m
+            JOIN (
+                SELECT vendor_name, SUBSTRING_INDEX(GROUP_CONCAT(currency_code ORDER BY cnt DESC), ',', 1) cur
+                FROM (
+                    SELECT vendor_name, currency_code, COUNT(*) cnt
+                    FROM dwh_stg_acc_purchase_order
+                    WHERE currency_code IS NOT NULL AND vendor_name IS NOT NULL
+                    GROUP BY vendor_name, currency_code
+                ) x GROUP BY vendor_name
+            ) g ON g.vendor_name = m.vendor_name
+            SET m.default_currency = g.cur, m.updated_at = NOW()
+            WHERE m.currency_source = 'auto'
+        ");
+
+        // Tebak mata uang via aturan DOMINAN <600rb — hanya vendor 'auto' TANPA data PO Accurate.
         DB::statement("
             UPDATE dwh_map_vendor_principal m
             JOIN (
@@ -528,6 +557,8 @@ class PurchaseMonitorController extends Controller
             ) g ON g.vendor_name = m.vendor_name
             SET m.default_currency = g.cur, m.updated_at = NOW()
             WHERE m.currency_source = 'auto'
+              AND NOT EXISTS (SELECT 1 FROM dwh_stg_acc_purchase_order o
+                              WHERE o.vendor_name = m.vendor_name AND o.currency_code IS NOT NULL)
         ");
 
         // Turunkan mata uang ke seluruh baris (data hasil sync tak menyimpan currency sendiri).
