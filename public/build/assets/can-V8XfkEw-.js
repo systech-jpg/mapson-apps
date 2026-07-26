@@ -1,1 +1,0 @@
-import{j as n}from"./app-e_9iLYLY.js";import{u as i}from"./use-permissions-CbANgG4S.js";function u({on:r,do:s="view",children:o,fallback:t=null}){const{can:e}=i();return n.jsx(n.Fragment,{children:e(r,s)?o:t})}export{u as C};
