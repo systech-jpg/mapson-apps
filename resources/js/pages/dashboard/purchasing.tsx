@@ -1,10 +1,13 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
-import { type ReactNode } from 'react';
+import { Loader2 } from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface SpendRow { principal: string; idr: number; docs: number }
@@ -13,6 +16,9 @@ interface LeadRow { principal: string; n_po: number; n_arrived: number; d_req_po
 interface BalanceRow { principal: string; vendor: string; cur: string; amount: number; idr: number }
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
+type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit';
+interface PurchaseDoc { doc_number: string; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
+interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
 interface Props {
     year: string | null;
     years: string[];
@@ -37,6 +43,7 @@ const rp = (n: number) => {
 
 export default function PurchasingDashboard({ year, years, spending, status, leadTime, balances, importCost }: Props) {
     const setYear = (y: string | null) => router.get(route('dashboard.purchasing'), y ? { year: y } : {}, { preserveScroll: true, preserveState: true });
+    const [drill, setDrill] = useState<DrillType | null>(null);
 
     const chartData = [
         ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, idr: r.idr })),
@@ -62,12 +69,12 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     </div>
                 </div>
 
-                {/* KPI */}
+                {/* KPI — klik untuk drill detail */}
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen`} />
-                    <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''}`} />
-                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr)}` : '—'} sub={balances.available ? `${balances.payable.length} vendor · saldo live Accurate` : 'Accurate tidak terjangkau'} />
-                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} />
+                    <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill('purchase')} />
+                    <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''} · belum diterima penuh`} onClick={() => setDrill('open_po')} />
+                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr)}` : '—'} sub={balances.available ? `${balances.payable.length} vendor · saldo live Accurate` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill('payable') : undefined} />
+                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill('credit') : undefined} />
                 </div>
 
                 {/* Baris 2: spending + status */}
@@ -239,17 +246,157 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     </Card>
                 </div>
             </div>
+
+            <KpiDrillDialog type={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
         </AppLayout>
     );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+const DRILL_TITLE: Record<DrillType, string> = {
+    purchase: 'Detail Total Purchase — per dokumen faktur',
+    open_po: 'Detail Open PO — PO berjalan, belum diterima penuh',
+    payable: 'Detail Utang Vendor (Payable)',
+    credit: 'Detail Saldo CN / Kredit',
+};
+
+/** Drill 4 kartu KPI: purchase & open_po fetch endpoint; payable & credit dari props (live). */
+function KpiDrillDialog({ type, year, balances, onClose }: {
+    type: DrillType | null; year: string | null;
+    balances: Props['balances']; onClose: () => void;
+}) {
+    const [docs, setDocs] = useState<PurchaseDoc[] | null>(null);
+    const [pos, setPos] = useState<OpenPoRow[] | null>(null);
+    const [q, setQ] = useState('');
+
+    useEffect(() => {
+        setDocs(null); setPos(null); setQ('');
+        if (type !== 'purchase' && type !== 'open_po') return;
+        fetch(route('dashboard.purchasing.kpi-drill') + `?type=${type}${year ? `&year=${year}` : ''}`, { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then((d) => (type === 'purchase' ? setDocs(d.rows ?? []) : setPos(d.rows ?? [])))
+            .catch(() => (type === 'purchase' ? setDocs([]) : setPos([])));
+    }, [type, year]);
+
+    const s = q.trim().toLowerCase();
+    const fDocs = useMemo(() => (docs ?? []).filter((d) => !s || d.doc_number.toLowerCase().includes(s) || d.vendor.toLowerCase().includes(s) || d.principal.toLowerCase().includes(s)), [docs, s]);
+    const fPos = useMemo(() => (pos ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [pos, s]);
+    const fBal = useMemo(() => {
+        const rows = type === 'payable' ? balances.payable : type === 'credit' ? balances.credit : [];
+        return rows.filter((r) => !s || r.vendor.toLowerCase().includes(s) || r.principal.toLowerCase().includes(s));
+    }, [type, balances, s]);
+
+    const loading = (type === 'purchase' && docs === null) || (type === 'open_po' && pos === null);
+
     return (
-        <div className="rounded-lg border p-3.5">
+        <Dialog open={type !== null} onOpenChange={(o) => !o && onClose()}>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>{type ? DRILL_TITLE[type] : ''}{year ? ` · ${year}` : ''}</DialogTitle>
+                    <DialogDescription>
+                        {type === 'purchase' && 'Faktur pembelian Accurate, terurut nilai IDR terbesar (maks 800 dokumen).'}
+                        {type === 'open_po' && 'PO ERP status Divalidasi/Approved/Ordered/Diterima sebagian, terurut paling lama — umur besar tanpa progres = kandidat ditutup/dibereskan.'}
+                        {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Accurate saat halaman dimuat.'}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari vendor / nomor…" className="h-8 w-64" />
+
+                {loading ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat…</div>
+                ) : type === 'purchase' ? (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Dokumen</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead>Principal / Vendor</TableHead>
+                                <TableHead className="text-right">Nilai asli</TableHead>
+                                <TableHead className="text-right">IDR</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {fDocs.length === 0 && <TableRow><TableCell colSpan={5} className="py-6 text-center text-muted-foreground">Tidak ada dokumen.</TableCell></TableRow>}
+                            {fDocs.map((d, i) => (
+                                <TableRow key={`${d.doc_number}-${i}`}>
+                                    <TableCell className="font-medium whitespace-nowrap">{d.doc_number} <span className="text-muted-foreground">({d.n_items})</span></TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{d.trans_date}</TableCell>
+                                    <TableCell className="max-w-56 truncate" title={d.vendor}>{d.principal}{d.principal !== d.vendor && <span className="ml-1 text-muted-foreground">· {d.vendor}</span>}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{d.cur} {num(d.asli, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(d.idr)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                ) : type === 'open_po' ? (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>PO</TableHead>
+                                <TableHead>Principal / Vendor</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead className="text-right">Umur (hari)</TableHead>
+                                <TableHead>Status ERP</TableHead>
+                                <TableHead>Progres Accurate</TableHead>
+                                <TableHead className="text-right">Nilai</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {fPos.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada PO terbuka.</TableCell></TableRow>}
+                            {fPos.map((r) => (
+                                <TableRow key={r.ref}>
+                                    <TableCell className="font-medium whitespace-nowrap">{r.ref}</TableCell>
+                                    <TableCell className="max-w-52 truncate" title={r.vendor}>{r.principal}</TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal}</TableCell>
+                                    <TableCell className={`text-right tabular-nums ${r.umur > 90 ? 'font-semibold text-red-600 dark:text-red-400' : r.umur > 30 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{num(r.umur)}</TableCell>
+                                    <TableCell><Badge variant="outline" className="text-[10px]">{r.status}</Badge></TableCell>
+                                    <TableCell className="whitespace-nowrap">
+                                        {r.acc_status
+                                            ? <span className={`text-[11px] ${r.acc_status === 'Terproses' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                                                {r.acc_status}{r.acc_percent !== null && r.acc_percent > 0 && r.acc_percent < 100 ? ` ${num(r.acc_percent, 1)}%` : ''}
+                                            </span>
+                                            : <span className="text-muted-foreground/50 text-[11px]">tak ada di Accurate</span>}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap"><span className="mr-1 text-[10px] text-muted-foreground">{r.cur}</span>{num(r.total, 2)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                ) : (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Principal</TableHead>
+                                <TableHead>Vendor (Accurate)</TableHead>
+                                <TableHead className="text-right">Saldo asli</TableHead>
+                                <TableHead className="text-right">± IDR</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {fBal.length === 0 && <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Tidak ada saldo.</TableCell></TableRow>}
+                            {fBal.map((r) => (
+                                <TableRow key={r.vendor}>
+                                    <TableCell className="font-medium">{r.principal}</TableCell>
+                                    <TableCell className="max-w-56 truncate text-muted-foreground" title={r.vendor}>{r.vendor}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.idr)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function Kpi({ label, value, sub, onClick }: { label: string; value: string; sub?: string; onClick?: () => void }) {
+    const Tag = onClick ? 'button' : 'div';
+    return (
+        <Tag onClick={onClick} className={`rounded-lg border p-3.5 text-left ${onClick ? 'cursor-pointer transition-colors hover:bg-accent' : ''}`}>
             <p className="text-xs text-muted-foreground">{label}</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
             {sub && <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p>}
-        </div>
+        </Tag>
     );
 }
 

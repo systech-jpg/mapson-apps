@@ -297,6 +297,78 @@ class PurchasingDashboardController extends Controller
         ];
     }
 
+    /**
+     * Drill KPI: daftar detail di balik kartu Total Purchase (per dokumen faktur) dan
+     * Open PO (PO berjalan + umur hari + progres penerimaan Accurate). Kartu Utang/CN
+     * tidak lewat sini — datanya sudah per-vendor di props halaman.
+     */
+    public function kpiDrill(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'type' => ['required', 'in:purchase,open_po'],
+            'year' => ['nullable', 'regex:/^\d{4}$/'],
+        ]);
+        $year = $data['year'] ?? null;
+
+        if ($data['type'] === 'purchase') {
+            $rows = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+                ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+                ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
+                ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                    $j->on('fx.currency', '=', 's.currency_code')->on('fx.period', '=', DB::raw('LEFT(s.trans_date, 7)'));
+                })
+                ->whereNotNull('s.trans_date')
+                ->when($year, fn ($q) => $q->whereRaw('LEFT(s.trans_date,4) = ?', [$year]))
+                ->groupBy('s.doc_number', 's.trans_date', 's.vendor_name', 'principal', 'cur')
+                ->selectRaw("s.doc_number, s.trans_date, s.vendor_name, COALESCE(p.name, s.vendor_name) AS principal,
+                    COALESCE(s.currency_code,'IDR') AS cur, SUM(s.total) AS asli, SUM(".$this->idrExpr().') AS idr, COUNT(*) AS n_items')
+                ->orderByDesc('idr')
+                ->limit(800)
+                ->get()
+                ->map(fn ($r) => [
+                    'doc_number' => $r->doc_number, 'trans_date' => $r->trans_date, 'vendor' => $r->vendor_name,
+                    'principal' => $r->principal, 'cur' => $r->cur, 'asli' => (float) $r->asli,
+                    'idr' => (float) $r->idr, 'n_items' => (int) $r->n_items,
+                ]);
+
+            return response()->json(['rows' => $rows]);
+        }
+
+        // open_po: status 1-4 = sudah jalan, barang belum diterima penuh, tidak batal.
+        $p = config('erp.prefix');
+        $appDb = DB::connection()->getDatabaseName();
+        $pos = collect(DB::connection(config('erp.connection'))->select("
+            SELECT c.ref, COALESCE(pp.name, so.nom) AS principal, so.nom AS vendor,
+                   LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   c.fk_statut, COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                   c.multicurrency_total_ttc AS total,
+                   DATEDIFF(CURDATE(), COALESCE(c.date_commande, c.date_creation)) AS umur
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            LEFT JOIN `{$appDb}`.pricing_principals pp ON pp.erp_societe_id = so.rowid
+            WHERE c.fk_statut IN (1,2,3,4)
+              AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
+              ".($year ? ' AND LEFT(COALESCE(c.date_commande, c.date_creation),4) = ?' : '')."
+            ORDER BY tanggal ASC
+        ", $year ? [$year] : []));
+
+        // Progres penerimaan versi Accurate (percentShipped) — lookup by nomor PO.
+        $accPos = DB::table('dwh_stg_acc_purchase_order')
+            ->whereIn('number', $pos->pluck('ref')->all())
+            ->get(['number', 'status_name', 'percent_shipped'])
+            ->keyBy('number');
+
+        $poLabels = [1 => 'Divalidasi', 2 => 'Approved', 3 => 'Ordered', 4 => 'Diterima sebagian'];
+
+        return response()->json(['rows' => $pos->map(fn ($r) => [
+            'ref' => $r->ref, 'principal' => $r->principal, 'vendor' => $r->vendor,
+            'tanggal' => $r->tanggal, 'status' => $poLabels[(int) $r->fk_statut] ?? (string) $r->fk_statut,
+            'cur' => $r->cur, 'total' => (float) $r->total, 'umur' => (int) $r->umur,
+            'acc_status' => $accPos[$r->ref]->status_name ?? null,
+            'acc_percent' => isset($accPos[$r->ref]) && $accPos[$r->ref]->percent_shipped !== null ? (float) $accPos[$r->ref]->percent_shipped : null,
+        ])->values()]);
+    }
+
     /** Normalisasi nama vendor (identik dgn SQL normSql Monitoring Pembelian: buang spasi/./, lalu 'pt'). */
     protected function norm(?string $s): string
     {
