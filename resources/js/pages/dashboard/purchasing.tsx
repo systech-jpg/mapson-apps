@@ -17,7 +17,7 @@ interface BalanceRow { principal: string; vendor: string; cur: string; amount: n
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
 type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit';
-interface PurchaseDoc { doc_number: string; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
+interface PurchaseDoc { po: string; has_po: boolean; docs: string; n_docs: number; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
 interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
 interface Props {
     year: string | null;
@@ -278,7 +278,7 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
     }, [type, year]);
 
     const s = q.trim().toLowerCase();
-    const fDocs = useMemo(() => (docs ?? []).filter((d) => !s || d.doc_number.toLowerCase().includes(s) || d.vendor.toLowerCase().includes(s) || d.principal.toLowerCase().includes(s)), [docs, s]);
+    const fDocs = useMemo(() => (docs ?? []).filter((d) => !s || d.po.toLowerCase().includes(s) || (d.docs ?? '').toLowerCase().includes(s) || d.vendor.toLowerCase().includes(s) || d.principal.toLowerCase().includes(s)), [docs, s]);
     const fPos = useMemo(() => (pos ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [pos, s]);
     const fBal = useMemo(() => {
         const rows = type === 'payable' ? balances.payable : type === 'credit' ? balances.credit : [];
@@ -293,7 +293,7 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                 <DialogHeader>
                     <DialogTitle>{type ? DRILL_TITLE[type] : ''}{year ? ` · ${year}` : ''}</DialogTitle>
                     <DialogDescription>
-                        {type === 'purchase' && 'Faktur pembelian Accurate, terurut nilai IDR terbesar (maks 800 dokumen).'}
+                        {type === 'purchase' && 'Per nomor PO ERP (kunci tracing lintas sistem), terurut nilai IDR terbesar; dokumen Accurate tampil sebagai info sekunder.'}
                         {type === 'open_po' && 'PO ERP status Divalidasi/Approved/Ordered/Diterima sebagian, terurut paling lama — umur besar tanpa progres = kandidat ditutup/dibereskan.'}
                         {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Accurate saat halaman dimuat.'}
                     </DialogDescription>
@@ -307,7 +307,8 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                     <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Dokumen</TableHead>
+                                <TableHead>PO (ERP)</TableHead>
+                                <TableHead>Dok. Accurate</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead>Principal / Vendor</TableHead>
                                 <TableHead className="text-right">Nilai asli</TableHead>
@@ -315,12 +316,18 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {fDocs.length === 0 && <TableRow><TableCell colSpan={5} className="py-6 text-center text-muted-foreground">Tidak ada dokumen.</TableCell></TableRow>}
+                            {fDocs.length === 0 && <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">Tidak ada dokumen.</TableCell></TableRow>}
                             {fDocs.map((d, i) => (
-                                <TableRow key={`${d.doc_number}-${i}`}>
-                                    <TableCell className="font-medium whitespace-nowrap">{d.doc_number} <span className="text-muted-foreground">({d.n_items})</span></TableCell>
+                                <TableRow key={`${d.po}-${i}`}>
+                                    <TableCell className="font-medium whitespace-nowrap">
+                                        {d.has_po ? d.po : <span className="text-muted-foreground" title="Baris lama tanpa nomor PO — ditampilkan nomor dokumennya">({d.po})</span>}
+                                        <span className="ml-1 text-muted-foreground">({d.n_items})</span>
+                                    </TableCell>
+                                    <TableCell className="max-w-44 truncate text-muted-foreground" title={d.docs}>
+                                        {d.has_po ? `${d.docs}${d.n_docs > 1 ? ` · ${d.n_docs} dok` : ''}` : '–'}
+                                    </TableCell>
                                     <TableCell className="whitespace-nowrap text-muted-foreground">{d.trans_date}</TableCell>
-                                    <TableCell className="max-w-56 truncate" title={d.vendor}>{d.principal}{d.principal !== d.vendor && <span className="ml-1 text-muted-foreground">· {d.vendor}</span>}</TableCell>
+                                    <TableCell className="max-w-52 truncate" title={d.vendor}>{d.principal}{d.principal !== d.vendor && <span className="ml-1 text-muted-foreground">· {d.vendor}</span>}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap">{d.cur} {num(d.asli, 2)}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(d.idr)}</TableCell>
                                 </TableRow>

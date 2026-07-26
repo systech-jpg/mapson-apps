@@ -311,6 +311,9 @@ class PurchasingDashboardController extends Controller
         $year = $data['year'] ?? null;
 
         if ($data['type'] === 'purchase') {
+            // Kunci tracing = NOMOR PO ERP (po_number per baris faktur); dokumen Accurate
+            // (invoice/packing slip) hanya info sekunder. Baris lama tanpa po_number
+            // (2021-2022) jatuh ke nomor dokumennya sendiri, ditandai has_po=false.
             $rows = DB::table('dwh_stg_acc_purchase_invoice_item as s')
                 ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
                 ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
@@ -319,14 +322,21 @@ class PurchasingDashboardController extends Controller
                 })
                 ->whereNotNull('s.trans_date')
                 ->when($year, fn ($q) => $q->whereRaw('LEFT(s.trans_date,4) = ?', [$year]))
-                ->groupBy('s.doc_number', 's.trans_date', 's.vendor_name', 'principal', 'cur')
-                ->selectRaw("s.doc_number, s.trans_date, s.vendor_name, COALESCE(p.name, s.vendor_name) AS principal,
-                    COALESCE(s.currency_code,'IDR') AS cur, SUM(s.total) AS asli, SUM(".$this->idrExpr().') AS idr, COUNT(*) AS n_items')
+                ->groupBy('po', 'has_po', 's.vendor_name', 'principal', 'cur')
+                ->selectRaw("COALESCE(NULLIF(s.po_number,''), s.doc_number) AS po,
+                    (s.po_number IS NOT NULL AND s.po_number <> '') AS has_po,
+                    s.vendor_name, COALESCE(p.name, s.vendor_name) AS principal,
+                    COALESCE(s.currency_code,'IDR') AS cur,
+                    MIN(s.trans_date) AS trans_date,
+                    GROUP_CONCAT(DISTINCT s.doc_number ORDER BY s.trans_date SEPARATOR ', ') AS docs,
+                    COUNT(DISTINCT s.doc_number) AS n_docs,
+                    SUM(s.total) AS asli, SUM(".$this->idrExpr().') AS idr, COUNT(*) AS n_items')
                 ->orderByDesc('idr')
                 ->limit(800)
                 ->get()
                 ->map(fn ($r) => [
-                    'doc_number' => $r->doc_number, 'trans_date' => $r->trans_date, 'vendor' => $r->vendor_name,
+                    'po' => $r->po, 'has_po' => (bool) $r->has_po, 'docs' => $r->docs, 'n_docs' => (int) $r->n_docs,
+                    'trans_date' => $r->trans_date, 'vendor' => $r->vendor_name,
                     'principal' => $r->principal, 'cur' => $r->cur, 'asli' => (float) $r->asli,
                     'idr' => (float) $r->idr, 'n_items' => (int) $r->n_items,
                 ]);
