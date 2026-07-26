@@ -18,7 +18,7 @@ interface BankAccount { id: number; ref: string; label: string; currency: string
 interface PaymentMode { id: number; code: string; label: string }
 interface Po { id: number; ref: string; ref_supplier: string | null; tanggal: string; cur: string; total: number; total_ttc: number; statut: number; invoice_refs: string | null; invoice_paid: boolean | null }
 interface AccPayment { number: string; trans_date: string; bank_no: string | null; bank_name: string | null; payment_method: string | null; invoice_number: string | null; bill_number: string | null; amount: number }
-interface AccDoc { doc_number: string; trans_date: string; cur: string; po_number: string | null; total: number; n_items: number }
+interface AccPoRow { number: string; trans_date: string; status_name: string | null; cur: string; total: number }
 interface AccPo { status_name: string | null; percent_shipped: number | null; currency: string | null; rate: number | null; total: number }
 interface DolPoInfo { tanggal: string | null; cur: string; statut: number }
 interface Props {
@@ -71,8 +71,8 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                     <div>
                         <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs ERP</h1>
                         <p className="text-sm text-muted-foreground">
-                            Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli non-PPN</b> —
-                            Accurate menyimpan nilai net, jadi sisi ERP memakai total HT dari <b>PO</b> berstatus approved / ordered / partial / full receive.
+                            Membandingkan <b>PO ERP vs Pesanan Pembelian Accurate</b> (nomor dokumen sama, PO/I/…), diringkas per <b>vendor × tahun</b> —
+                            nilai total dokumen dalam mata uang asli; sisi ERP memakai PO berstatus approved / ordered / partial / full receive.
                         </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
@@ -178,40 +178,26 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
     row: Row | null; onClose: () => void; erpApiReady: boolean; bankAccounts: BankAccount[]; paymentModes: PaymentMode[];
 }) {
     const [pos, setPos] = useState<Po[] | null>(null);
-    const [accDocs, setAccDocs] = useState<AccDoc[]>([]);
+    const [accPosAll, setAccPosAll] = useState<AccPoRow[]>([]);
     const [accPos, setAccPos] = useState<Record<string, AccPo>>({});
     const [dolAllPos, setDolAllPos] = useState<Record<string, DolPoInfo>>({});
     const [payments, setPayments] = useState<AccPayment[]>([]);
     const [payingPo, setPayingPo] = useState<Po | null>(null);
 
     useEffect(() => {
-        if (!row) { setPos(null); setAccDocs([]); setAccPos({}); setDolAllPos({}); setPayments([]); setPayingPo(null); return; }
+        if (!row) { setPos(null); setAccPosAll([]); setAccPos({}); setDolAllPos({}); setPayments([]); setPayingPo(null); return; }
         fetch(route('purchase-monitor.recon-pos') + `?vendor=${encodeURIComponent(row.vendor)}&year=${row.tahun}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
-            .then((d) => { setPos(d.pos ?? []); setAccDocs(d.accDocs ?? []); setAccPos(d.accPos ?? {}); setDolAllPos(d.dolAllPos ?? {}); setPayments(d.payments ?? []); })
+            .then((d) => { setPos(d.pos ?? []); setAccPosAll(d.accPosAll ?? []); setAccPos(d.accPos ?? {}); setDolAllPos(d.dolAllPos ?? {}); setPayments(d.payments ?? []); })
             .catch(() => setPos([]));
     }, [row]);
 
-    // Pasangkan PO ↔ dokumen Accurate. Utama: nomor PO per baris faktur (eksak — alur bisnis:
-    // PO lahir di Dolibarr lalu di-input ke Accurate dgn nomor sama, jadi realisasi parsial &
-    // faktur multi-PO ikut terurai). Fallback utk data lama tanpa po_number: samakan nilai.
-    const { pairedDocs, unpairedDocs } = useMemo(() => {
-        const used = new Set<number>();
-        const map = new Map<number, AccDoc[]>(); // po.id → potongan dokumen Accurate
-        for (const po of pos ?? []) {
-            const mine: AccDoc[] = [];
-            accDocs.forEach((d, idx) => {
-                if (!used.has(idx) && d.po_number === po.ref) { used.add(idx); mine.push(d); }
-            });
-            if (mine.length) map.set(po.id, mine);
-        }
-        for (const po of pos ?? []) {
-            if (map.has(po.id)) continue;
-            const i = accDocs.findIndex((d, idx) => !used.has(idx) && !d.po_number && d.cur === po.cur && Math.abs(d.total - po.total) < 1);
-            if (i >= 0) { used.add(i); map.set(po.id, [accDocs[i]]); }
-        }
-        return { pairedDocs: map, unpairedDocs: accDocs.filter((_, idx) => !used.has(idx)) };
-    }, [pos, accDocs]);
+    // PO Accurate sel ini yang nomornya tak ada di daftar PO ERP (pasangan by NOMOR).
+    const unpairedAccPos = useMemo(() => {
+        const refs = new Set((pos ?? []).map((p) => p.ref));
+        return accPosAll.filter((a) => !refs.has(a.number));
+    }, [pos, accPosAll]);
+    const pairedCount = useMemo(() => (pos ?? []).filter((p) => accPos[p.ref]).length, [pos, accPos]);
 
     const PO_STATUS: Record<number, string> = { 2: 'Approved', 3: 'Ordered', 4: 'Diterima sebagian', 5: 'Diterima penuh' };
 
@@ -219,9 +205,9 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
         <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>PO ERP vs Dokumen Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
+                    <DialogTitle>PO ERP vs PO Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
                     <DialogDescription>
-                        Tiap PO dipasangkan dengan dokumen Accurate lewat <b>nomor PO</b> (data lama tanpa nomor: lewat kesamaan nilai). Dari PO juga bisa dibuat faktur + payment lunas di ERP.
+                        Dipasangkan lewat <b>nomor PO</b> yang sama di kedua sistem. Dari PO juga bisa dibuat faktur + payment lunas di ERP.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -244,7 +230,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                 <TableHead>Status</TableHead>
                                 <TableHead className="text-right">Non-PPN</TableHead>
                                 <TableHead className="text-right">+PPN</TableHead>
-                                <TableHead>Dok Accurate</TableHead>
+                                <TableHead className="text-right">PO Accurate</TableHead>
                                 <TableHead>Faktur</TableHead>
                                 <TableHead />
                             </TableRow>
@@ -275,16 +261,14 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                     <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">
                                         {po.total_ttc !== po.total ? num(po.total_ttc, 2) : <span className="text-muted-foreground/40">–</span>}
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">
                                         {(() => {
-                                            const docs = pairedDocs.get(po.id);
-                                            if (!docs) return <span className="text-[11px] text-amber-600 dark:text-amber-400">tanpa pasangan</span>;
-                                            const realisasi = docs.reduce((s, d) => s + d.total, 0);
-                                            const penuh = Math.abs(realisasi - po.total) < 1;
+                                            const ap = accPos[po.ref];
+                                            if (!ap) return <span className="text-[11px] text-amber-600 dark:text-amber-400">tanpa pasangan</span>;
+                                            const cocok = Math.abs(ap.total - po.total_ttc) < 1 || Math.abs(ap.total - po.total) < 1;
                                             return (
-                                                <span className={`text-[11px] ${penuh ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                                                    {penuh ? '✓' : '◐'} {docs.map((d) => d.doc_number).join(', ')}
-                                                    <span className="ml-1 text-muted-foreground">({num(realisasi, 0)}{penuh ? '' : ` dari ${num(po.total, 0)}`})</span>
+                                                <span className={cocok ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
+                                                    {cocok ? '✓ ' : ''}{num(ap.total, 2)}
                                                 </span>
                                             );
                                         })()}
@@ -309,35 +293,34 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                     </Table>
                 )}
 
-                {pos !== null && (pos.length > 0 || accDocs.length > 0) && (
+                {pos !== null && (pos.length > 0 || accPosAll.length > 0) && (
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
                         <span>PO ERP: <b className="text-foreground">{pos.length}</b> ({sumByCur(pos ?? [])} non-PPN)</span>
-                        <span>Dok Accurate: <b className="text-foreground">{accDocs.length}</b> ({sumByCur(accDocs)})</span>
-                        <span>PO berpasangan: <b className="text-foreground">{pairedDocs.size}</b></span>
+                        <span>PO Accurate: <b className="text-foreground">{accPosAll.length}</b> ({sumByCur(accPosAll)})</span>
+                        <span>Berpasangan (by nomor): <b className="text-foreground">{pairedCount}</b></span>
                     </div>
                 )}
 
-                {unpairedDocs.length > 0 && (
+                {unpairedAccPos.length > 0 && (
                     <div>
-                        <p className="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">Dokumen Accurate tanpa pasangan PO ({unpairedDocs.length}):</p>
+                        <p className="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">PO Accurate tanpa pasangan di daftar ERP sel ini ({unpairedAccPos.length}):</p>
                         <div className="max-h-40 overflow-y-auto rounded-md border">
-                            {unpairedDocs.map((d, i) => (
-                                <div key={`${d.doc_number}-${i}`} className="flex items-center justify-between gap-2 border-b px-2.5 py-1.5 text-xs last:border-b-0">
+                            {unpairedAccPos.map((a, i) => (
+                                <div key={`${a.number}-${i}`} className="flex items-center justify-between gap-2 border-b px-2.5 py-1.5 text-xs last:border-b-0">
                                     <span className="min-w-0">
-                                        <span className="font-medium">{d.doc_number}</span>
-                                        <span className="ml-1.5 text-muted-foreground">{d.trans_date} · {d.n_items} item</span>
-                                        {d.po_number && (() => {
-                                            const info = dolAllPos[d.po_number];
-                                            if (!info) return <span className="ml-1.5 text-red-600 dark:text-red-400">→ {d.po_number} (tak ada di ERP)</span>;
+                                        <span className="font-medium">{a.number}</span>
+                                        <span className="ml-1.5 text-muted-foreground">{a.trans_date}{a.status_name ? ` · ${a.status_name}` : ''}</span>
+                                        {(() => {
+                                            const info = dolAllPos[a.number];
+                                            if (!info) return <span className="ml-1.5 text-red-600 dark:text-red-400">tak ada di ERP</span>;
                                             return (
                                                 <span className="ml-1.5 text-sky-600 dark:text-sky-400">
-                                                    → {d.po_number}
-                                                    <span className="text-muted-foreground"> ada di ERP: {info.cur} · {info.tanggal} — di luar sel ini</span>
+                                                    ada di ERP: {info.cur} · {info.tanggal}{info.statut < 2 ? ' · masih draft' : ''} — di luar sel ini
                                                 </span>
                                             );
                                         })()}
                                     </span>
-                                    <span className="shrink-0 tabular-nums"><span className="mr-1 text-[10px] text-muted-foreground">{d.cur}</span>{num(d.total, 2)}</span>
+                                    <span className="shrink-0 tabular-nums"><span className="mr-1 text-[10px] text-muted-foreground">{a.cur}</span>{num(a.total, 2)}</span>
                                 </div>
                             ))}
                         </div>

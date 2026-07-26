@@ -137,30 +137,30 @@ class PurchaseMonitorController extends Controller
 
     public function reconciliation(): Response
     {
-        // Sisi Accurate (mata uang dari mapping vendor).
-        $acc = DB::table('dwh_stg_acc_purchase_invoice_item as s')
-            ->whereNotNull('s.trans_date')
-            ->groupBy('s.vendor_name', 'norm', 'tahun', 'cur')
-            ->selectRaw('s.vendor_name, '.$this->normSql('s.vendor_name').' AS norm, LEFT(s.trans_date,4) AS tahun,
-                COALESCE(s.currency_code,\'IDR\') AS cur, SUM(s.total) AS total, COUNT(DISTINCT s.doc_number) AS docs')
+        // Sisi Accurate: PESANAN PEMBELIAN (bukan faktur) — nomornya sama dengan PO ERP
+        // (PO/I/xxxx), jadi rekon jadi PO-vs-PO apel-ke-apel. Nilai = totalAmount dokumen.
+        $acc = DB::table('dwh_stg_acc_purchase_order')
+            ->whereNotNull('trans_date')
+            ->groupBy('vendor_name', 'norm', 'tahun', 'cur')
+            ->selectRaw('vendor_name, '.$this->normSql('vendor_name')." AS norm, LEFT(trans_date,4) AS tahun,
+                COALESCE(currency_code,'IDR') AS cur, SUM(total_amount) AS total, COUNT(*) AS docs")
             ->get();
 
-        // Sisi Dolibarr: PO status approved/ordered/partial/full, nilai NON-PPN
-        // (multicurrency_total_ht) — staging Accurate menyimpan nilai net, sedangkan TTC PO
-        // campuran (sebagian ber-PPN 11%); pakai HT membuat kedua sisi apel-ke-apel.
-        // PO lama 2021-2023 nilainya 0 semua — dibuang lewat HAVING agar tak jadi baris hampa.
+        // Sisi ERP: PO status approved/ordered/partial/full, nilai total dokumen (TTC) —
+        // basis sama dgn totalAmount Accurate. PO lama 2021-2023 nilainya 0 semua — dibuang
+        // lewat HAVING agar tak jadi baris hampa.
         $p = config('erp.prefix');
         $dol = collect(DB::connection(config('erp.connection'))->select("
             SELECT so.nom AS vendor_name, ".$this->normSql('so.nom')." AS norm,
                    LEFT(COALESCE(c.date_commande, c.date_creation),4) AS tahun,
                    COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
-                   SUM(c.multicurrency_total_ht) AS total, COUNT(*) AS docs
+                   SUM(c.multicurrency_total_ttc) AS total, COUNT(*) AS docs
             FROM {$p}commande_fournisseur c
             LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
             WHERE c.fk_statut IN (".self::DOL_PO_STATUSES.")
               AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
             GROUP BY so.nom, norm, tahun, cur
-            HAVING SUM(c.multicurrency_total_ht) <> 0
+            HAVING SUM(c.multicurrency_total_ttc) <> 0
         "));
 
         // Gabung berdasarkan (norm, tahun) SAJA — mata uang bisa beda antar sistem untuk vendor
@@ -285,18 +285,15 @@ class PurchaseMonitorController extends Controller
             GROUP BY c.rowid, c.ref, c.ref_supplier, c.fk_statut, tanggal, cur, total, total_ttc
             ORDER BY tanggal", [$data['vendor'], $data['year']]);
 
-        // Dokumen faktur Accurate sel yang sama, dipecah per (dokumen × nomor PO) — po_number
-        // per baris = ref PO Dolibarr (alur bisnis: PO lahir di Dolibarr → di-input ke Accurate),
-        // sehingga faktur multi-PO dan realisasi parsial terurai eksak per PO.
-        $accDocs = DB::table('dwh_stg_acc_purchase_invoice_item')
+        // PESANAN PEMBELIAN Accurate sel yang sama (bukan faktur) — nomornya sama dengan PO
+        // ERP, jadi pembanding dokumen-per-dokumen langsung by nomor.
+        $accPosAll = DB::table('dwh_stg_acc_purchase_order')
             ->whereRaw($this->normSql('vendor_name').' = '.$this->normSql('?'), [$data['vendor']])
             ->whereRaw('LEFT(trans_date,4) = ?', [$data['year']])
-            ->groupBy('doc_number', 'trans_date', 'po_number', 'currency_code')
             ->orderBy('trans_date')
-            ->selectRaw("doc_number, trans_date, po_number, COALESCE(currency_code,'IDR') AS cur, ROUND(SUM(total),2) AS total, COUNT(*) AS n_items")
-            ->get()
-            ->map(fn ($r) => ['doc_number' => $r->doc_number, 'trans_date' => $r->trans_date, 'cur' => $r->cur,
-                'po_number' => $r->po_number, 'total' => (float) $r->total, 'n_items' => (int) $r->n_items]);
+            ->get(['number', 'trans_date', 'status_name', 'currency_code', 'total_amount'])
+            ->map(fn ($r) => ['number' => $r->number, 'trans_date' => $r->trans_date,
+                'status_name' => $r->status_name, 'cur' => $r->currency_code ?? 'IDR', 'total' => (float) $r->total_amount]);
 
         // PO Accurate utk badge status — lookup by NOMOR saja (tanpa filter tahun/vendor):
         // tanggal bisa beda antar sistem (kasus PO/I/2508/00198: ERP 2026-04, Accurate 2025-08).
@@ -336,7 +333,7 @@ class PurchaseMonitorController extends Controller
             'id' => (int) $r->rowid, 'ref' => $r->ref, 'ref_supplier' => $r->ref_supplier,
             'tanggal' => $r->tanggal, 'total' => (float) $r->total, 'total_ttc' => (float) $r->total_ttc, 'statut' => (int) $r->fk_statut,
             'invoice_refs' => $r->invoice_refs, 'invoice_paid' => $r->invoice_paid !== null ? (bool) $r->invoice_paid : null,
-        ], $pos), 'accDocs' => $accDocs, 'accPos' => $accPos, 'dolAllPos' => $dolAllPos, 'payments' => $payments]);
+        ], $pos), 'accPosAll' => $accPosAll, 'accPos' => $accPos, 'dolAllPos' => $dolAllPos, 'payments' => $payments]);
     }
 
     /** Buat faktur supplier + payment lunas di Dolibarr untuk satu PO (via REST API). */
