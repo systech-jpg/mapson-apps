@@ -1,13 +1,14 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link } from '@inertiajs/react';
-import { GitCompareArrows, LayoutGrid } from 'lucide-react';
-import { type ReactNode, useMemo, useState } from 'react';
+import { GitCompareArrows, LayoutGrid, Loader2 } from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 type Status = 'match' | 'diff' | 'erp_only' | 'acc_only';
 interface Row {
@@ -15,6 +16,11 @@ interface Row {
     dol_ttc: number | null; dol_ht: number | null; dol_statut: number | null;
     acc_total: number | null; acc_status: string | null; acc_percent: number | null; acc_cur: string | null;
     selisih: number | null; status: Status;
+}
+interface Line { label: string; qty: number; price: number; total: number }
+interface PoDetail {
+    erp: { found: boolean; cur: string | null; total_ht: number | null; total_ttc: number | null; lines: Line[] };
+    acc: { found: boolean; cur: string | null; total: number | null; status: string | null; lines: Line[]; error: string | null };
 }
 interface Props {
     rows: Row[];
@@ -43,6 +49,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
     const [q, setQ] = useState('');
     const [year, setYear] = useState<string | null>(null);
     const [status, setStatus] = useState<Status | null>(null);
+    const [detailRow, setDetailRow] = useState<Row | null>(null);
 
     const filtered = useMemo(() => {
         const s = q.trim().toLowerCase();
@@ -114,7 +121,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
                                 </TableHeader>
                                 <TableBody>
                                     {filtered.map((r) => (
-                                        <TableRow key={r.number}>
+                                        <TableRow key={r.number} className="cursor-pointer" onClick={() => setDetailRow(r)}>
                                             <TableCell className="font-medium whitespace-nowrap">{r.number}</TableCell>
                                             <TableCell className="max-w-56 truncate" title={r.vendor ?? ''}>{r.vendor}</TableCell>
                                             <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal}</TableCell>
@@ -150,7 +157,98 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
                     </CardContent>
                 </Card>
             </div>
+
+            <PoDetailDialog row={detailRow} onClose={() => setDetailRow(null)} />
         </AppLayout>
+    );
+}
+
+/** Perbandingan baris item satu PO: ERP vs Accurate berdampingan (Accurate diambil live). */
+function PoDetailDialog({ row, onClose }: { row: Row | null; onClose: () => void }) {
+    const [detail, setDetail] = useState<PoDetail | null>(null);
+
+    useEffect(() => {
+        if (!row) { setDetail(null); return; }
+        fetch(route('purchase-monitor.po-detail') + `?number=${encodeURIComponent(row.number)}`, { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then(setDetail)
+            .catch(() => setDetail(null));
+    }, [row]);
+
+    return (
+        <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+                <DialogHeader>
+                    <DialogTitle>Baris Item {row?.number} — {row?.vendor}</DialogTitle>
+                    <DialogDescription>
+                        Perbandingan item per baris: ERP vs Accurate (diambil langsung dari Accurate) — untuk melihat sumber selisih: beda qty, harga satuan, atau baris yang hanya ada di satu sisi.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {detail === null ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat baris item…</div>
+                ) : (
+                    <>
+                    {detail.erp.total_ht !== null && detail.acc.total !== null && Math.abs(detail.acc.total - detail.erp.total_ht * 1.11) < 2 && Math.abs(detail.acc.total - detail.erp.total_ht) >= 1 && (
+                        <p className="rounded-md border border-sky-400/50 bg-sky-500/10 p-2.5 text-xs text-sky-700 dark:text-sky-400">
+                            Selisih total = <b>persis PPN 11%</b> — nilai Accurate termasuk pajak, PO ERP di-input tanpa pajak. Baris itemnya kemungkinan sama.
+                        </p>
+                    )}
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <LinePanel title={`ERP${detail.erp.cur ? ` · ${detail.erp.cur}` : ''}`} found={detail.erp.found}
+                            lines={detail.erp.lines} total={detail.erp.total_ht} totalLabel="Total non-PPN"
+                            extra={detail.erp.total_ttc !== null && detail.erp.total_ttc !== detail.erp.total_ht ? `+PPN: ${num(detail.erp.total_ttc, 2)}` : null} />
+                        <LinePanel title={`Accurate${detail.acc.cur ? ` · ${detail.acc.cur}` : ''}${detail.acc.status ? ` · ${detail.acc.status}` : ''}`} found={detail.acc.found}
+                            lines={detail.acc.lines} total={detail.acc.total} totalLabel="Total dokumen"
+                            extra={detail.acc.error} />
+                    </div>
+                    </>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function LinePanel({ title, found, lines, total, totalLabel, extra }: {
+    title: string; found: boolean; lines: Line[]; total: number | null; totalLabel: string; extra: string | null;
+}) {
+    return (
+        <div className="rounded-lg border">
+            <div className="border-b bg-muted/40 px-3 py-2 text-sm font-medium">{title}</div>
+            {!found ? (
+                <p className="px-3 py-6 text-center text-sm text-muted-foreground">PO tidak ditemukan di sisi ini.</p>
+            ) : (
+                <>
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-7 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Item</TableHead>
+                                <TableHead className="text-right">Qty</TableHead>
+                                <TableHead className="text-right">Harga</TableHead>
+                                <TableHead className="text-right">Total</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {lines.length === 0 ? (
+                                <TableRow><TableCell colSpan={4} className="py-4 text-center text-muted-foreground">Tanpa baris item.</TableCell></TableRow>
+                            ) : lines.map((l, i) => (
+                                <TableRow key={i}>
+                                    <TableCell className="max-w-48 truncate" title={l.label}>{l.label}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{num(l.qty, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(l.price, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(l.total, 2)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                    <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+                        <span className="text-muted-foreground">{totalLabel}</span>
+                        <span className="font-semibold tabular-nums">{total !== null ? num(total, 2) : '–'}</span>
+                    </div>
+                    {extra && <p className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">{extra}</p>}
+                </>
+            )}
+        </div>
     );
 }
 

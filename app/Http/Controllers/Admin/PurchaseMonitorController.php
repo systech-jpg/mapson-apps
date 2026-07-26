@@ -423,6 +423,68 @@ class PurchaseMonitorController extends Controller
         ]);
     }
 
+    /**
+     * Perbandingan BARIS ITEM satu PO: baris ERP (commande_fournisseurdet) vs baris PO
+     * Accurate (diambil live via API purchase-order/detail.do — baris tidak di-staging).
+     * Untuk menjawab "kenapa selisih": beda qty, beda harga satuan, atau baris yang
+     * hanya ada di salah satu sisi.
+     */
+    public function poDetail(Request $request): JsonResponse
+    {
+        $data = $request->validate(['number' => ['required', 'string', 'max:64']]);
+        $p = config('erp.prefix');
+
+        // Sisi ERP: header + baris (nilai multicurrency = mata uang dokumen).
+        $erpLines = [];
+        $erpHeader = DB::connection(config('erp.connection'))->selectOne("
+            SELECT c.rowid, COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                   c.multicurrency_total_ht AS total_ht, c.multicurrency_total_ttc AS total_ttc
+            FROM {$p}commande_fournisseur c WHERE c.ref = ?", [$data['number']]);
+        if ($erpHeader) {
+            $erpLines = array_map(fn ($r) => [
+                'label' => trim($r->label ?: $r->description ?: ($r->product_label ?? '')) ?: '(tanpa nama)',
+                'qty' => (float) $r->qty,
+                'price' => (float) ($r->multicurrency_subprice ?: $r->subprice),
+                'total' => (float) ($r->multicurrency_total_ht ?: $r->total_ht),
+            ], DB::connection(config('erp.connection'))->select("
+                SELECT d.label, d.description, pr.label AS product_label, d.qty, d.subprice,
+                       d.multicurrency_subprice, d.total_ht, d.multicurrency_total_ht
+                FROM {$p}commande_fournisseurdet d
+                LEFT JOIN {$p}product pr ON pr.rowid = d.fk_product
+                WHERE d.fk_commande = ? ORDER BY d.rang, d.rowid", [$erpHeader->rowid]));
+        }
+
+        // Sisi Accurate: baris PO live via API (erp_id dari staging by nomor).
+        $accLines = [];
+        $accError = null;
+        $stg = DB::table('dwh_stg_acc_purchase_order')->where('number', $data['number'])->first();
+        if ($stg) {
+            try {
+                $d = app(\App\Services\Accurate\AccurateService::class)
+                    ->apiGet(\App\Models\AccurateSetting::current(), 'purchase-order/detail.do', ['id' => $stg->erp_id])['d'] ?? null;
+                foreach ($d['detailItem'] ?? [] as $it) {
+                    $accLines[] = [
+                        'label' => trim((is_array($it['item'] ?? null) ? ($it['item']['no'].' — '.($it['item']['name'] ?? '')) : ($it['detailName'] ?? ''))) ?: '(tanpa nama)',
+                        'qty' => (float) ($it['quantity'] ?? 0),
+                        'price' => (float) ($it['unitPrice'] ?? 0),
+                        'total' => (float) ($it['totalPrice'] ?? 0),
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $accError = 'Gagal ambil detail dari Accurate: '.mb_substr($e->getMessage(), 0, 150);
+            }
+        }
+
+        return response()->json([
+            'erp' => ['found' => (bool) $erpHeader, 'cur' => $erpHeader->cur ?? null,
+                'total_ht' => $erpHeader ? (float) $erpHeader->total_ht : null,
+                'total_ttc' => $erpHeader ? (float) $erpHeader->total_ttc : null, 'lines' => $erpLines],
+            'acc' => ['found' => (bool) $stg, 'cur' => $stg->currency_code ?? null,
+                'total' => $stg ? (float) $stg->total_amount : null, 'status' => $stg->status_name ?? null,
+                'lines' => $accLines, 'error' => $accError],
+        ]);
+    }
+
     /** Halaman kelola: mapping vendor→principal + mata uang, dan kurs per bulan. */
     public function settings(): Response
     {
