@@ -49,7 +49,7 @@ const STATUS: Record<Status, { label: string; cls: string }> = {
     diff: { label: 'Selisih', cls: 'border-amber-400 text-amber-600 dark:text-amber-400' },
     cur_mix: { label: 'Beda Mata Uang', cls: 'border-slate-400 text-slate-600 dark:text-slate-400' },
     acc_only: { label: 'Hanya Accurate', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
-    dol_only: { label: 'Hanya Dolibarr', cls: 'border-violet-400 text-violet-600 dark:text-violet-400' },
+    dol_only: { label: 'Hanya ERP', cls: 'border-violet-400 text-violet-600 dark:text-violet-400' },
 };
 
 export default function PurchaseReconciliation({ rows, years, summary, erpApiReady, bankAccounts, paymentModes }: Props) {
@@ -69,10 +69,10 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs Dolibarr</h1>
+                        <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs ERP</h1>
                         <p className="text-sm text-muted-foreground">
                             Dicocokkan per <b>vendor × tahun × mata uang</b> (kedua sistem tak berbagi nomor dokumen), membandingkan <b>nilai asli non-PPN</b> —
-                            Accurate menyimpan nilai net, jadi sisi Dolibarr memakai total HT dari <b>PO</b> berstatus approved / ordered / partial / full receive.
+                            Accurate menyimpan nilai net, jadi sisi ERP memakai total HT dari <b>PO</b> berstatus approved / ordered / partial / full receive.
                         </p>
                     </div>
                     <div className="flex shrink-0 gap-2">
@@ -90,7 +90,7 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                     <StatCard label="Selisih Nilai" value={summary.diff} active={status === 'diff'} onClick={() => setStatus(status === 'diff' ? null : 'diff')} tone="diff" />
                     <StatCard label="Beda Mata Uang" value={summary.cur_mix} active={status === 'cur_mix'} onClick={() => setStatus(status === 'cur_mix' ? null : 'cur_mix')} tone="cur_mix" />
                     <StatCard label="Hanya di Accurate" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
-                    <StatCard label="Hanya di Dolibarr" value={summary.dol_only} active={status === 'dol_only'} onClick={() => setStatus(status === 'dol_only' ? null : 'dol_only')} tone="dol_only" />
+                    <StatCard label="Hanya di ERP" value={summary.dol_only} active={status === 'dol_only'} onClick={() => setStatus(status === 'dol_only' ? null : 'dol_only')} tone="dol_only" />
                 </div>
 
                 <Card>
@@ -118,7 +118,7 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                                         <TableHead>Tahun</TableHead>
                                         <TableHead>Mata Uang</TableHead>
                                         <TableHead className="text-right">Accurate</TableHead>
-                                        <TableHead className="text-right">Dolibarr (PO)</TableHead>
+                                        <TableHead className="text-right">ERP (PO)</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
                                         <TableHead className="text-center">Status</TableHead>
                                         <TableHead />
@@ -219,15 +219,15 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
         <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>PO Dolibarr vs Dokumen Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
+                    <DialogTitle>PO ERP vs Dokumen Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
                     <DialogDescription>
-                        Tiap PO dipasangkan dengan dokumen Accurate lewat <b>nomor PO</b> (data lama tanpa nomor: lewat kesamaan nilai). Dari PO juga bisa dibuat faktur + payment lunas di Dolibarr.
+                        Tiap PO dipasangkan dengan dokumen Accurate lewat <b>nomor PO</b> (data lama tanpa nomor: lewat kesamaan nilai). Dari PO juga bisa dibuat faktur + payment lunas di ERP.
                     </DialogDescription>
                 </DialogHeader>
 
                 {!erpApiReady && (
                     <p className="rounded-md border border-amber-400/50 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-                        REST API Dolibarr belum dikonfigurasi — aktifkan modul <b>Web services API REST</b> di Dolibarr lalu isi <code>ERP_API_URL</code> &amp; <code>ERP_API_KEY</code> di .env. Daftar PO tetap bisa dilihat.
+                        REST API ERP belum dikonfigurasi — aktifkan modul <b>Web services API REST</b> di ERP lalu isi <code>ERP_API_URL</code> &amp; <code>ERP_API_KEY</code> di .env. Daftar PO tetap bisa dilihat.
                     </p>
                 )}
 
@@ -311,7 +311,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
 
                 {pos !== null && (pos.length > 0 || accDocs.length > 0) && (
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-                        <span>PO Dolibarr: <b className="text-foreground">{pos.length}</b> ({sumByCur(pos ?? [])} non-PPN)</span>
+                        <span>PO ERP: <b className="text-foreground">{pos.length}</b> ({sumByCur(pos ?? [])} non-PPN)</span>
                         <span>Dok Accurate: <b className="text-foreground">{accDocs.length}</b> ({sumByCur(accDocs)})</span>
                         <span>PO berpasangan: <b className="text-foreground">{pairedDocs.size}</b></span>
                     </div>
@@ -451,7 +451,7 @@ function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onC
                 </Button>
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
-                Di Dolibarr akan dibuat: faktur supplier dari baris PO (tertaut ke PO) → validasi → payment lunas ke rekening terpilih.
+                Di ERP akan dibuat: faktur supplier dari baris PO (tertaut ke PO) → validasi → payment lunas ke rekening terpilih.
             </p>
         </div>
     );

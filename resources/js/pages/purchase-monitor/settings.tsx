@@ -113,7 +113,7 @@ export default function PurchaseMonitorSettings({ vendors, principals, fxRates, 
                                                         <SelectItem value={NONE}>— tanpa principal —</SelectItem>
                                                         {principals.map((p) => (
                                                             <SelectItem key={principalKey(p)} value={principalKey(p)}>
-                                                                {p.name}{p.id === null && <span className="ml-1.5 text-[10px] text-muted-foreground">· Dolibarr</span>}
+                                                                {p.name}{p.id === null && <span className="ml-1.5 text-[10px] text-muted-foreground">· ERP</span>}
                                                             </SelectItem>
                                                         ))}
                                                     </SelectContent>

@@ -138,7 +138,7 @@ class DolibarrPurchaseService
                 'comment' => $note !== '' ? $note : 'Payment dicatat dari Mapson Apps (pembayaran riil di Accurate)',
             ]);
         } catch (\RuntimeException $e) {
-            throw new \RuntimeException($e->getMessage()." — faktur draft/id {$invoiceId} terlanjur dibuat di Dolibarr, periksa & bereskan di sana.", 0, $e);
+            throw new \RuntimeException($e->getMessage()." — faktur draft/id {$invoiceId} terlanjur dibuat di ERP, periksa & bereskan di sana.", 0, $e);
         }
 
         $ref = data_get($this->api('get', "supplierinvoices/{$invoiceId}"), 'ref', (string) $invoiceId);

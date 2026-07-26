@@ -351,7 +351,7 @@ class PurchaseMonitorController extends Controller
         ]);
 
         if (! $erp->enabled()) {
-            return back()->with('error', 'REST API Dolibarr belum dikonfigurasi (isi ERP_API_URL & ERP_API_KEY di .env).');
+            return back()->with('error', 'REST API ERP belum dikonfigurasi (isi ERP_API_URL & ERP_API_KEY di .env).');
         }
 
         try {
@@ -360,7 +360,7 @@ class PurchaseMonitorController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('success', "Faktur {$res['ref']} dibuat & payment dicatat di Dolibarr.");
+        return back()->with('success', "Faktur {$res['ref']} dibuat & payment dicatat di ERP.");
     }
 
     /**

@@ -58,7 +58,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-semibold">Rekonsiliasi PO — ERP (Dolibarr) vs Accurate</h1>
+                        <h1 className="text-2xl font-semibold">Rekonsiliasi PO — ERP vs Accurate</h1>
                         <p className="text-sm text-muted-foreground">
                             Satu baris per <b>nomor PO</b> (nomornya sama di kedua sistem), membandingkan <b>nilai total dokumen</b> dalam mata uang aslinya.
                         </p>
@@ -105,7 +105,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
                                         <TableHead>Vendor</TableHead>
                                         <TableHead>Tanggal</TableHead>
                                         <TableHead>Mata Uang</TableHead>
-                                        <TableHead className="text-right">ERP (Dolibarr)</TableHead>
+                                        <TableHead className="text-right">ERP</TableHead>
                                         <TableHead className="text-right">Accurate</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
                                         <TableHead>Proses</TableHead>
