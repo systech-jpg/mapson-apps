@@ -707,6 +707,31 @@ class AccurateSyncService
                     $lines += count($batch);
                     $docs++;
                 }
+
+                // Baris BIAYA (detailExpense): freight impor, PIB/custom clearance, storage —
+                // bahan analisa biaya impor di dashboard Purchasing. Nilai = mata uang dokumen.
+                $expBatch = [];
+                foreach ($d['detailExpense'] ?? [] as $ex) {
+                    if (empty($ex['id'])) {
+                        continue;
+                    }
+                    $expBatch[] = [
+                        'erp_id' => $ex['id'],
+                        'erp_doc_id' => $d['id'] ?? null,
+                        'doc_number' => $d['number'] ?? null,
+                        'trans_date' => $td,
+                        'vendor_name' => $vendor,
+                        'account_no' => is_array($ex['account'] ?? null) ? ($ex['account']['no'] ?? null) : null,
+                        'account_name' => is_array($ex['account'] ?? null) ? ($ex['account']['name'] ?? null) : ($ex['expenseName'] ?? null),
+                        'notes' => $ex['expenseNotes'] ?? null,
+                        'amount' => $ex['expenseAmount'] ?? 0,
+                        'synced_at' => $now,
+                    ];
+                }
+                if ($expBatch) {
+                    DB::table('dwh_stg_acc_purchase_expense')->upsert($expBatch, ['erp_id'],
+                        ['erp_doc_id', 'doc_number', 'trans_date', 'vendor_name', 'account_no', 'account_name', 'notes', 'amount', 'synced_at']);
+                }
             }
 
             $page++;

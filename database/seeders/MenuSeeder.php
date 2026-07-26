@@ -38,13 +38,16 @@ class MenuSeeder extends Seeder
             'sort_order' => 3,
         ]);
 
+        // Disembunyikan sementara (permintaan BOD 2026-07-26) — route tetap hidup, menu saja
+        // yang nonaktif; aktifkan lagi dengan is_active => true.
         $cost = $this->menu([
             'key' => 'dashboard-cost',
             'title' => 'Cost',
             'route' => 'dashboard.cost',
             'icon' => 'Receipt',
             'area' => 'reporting',
-            'sort_order' => 4,
+            'sort_order' => 5,
+            'is_active' => false,
         ]);
 
         $analytics = $this->menu([
@@ -53,7 +56,8 @@ class MenuSeeder extends Seeder
             'route' => 'analytics.index',
             'icon' => 'BarChart3',
             'area' => 'reporting',
-            'sort_order' => 5,
+            'sort_order' => 6,
+            'is_active' => false,
         ]);
 
         // TRIAL: product-level P&L (Colarose/Boneguard) — tmp_ tables.
@@ -63,7 +67,19 @@ class MenuSeeder extends Seeder
             'route' => 'dashboard.product',
             'icon' => 'FlaskConical',
             'area' => 'reporting',
-            'sort_order' => 6,
+            'sort_order' => 7,
+            'is_active' => false,
+        ]);
+
+        // Dashboard eksekutif Purchasing: spending per principal, status PR/PO, lead time,
+        // utang & CN principal, analisa biaya impor.
+        $this->menu([
+            'key' => 'dashboard-purchasing',
+            'title' => 'Purchasing',
+            'route' => 'dashboard.purchasing',
+            'icon' => 'ShoppingCart',
+            'area' => 'reporting',
+            'sort_order' => 4,
         ]);
 
         // Pivot Data Penjualan tidak punya menu sendiri — diakses via kartu shortcut di
@@ -254,7 +270,7 @@ class MenuSeeder extends Seeder
                 'route' => $attributes['route'] ?? null,
                 'icon' => $attributes['icon'] ?? null,
                 'sort_order' => $attributes['sort_order'] ?? 0,
-                'is_active' => true,
+                'is_active' => $attributes['is_active'] ?? true,
             ],
         );
     }
