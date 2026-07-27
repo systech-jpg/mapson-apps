@@ -401,13 +401,31 @@ class PurchasingDashboardController extends Controller
             ->selectRaw("e.notes, {$idrExpr} AS idr, ({$catExpr} = 'Pajak (PPN/PPh)') AS is_tax")
             ->get();
 
+        // Peta normalisasi ref: catatan biaya sering salah tulis (kelebihan nol, tanpa segmen
+        // "I") — cocokkan by (bulan yymm + nomor urut) ke ref PO yang benar-benar ada.
+        $canon = function (string $ref): ?string {
+            return preg_match('/(\d{4})\/(\d+)\s*$/', $ref, $m) ? $m[1].'|'.(int) $m[2] : null;
+        };
+        $canonMap = [];
+        $knownRefs = DB::table('dwh_stg_acc_purchase_invoice_item')->whereNotNull('po_number')->where('po_number', '<>', '')->distinct()->pluck('po_number')
+            ->merge(DB::table('dwh_stg_acc_purchase_order')->pluck('number'))
+            ->unique();
+        foreach ($knownRefs as $kr) {
+            if ($k = $canon($kr)) {
+                $canonMap[$k] = strtoupper($kr);
+            }
+        }
+
         $cost = [];
         $tax = [];
         $nCost = [];
         $unattr = ['cost' => 0.0, 'tax' => 0.0, 'n' => 0];
         foreach ($exp as $r) {
             if (preg_match_all('/PO[\/-][A-Z]{0,4}\/?\d{4}\/\d{4,6}/i', (string) $r->notes, $mm)) {
-                $refs = array_unique(array_map('strtoupper', $mm[0]));
+                $refs = array_unique(array_map(
+                    fn ($x) => $canonMap[$canon($x) ?? ''] ?? strtoupper($x),
+                    $mm[0]
+                ));
                 foreach ($refs as $ref) {
                     $bag = $r->is_tax ? 'tax' : 'cost';
                     ${$bag}[$ref] = (${$bag}[$ref] ?? 0) + (float) $r->idr / count($refs);
@@ -437,18 +455,31 @@ class PurchasingDashboardController extends Controller
             ->keyBy('po_number');
 
         $refs = collect(array_keys($cost))->merge(array_keys($tax))->merge($goods->keys())->unique();
-        $rows = $refs->map(function ($ref) use ($cost, $tax, $nCost, $goods) {
+
+        // Fallback principal utk ref PO yang realisasi fakturnya belum ada di staging:
+        // ambil dari PO Accurate (vendor transaksi) + mapping — supaya principal transaksi
+        // tetap muncul di daftar, bukan jatuh ke "(tak dikenal)".
+        $accPo = DB::table('dwh_stg_acc_purchase_order as o')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 'o.vendor_name')
+            ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
+            ->whereIn('o.number', $refs->diff($goods->keys())->values()->all())
+            ->selectRaw("o.number, COALESCE(p.name, o.vendor_name) AS principal, o.trans_date,
+                (COALESCE(m.default_currency,'IDR') <> 'IDR' OR COALESCE(o.currency_code,'IDR') <> 'IDR') AS is_import")
+            ->get()->keyBy('number');
+
+        $rows = $refs->map(function ($ref) use ($cost, $tax, $nCost, $goods, $accPo) {
             $g = $goods[$ref] ?? null;
+            $a = $accPo[$ref] ?? null;
             $c = (float) ($cost[$ref] ?? 0);
-            $isImport = $g ? (bool) $g->is_import : true;
+            $isImport = $g ? (bool) $g->is_import : ($a ? (bool) $a->is_import || $c >= 1 : true);
             if (! $isImport && $c < 1) {
                 return null; // PO lokal tanpa biaya impor — di luar cakupan tab ini.
             }
 
             return [
                 'po' => $ref,
-                'principal' => $g->principal ?? null,
-                'tanggal' => $g->tanggal ?? null,
+                'principal' => $g->principal ?? $a->principal ?? null,
+                'tanggal' => $g->tanggal ?? $a->trans_date ?? null,
                 'goods' => $g ? round((float) $g->goods) : 0,
                 'cost' => round($c),
                 'tax' => round((float) ($tax[$ref] ?? 0)),
