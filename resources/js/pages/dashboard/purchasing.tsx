@@ -68,26 +68,20 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
             .catch(() => setPoCosts({ rows: [], unattributed: { cost: 0, tax: 0, n: 0 } }));
     }, []);
     const impPrincipals = useMemo(() => [...new Set((poCosts?.rows ?? []).map((r) => r.principal).filter(Boolean))].sort() as string[], [poCosts]);
-    // Bulan hanya berlaku saat tahun (filter header) dipilih — sub-filter breakdown.
-    const [impMonth, setImpMonth] = useState<number | null>(null);
-    useEffect(() => { setImpMonth(null); }, [year]);
-    const poRowsFiltered = useMemo(() => (poCosts?.rows ?? []).filter((r) => {
-        if (!year) return true;
-        if (!r.tanggal?.startsWith(year)) return false;
-        return impMonth === null || Number(r.tanggal.slice(5, 7)) === impMonth;
-    }), [poCosts, year, impMonth]);
-    // Statistik: "semua principal tanpa bulan" pakai angka global server (sudah ikut tahun);
-    // selain itu dihitung dari alokasi per-PO yang terfilter.
+    // Baris per-PO mengikuti filter tahun header.
+    const poRowsFiltered = useMemo(() => (poCosts?.rows ?? []).filter((r) => !year || (r.tanggal?.startsWith(year) ?? false)), [poCosts, year]);
+    // Statistik: "semua principal" pakai angka global server (sudah ikut tahun);
+    // principal terpilih dihitung dari alokasi per-PO yang terfilter.
     const impStats = useMemo(() => {
-        if (!impPrincipal && impMonth === null) {
+        if (!impPrincipal) {
             return { goods: importCost.import_goods_idr, cost: importCost.cost_idr, tax: importCost.cost_with_tax_idr - importCost.cost_idr, rate: importCost.rate_pct, alloc: false };
         }
-        const rows = poRowsFiltered.filter((r) => !impPrincipal || r.principal === impPrincipal);
+        const rows = poRowsFiltered.filter((r) => r.principal === impPrincipal);
         const goods = rows.reduce((a, r) => a + r.goods, 0);
         const cost = rows.reduce((a, r) => a + r.cost, 0);
         const tax = rows.reduce((a, r) => a + r.tax, 0);
         return { goods, cost, tax, rate: goods > 0 && cost >= 1 ? Math.round(cost / goods * 10000) / 100 : null, alloc: true };
-    }, [impPrincipal, impMonth, poRowsFiltered, importCost]);
+    }, [impPrincipal, poRowsFiltered, importCost]);
 
     const chartData = [
         ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, principal: r.principal, idr: r.idr })),
@@ -100,12 +94,17 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
         <DashboardLayout breadcrumbs={breadcrumbs}>
             <Head title="Purchasing" />
             <div className="flex flex-1 flex-col gap-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-end justify-between gap-3">
                     <div>
                         <h1 className="text-2xl font-semibold">Purchasing — Executive Dashboard</h1>
                         <p className="text-sm text-muted-foreground">
                             Pembelian dari Accurate & ERP: spending per principal, status PR/PO, lead time, utang & CN, dan biaya impor.
                         </p>
+                        {tab === 'import' && (
+                            <div className="mt-2">
+                                <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
+                            </div>
+                        )}
                     </div>
                     <div className="flex gap-1">
                         <Seg active={!year} onClick={() => setYear(null)}>Semua</Seg>
@@ -114,25 +113,10 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </div>
 
                 <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <TabsList className="w-fit">
-                        <TabsTrigger value="summary">Summary Executive</TabsTrigger>
-                        <TabsTrigger value="import">Analisa Biaya Impor</TabsTrigger>
-                    </TabsList>
-                    {tab === 'import' && (
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                            {year && (
-                                <div className="flex flex-wrap justify-end gap-1">
-                                    <Seg active={impMonth === null} onClick={() => setImpMonth(null)}>Semua bulan</Seg>
-                                    {BULAN.map((b, i) => (
-                                        <Seg key={b} active={impMonth === i + 1} onClick={() => setImpMonth(impMonth === i + 1 ? null : i + 1)}>{b.slice(0, 3)}</Seg>
-                                    ))}
-                                </div>
-                            )}
-                            <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
-                        </div>
-                    )}
-                </div>
+                <TabsList className="w-fit">
+                    <TabsTrigger value="summary">Summary Executive</TabsTrigger>
+                    <TabsTrigger value="import">Analisa Biaya Impor</TabsTrigger>
+                </TabsList>
 
                 <TabsContent value="summary" className="mt-0 flex flex-col gap-4">
                 {/* KPI — klik untuk drill detail */}
@@ -269,7 +253,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
 
                 <TabsContent value="import" className="mt-0 flex flex-col gap-4">
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        <Kpi label={`Nilai barang impor${year ? ` ${year}` : ''}${impMonth ? ` ${BULAN[impMonth - 1]}` : ''}`} value={`Rp ${rp(impStats.goods)}`}
+                        <Kpi label={`Nilai barang impor${year ? ` ${year}` : ""}`} value={`Rp ${rp(impStats.goods)}`}
                             sub={impStats.alloc ? `${impPrincipal ?? 'semua principal'} — realisasi PO teralokasi` : 'baris item vendor bermata uang asing'} />
                         <Kpi label="Biaya impor (non-pajak)" value={`Rp ${rp(impStats.cost)}`}
                             sub={impStats.alloc ? 'alokasi dari ref PO di catatan biaya' : 'freight, PIB/bea, storage, dll'}
