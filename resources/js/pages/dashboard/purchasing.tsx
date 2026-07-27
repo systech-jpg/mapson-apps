@@ -93,7 +93,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                 <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 4, bottom: 4 }}>
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-muted" />
                                     <XAxis type="number" tickFormatter={(v) => rp(v)} tick={{ fontSize: 11 }} />
-                                    <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
+                                    <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 10 }} interval={0} />
                                     <Tooltip formatter={(v: number) => [`Rp ${num(v)}`, 'Nilai']} labelFormatter={(_, p) => (p?.[0]?.payload?.full ?? '') as string} />
                                     <Bar dataKey="idr" fill="var(--primary)" radius={[0, 4, 4, 0]} className="cursor-pointer"
                                         onClick={(d: { payload?: { principal?: string } }) => d?.payload?.principal && setPivotPrincipal(d.payload.principal)} />
