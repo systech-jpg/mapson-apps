@@ -710,6 +710,7 @@ function ImportPoCard({ data, principal }: { data: { rows: PoCostRow[]; unattrib
                 </div>
                 <p className="text-xs text-muted-foreground">
                     Klik principal untuk daftar PO-nya, klik PO untuk biaya-biaya terkaitnya. Nilai barang = realisasi faktur (IDR); biaya dialokasikan dari ref PO di catatan.
+                    Principal yang impornya ditangani agen (mis. Asia Actual) biayanya melekat di harga faktur — tampil tanpa biaya terpisah, rate "–".
                     {data && data.unattributed.cost > 0 && ` Biaya tanpa ref PO: Rp ${num(data.unattributed.cost)} (${num(data.unattributed.n)} baris) — tak bisa dialokasikan.`}
                 </p>
             </CardHeader>

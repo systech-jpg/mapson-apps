@@ -439,6 +439,19 @@ class PurchasingDashboardController extends Controller
             }
         }
 
+        // Vendor rantai impor via agen (mis. Asia Actual utk Globus): faktur IDR + fee sehingga
+        // tak ada baris biaya terpisah, tapi PO ERP-nya valas → tetap dihitung principal impor.
+        $agentNorms = [];
+        try {
+            $p = config('erp.prefix');
+            $agentNorms = array_map(fn ($r) => $r->n, DB::connection(config('erp.connection'))->select(
+                'SELECT DISTINCT '.$this->normSqlErp('so.nom')." AS n
+                 FROM {$p}commande_fournisseur c
+                 JOIN {$p}societe so ON so.rowid = c.fk_soc
+                 WHERE c.fk_statut IN (2,3,4,5) AND COALESCE(NULLIF(c.multicurrency_code,''),'IDR') <> 'IDR'"));
+        } catch (\Throwable) {
+        }
+
         // Nilai barang per PO (realisasi faktur) + principal + penanda impor (vendor valas).
         $goods = DB::table('dwh_stg_acc_purchase_invoice_item as s')
             ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
@@ -449,9 +462,15 @@ class PurchasingDashboardController extends Controller
             ->whereNotNull('s.po_number')->where('s.po_number', '<>', '')
             ->groupBy('s.po_number')
             ->selectRaw("s.po_number, MAX(COALESCE(p.name, s.vendor_name)) AS principal,
+                MAX(s.vendor_name) AS vendor_name,
                 MIN(s.trans_date) AS tanggal, SUM(".$this->idrExpr().") AS goods,
                 MAX(m.default_currency <> 'IDR') AS is_import")
             ->get()
+            ->each(function ($g) use ($agentNorms) {
+                if (! $g->is_import && in_array($this->norm($g->vendor_name), $agentNorms, true)) {
+                    $g->is_import = 1; // rantai impor via agen (PO ERP valas)
+                }
+            })
             ->keyBy('po_number');
 
         $refs = collect(array_keys($cost))->merge(array_keys($tax))->merge($goods->keys())->unique();
@@ -484,7 +503,9 @@ class PurchasingDashboardController extends Controller
                 'cost' => round($c),
                 'tax' => round((float) ($tax[$ref] ?? 0)),
                 'n_cost' => (int) ($nCost[$ref] ?? 0),
-                'rate_pct' => $g && (float) $g->goods > 0 ? round($c / (float) $g->goods * 100, 2) : null,
+                // Rate hanya bila ada biaya teralokasi — impor via agen (biaya melekat di harga
+                // faktur, mis. Asia Actual) tampil "–", bukan 0% yang menyesatkan.
+                'rate_pct' => $c >= 1 && $g && (float) $g->goods > 0 ? round($c / (float) $g->goods * 100, 2) : null,
             ];
         })->filter()->sortByDesc('cost')->values();
 
@@ -794,5 +815,11 @@ class PurchasingDashboardController extends Controller
     protected function norm(?string $s): string
     {
         return str_replace('pt', '', str_replace([' ', '.', ','], '', strtolower((string) $s)));
+    }
+
+    /** Versi SQL dari norm() — harus identik dengan norm() dan normSql PurchaseMonitorController. */
+    protected function normSqlErp(string $col): string
+    {
+        return "REPLACE(REPLACE(REPLACE(REPLACE(LOWER($col),' ',''),'.',''),',',''),'pt','')";
     }
 }
