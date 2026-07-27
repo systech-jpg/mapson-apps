@@ -52,6 +52,7 @@ const rp = (n: number) => {
 
 export default function PurchasingDashboard({ year, years, spending, status, leadTime, balances, importCost }: Props) {
     const setYear = (y: string | null) => router.get(route('dashboard.purchasing'), y ? { year: y } : {}, { preserveScroll: true, preserveState: true });
+    const [tab, setTab] = useState('summary');
     const [drill, setDrill] = useState<DrillSpec | null>(null);
     const [impDrill, setImpDrill] = useState<ImpDrill | null>(null);
     const [pivotPrincipal, setPivotPrincipal] = useState<string | null>(null);
@@ -112,11 +113,26 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     </div>
                 </div>
 
-                <Tabs defaultValue="summary" className="flex flex-1 flex-col gap-4">
-                <TabsList className="w-fit">
-                    <TabsTrigger value="summary">Summary Executive</TabsTrigger>
-                    <TabsTrigger value="import">Analisa Biaya Impor</TabsTrigger>
-                </TabsList>
+                <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <TabsList className="w-fit">
+                        <TabsTrigger value="summary">Summary Executive</TabsTrigger>
+                        <TabsTrigger value="import">Analisa Biaya Impor</TabsTrigger>
+                    </TabsList>
+                    {tab === 'import' && (
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                            {year && (
+                                <div className="flex flex-wrap justify-end gap-1">
+                                    <Seg active={impMonth === null} onClick={() => setImpMonth(null)}>Semua bulan</Seg>
+                                    {BULAN.map((b, i) => (
+                                        <Seg key={b} active={impMonth === i + 1} onClick={() => setImpMonth(impMonth === i + 1 ? null : i + 1)}>{b.slice(0, 3)}</Seg>
+                                    ))}
+                                </div>
+                            )}
+                            <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
+                        </div>
+                    )}
+                </div>
 
                 <TabsContent value="summary" className="mt-0 flex flex-col gap-4">
                 {/* KPI — klik untuk drill detail */}
@@ -252,18 +268,6 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </TabsContent>
 
                 <TabsContent value="import" className="mt-0 flex flex-col gap-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
-                        {year && (
-                            <div className="flex flex-wrap gap-1">
-                                <Seg active={impMonth === null} onClick={() => setImpMonth(null)}>Semua bulan</Seg>
-                                {BULAN.map((b, i) => (
-                                    <Seg key={b} active={impMonth === i + 1} onClick={() => setImpMonth(impMonth === i + 1 ? null : i + 1)}>{b.slice(0, 3)}</Seg>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <Kpi label={`Nilai barang impor${year ? ` ${year}` : ''}${impMonth ? ` ${BULAN[impMonth - 1]}` : ''}`} value={`Rp ${rp(impStats.goods)}`}
                             sub={impStats.alloc ? `${impPrincipal ?? 'semua principal'} — realisasi PO teralokasi` : 'baris item vendor bermata uang asing'} />
@@ -643,7 +647,7 @@ function PrincipalPicker({ principals, value, onChange }: { principals: string[]
     const filtered = principals.filter((p) => !s || p.toLowerCase().includes(s));
 
     return (
-        <div className="relative w-full max-w-md">
+        <div className="relative w-72">
             <button type="button" onClick={() => { setOpen((v) => !v); setQ(''); }}
                 className="flex h-9 w-full items-center justify-between rounded-md border bg-background px-3 text-sm shadow-xs transition-colors hover:bg-accent">
                 <span className={value ? '' : 'text-muted-foreground'}>{value ?? '— semua principal —'}</span>
