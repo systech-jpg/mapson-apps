@@ -305,10 +305,16 @@ class PurchasingDashboardController extends Controller
     public function kpiDrill(Request $request): \Illuminate\Http\JsonResponse
     {
         $data = $request->validate([
-            'type' => ['required', 'in:purchase,open_po'],
+            'type' => ['required', 'in:purchase,open_po,pr_status,po_status'],
             'year' => ['nullable', 'regex:/^\d{4}$/'],
+            'principal' => ['nullable', 'string', 'max:255'],
+            'statut' => ['nullable', 'integer'],
         ]);
         $year = $data['year'] ?? null;
+
+        if ($data['type'] === 'pr_status' || $data['type'] === 'po_status') {
+            return $this->statusDrill($data['type'], (int) ($data['statut'] ?? 0), $year);
+        }
 
         if ($data['type'] === 'purchase') {
             // Kunci tracing = NOMOR PO ERP (po_number per baris faktur); dokumen Accurate
@@ -322,6 +328,7 @@ class PurchasingDashboardController extends Controller
                 })
                 ->whereNotNull('s.trans_date')
                 ->when($year, fn ($q) => $q->whereRaw('LEFT(s.trans_date,4) = ?', [$year]))
+                ->when($data['principal'] ?? null, fn ($q, $pr) => $q->havingRaw('principal = ?', [$pr]))
                 ->groupBy('po', 'has_po', 's.vendor_name', 'principal', 'cur')
                 ->selectRaw("COALESCE(NULLIF(s.po_number,''), s.doc_number) AS po,
                     (s.po_number IS NOT NULL AND s.po_number <> '') AS has_po,
@@ -374,6 +381,60 @@ class PurchasingDashboardController extends Controller
             'ref' => $r->ref, 'principal' => $r->principal, 'vendor' => $r->vendor,
             'tanggal' => $r->tanggal, 'status' => $poLabels[(int) $r->fk_statut] ?? (string) $r->fk_statut,
             'cur' => $r->cur, 'total' => (float) $r->total, 'umur' => (int) $r->umur,
+            'acc_status' => $accPos[$r->ref]->status_name ?? null,
+            'acc_percent' => isset($accPos[$r->ref]) && $accPos[$r->ref]->percent_shipped !== null ? (float) $accPos[$r->ref]->percent_shipped : null,
+        ])->values()]);
+    }
+
+    /** Drill status: daftar dokumen PR (supplier_proposal) atau PO (commande_fournisseur) per status. */
+    protected function statusDrill(string $type, int $statut, ?string $year): \Illuminate\Http\JsonResponse
+    {
+        $p = config('erp.prefix');
+        $appDb = DB::connection()->getDatabaseName();
+
+        if ($type === 'pr_status') {
+            $rows = collect(DB::connection(config('erp.connection'))->select("
+                SELECT sp.ref, COALESCE(pp.name, so.nom) AS principal, so.nom AS vendor,
+                       LEFT(sp.datec,10) AS tanggal,
+                       COALESCE(NULLIF(sp.multicurrency_code,''),'IDR') AS cur,
+                       COALESCE(sp.multicurrency_total_ht, sp.total_ht) AS total
+                FROM {$p}supplier_proposal sp
+                LEFT JOIN {$p}societe so ON so.rowid = sp.fk_soc
+                LEFT JOIN `{$appDb}`.pricing_principals pp ON pp.erp_societe_id = so.rowid
+                WHERE sp.fk_statut = ?".($year ? ' AND LEFT(sp.datec,4) = ?' : '').'
+                ORDER BY sp.datec DESC',
+                $year ? [$statut, $year] : [$statut]));
+
+            return response()->json(['rows' => $rows->map(fn ($r) => [
+                'ref' => $r->ref, 'principal' => $r->principal, 'vendor' => $r->vendor,
+                'tanggal' => $r->tanggal, 'cur' => $r->cur, 'total' => (float) $r->total,
+            ])->values()]);
+        }
+
+        // po_status — struktur sama dengan open_po tapi utk satu status persis (termasuk 0/5/6/9).
+        $pos = collect(DB::connection(config('erp.connection'))->select("
+            SELECT c.ref, COALESCE(pp.name, so.nom) AS principal, so.nom AS vendor,
+                   LEFT(COALESCE(c.date_commande, c.date_creation),10) AS tanggal,
+                   COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                   c.multicurrency_total_ttc AS total,
+                   DATEDIFF(CURDATE(), COALESCE(c.date_commande, c.date_creation)) AS umur
+            FROM {$p}commande_fournisseur c
+            LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+            LEFT JOIN `{$appDb}`.pricing_principals pp ON pp.erp_societe_id = so.rowid
+            WHERE c.fk_statut = ?
+              AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'
+              ".($year ? ' AND LEFT(COALESCE(c.date_commande, c.date_creation),4) = ?' : '').'
+            ORDER BY tanggal DESC',
+            $year ? [$statut, $year] : [$statut]));
+
+        $accPos = DB::table('dwh_stg_acc_purchase_order')
+            ->whereIn('number', $pos->pluck('ref')->all())
+            ->get(['number', 'status_name', 'percent_shipped'])
+            ->keyBy('number');
+
+        return response()->json(['rows' => $pos->map(fn ($r) => [
+            'ref' => $r->ref, 'principal' => $r->principal, 'vendor' => $r->vendor,
+            'tanggal' => $r->tanggal, 'cur' => $r->cur, 'total' => (float) $r->total, 'umur' => (int) $r->umur,
             'acc_status' => $accPos[$r->ref]->status_name ?? null,
             'acc_percent' => isset($accPos[$r->ref]) && $accPos[$r->ref]->percent_shipped !== null ? (float) $accPos[$r->ref]->percent_shipped : null,
         ])->values()]);

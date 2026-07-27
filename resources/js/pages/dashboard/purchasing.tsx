@@ -16,9 +16,11 @@ interface LeadRow { principal: string; n_po: number; n_arrived: number; d_req_po
 interface BalanceRow { principal: string; vendor: string; cur: string; amount: number; idr: number }
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
-type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit';
+type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit' | 'pr_status' | 'po_status';
+interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string }
 interface PurchaseDoc { po: string; has_po: boolean; docs: string; n_docs: number; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
-interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
+interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status?: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
+interface PrRow { ref: string; principal: string; vendor: string; tanggal: string; cur: string; total: number }
 interface Props {
     year: string | null;
     years: string[];
@@ -43,11 +45,11 @@ const rp = (n: number) => {
 
 export default function PurchasingDashboard({ year, years, spending, status, leadTime, balances, importCost }: Props) {
     const setYear = (y: string | null) => router.get(route('dashboard.purchasing'), y ? { year: y } : {}, { preserveScroll: true, preserveState: true });
-    const [drill, setDrill] = useState<DrillType | null>(null);
+    const [drill, setDrill] = useState<DrillSpec | null>(null);
 
     const chartData = [
-        ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, idr: r.idr })),
-        ...(spending.others_n > 0 ? [{ name: `Lainnya (${spending.others_n})`, full: `${spending.others_n} vendor lain`, idr: spending.others_idr }] : []),
+        ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, principal: r.principal, idr: r.idr })),
+        ...(spending.others_n > 0 ? [{ name: `Lainnya (${spending.others_n})`, full: `${spending.others_n} vendor lain`, principal: undefined as string | undefined, idr: spending.others_idr }] : []),
     ];
 
     const maxLead = Math.max(1, ...leadTime.map((r) => r.d_total ?? ((r.d_req_po ?? 0) + (r.d_po_order ?? 0) + (r.d_order_arrive ?? 0))));
@@ -71,10 +73,10 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
 
                 {/* KPI — klik untuk drill detail */}
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                    <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill('purchase')} />
-                    <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''} · belum diterima penuh`} onClick={() => setDrill('open_po')} />
-                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr)}` : '—'} sub={balances.available ? `${balances.payable.length} vendor · saldo live Accurate` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill('payable') : undefined} />
-                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill('credit') : undefined} />
+                    <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill({ type: 'purchase' })} />
+                    <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''} · belum diterima penuh`} onClick={() => setDrill({ type: 'open_po' })} />
+                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr)}` : '—'} sub={balances.available ? `${balances.payable.length} vendor · saldo live Accurate` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'payable' }) : undefined} />
+                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'credit' }) : undefined} />
                 </div>
 
                 {/* Baris 2: spending + status */}
@@ -82,7 +84,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base">Purchase by Principal</CardTitle>
-                            <p className="text-xs text-muted-foreground">Nilai faktur pembelian Accurate, terkonversi IDR{year ? ` — ${year}` : ' — semua tahun'}.</p>
+                            <p className="text-xs text-muted-foreground">Nilai pembelian terkonversi IDR{year ? ` — ${year}` : ' — semua tahun'} · klik bar untuk rincian per PO.</p>
                         </CardHeader>
                         <CardContent className="h-80">
                             <ResponsiveContainer width="100%" height="100%">
@@ -91,7 +93,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                     <XAxis type="number" tickFormatter={(v) => rp(v)} tick={{ fontSize: 11 }} />
                                     <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
                                     <Tooltip formatter={(v: number) => [`Rp ${num(v)}`, 'Nilai']} labelFormatter={(_, p) => (p?.[0]?.payload?.full ?? '') as string} />
-                                    <Bar dataKey="idr" fill="var(--primary)" radius={[0, 4, 4, 0]} />
+                                    <Bar dataKey="idr" fill="var(--primary)" radius={[0, 4, 4, 0]} className="cursor-pointer"
+                                        onClick={(d: { payload?: { principal?: string } }) => d?.payload?.principal && setDrill({ type: 'purchase', principal: d.payload.principal })} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </CardContent>
@@ -105,8 +108,10 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                             </p>
                         </CardHeader>
                         <CardContent className="grid gap-4 sm:grid-cols-2">
-                            <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]} />
-                            <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]} />
+                            <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]}
+                                onPick={(r) => setDrill({ type: 'pr_status', statut: r.statut, label: `Request PO — ${r.label}` })} />
+                            <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]}
+                                onPick={(r) => setDrill({ type: 'po_status', statut: r.statut, label: `PO — ${r.label}` })} />
                         </CardContent>
                     </Card>
                 </div>
@@ -247,54 +252,72 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </div>
             </div>
 
-            <KpiDrillDialog type={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
+            <KpiDrillDialog spec={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
         </AppLayout>
     );
 }
 
 const DRILL_TITLE: Record<DrillType, string> = {
-    purchase: 'Detail Total Purchase — per dokumen faktur',
+    purchase: 'Detail Total Purchase — per PO',
     open_po: 'Detail Open PO — PO berjalan, belum diterima penuh',
     payable: 'Detail Utang Vendor (Payable)',
     credit: 'Detail Saldo CN / Kredit',
+    pr_status: 'Request PO',
+    po_status: 'Purchase Order',
 };
 
-/** Drill 4 kartu KPI: purchase & open_po fetch endpoint; payable & credit dari props (live). */
-function KpiDrillDialog({ type, year, balances, onClose }: {
-    type: DrillType | null; year: string | null;
+/** Drill dashboard: purchase/open_po/status fetch endpoint; payable & credit dari props (live). */
+function KpiDrillDialog({ spec, year, balances, onClose }: {
+    spec: DrillSpec | null; year: string | null;
     balances: Props['balances']; onClose: () => void;
 }) {
+    const type = spec?.type ?? null;
     const [docs, setDocs] = useState<PurchaseDoc[] | null>(null);
     const [pos, setPos] = useState<OpenPoRow[] | null>(null);
+    const [prs, setPrs] = useState<PrRow[] | null>(null);
     const [q, setQ] = useState('');
 
     useEffect(() => {
-        setDocs(null); setPos(null); setQ('');
-        if (type !== 'purchase' && type !== 'open_po') return;
-        fetch(route('dashboard.purchasing.kpi-drill') + `?type=${type}${year ? `&year=${year}` : ''}`, { headers: { Accept: 'application/json' } })
+        setDocs(null); setPos(null); setPrs(null); setQ('');
+        if (!spec || spec.type === 'payable' || spec.type === 'credit') return;
+        const params = new URLSearchParams({ type: spec.type });
+        if (year) params.set('year', year);
+        if (spec.principal) params.set('principal', spec.principal);
+        if (spec.statut !== undefined) params.set('statut', String(spec.statut));
+        fetch(route('dashboard.purchasing.kpi-drill') + `?${params}`, { headers: { Accept: 'application/json' } })
             .then((r) => r.json())
-            .then((d) => (type === 'purchase' ? setDocs(d.rows ?? []) : setPos(d.rows ?? [])))
-            .catch(() => (type === 'purchase' ? setDocs([]) : setPos([])));
-    }, [type, year]);
+            .then((d) => {
+                if (spec.type === 'purchase') setDocs(d.rows ?? []);
+                else if (spec.type === 'pr_status') setPrs(d.rows ?? []);
+                else setPos(d.rows ?? []);
+            })
+            .catch(() => { setDocs([]); setPos([]); setPrs([]); });
+    }, [spec, year]);
 
     const s = q.trim().toLowerCase();
     const fDocs = useMemo(() => (docs ?? []).filter((d) => !s || d.po.toLowerCase().includes(s) || (d.docs ?? '').toLowerCase().includes(s) || d.vendor.toLowerCase().includes(s) || d.principal.toLowerCase().includes(s)), [docs, s]);
     const fPos = useMemo(() => (pos ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [pos, s]);
+    const fPrs = useMemo(() => (prs ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [prs, s]);
     const fBal = useMemo(() => {
         const rows = type === 'payable' ? balances.payable : type === 'credit' ? balances.credit : [];
         return rows.filter((r) => !s || r.vendor.toLowerCase().includes(s) || r.principal.toLowerCase().includes(s));
     }, [type, balances, s]);
 
-    const loading = (type === 'purchase' && docs === null) || (type === 'open_po' && pos === null);
+    const loading = (type === 'purchase' && docs === null) || ((type === 'open_po' || type === 'po_status') && pos === null) || (type === 'pr_status' && prs === null);
 
     return (
-        <Dialog open={type !== null} onOpenChange={(o) => !o && onClose()}>
+        <Dialog open={spec !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>{type ? DRILL_TITLE[type] : ''}{year ? ` · ${year}` : ''}</DialogTitle>
+                    <DialogTitle>
+                        {spec?.label ?? (type ? DRILL_TITLE[type] : '')}
+                        {spec?.principal ? ` — ${spec.principal}` : ''}{year ? ` · ${year}` : ''}
+                    </DialogTitle>
                     <DialogDescription>
-                        {type === 'purchase' && 'Per nomor PO ERP (kunci tracing lintas sistem), terurut nilai IDR terbesar; dokumen Accurate tampil sebagai info sekunder.'}
+                        {type === 'purchase' && 'Per nomor PO ERP (kunci tracing lintas sistem), terurut nilai IDR terbesar; dokumen sumber tampil sebagai info sekunder.'}
                         {type === 'open_po' && 'PO ERP status Divalidasi/Approved/Ordered/Diterima sebagian, terurut paling lama — umur besar tanpa progres = kandidat ditutup/dibereskan.'}
+                        {type === 'pr_status' && 'Daftar Request PO (RPO) berstatus ini, terurut terbaru.'}
+                        {type === 'po_status' && 'Daftar PO berstatus ini, terurut terbaru, dengan progres penerimaan.'}
                         {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Accurate saat halaman dimuat.'}
                     </DialogDescription>
                 </DialogHeader>
@@ -334,7 +357,7 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                             ))}
                         </TableBody>
                     </Table>
-                ) : type === 'open_po' ? (
+                ) : type === 'open_po' || type === 'po_status' ? (
                     <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
                         <TableHeader>
                             <TableRow>
@@ -342,20 +365,20 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                                 <TableHead>Principal / Vendor</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead className="text-right">Umur (hari)</TableHead>
-                                <TableHead>Status ERP</TableHead>
+                                {type === 'open_po' && <TableHead>Status ERP</TableHead>}
                                 <TableHead>Progres Accurate</TableHead>
                                 <TableHead className="text-right">Nilai</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {fPos.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada PO terbuka.</TableCell></TableRow>}
+                            {fPos.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada PO.</TableCell></TableRow>}
                             {fPos.map((r) => (
                                 <TableRow key={r.ref}>
                                     <TableCell className="font-medium whitespace-nowrap">{r.ref}</TableCell>
                                     <TableCell className="max-w-52 truncate" title={r.vendor}>{r.principal}</TableCell>
                                     <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal}</TableCell>
                                     <TableCell className={`text-right tabular-nums ${r.umur > 90 ? 'font-semibold text-red-600 dark:text-red-400' : r.umur > 30 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{num(r.umur)}</TableCell>
-                                    <TableCell><Badge variant="outline" className="text-[10px]">{r.status}</Badge></TableCell>
+                                    {type === 'open_po' && <TableCell><Badge variant="outline" className="text-[10px]">{r.status}</Badge></TableCell>}
                                     <TableCell className="whitespace-nowrap">
                                         {r.acc_status
                                             ? <span className={`text-[11px] ${r.acc_status === 'Terproses' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
@@ -363,6 +386,28 @@ function KpiDrillDialog({ type, year, balances, onClose }: {
                                             </span>
                                             : <span className="text-muted-foreground/50 text-[11px]">tak ada di Accurate</span>}
                                     </TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap"><span className="mr-1 text-[10px] text-muted-foreground">{r.cur}</span>{num(r.total, 2)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                ) : type === 'pr_status' ? (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>RPO</TableHead>
+                                <TableHead>Principal / Vendor</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead className="text-right">Nilai (non-PPN)</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {fPrs.length === 0 && <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Tidak ada RPO.</TableCell></TableRow>}
+                            {fPrs.map((r) => (
+                                <TableRow key={r.ref}>
+                                    <TableCell className="font-medium whitespace-nowrap">{r.ref}</TableCell>
+                                    <TableCell className="max-w-56 truncate" title={r.vendor}>{r.principal}</TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap"><span className="mr-1 text-[10px] text-muted-foreground">{r.cur}</span>{num(r.total, 2)}</TableCell>
                                 </TableRow>
                             ))}
@@ -416,20 +461,21 @@ function MiniStat({ label, value, accent }: { label: string; value: string; acce
     );
 }
 
-function StatusList({ title, rows, total, done }: { title: string; rows: StatusRow[]; total: number; done: number[] }) {
+function StatusList({ title, rows, total, done, onPick }: { title: string; rows: StatusRow[]; total: number; done: number[]; onPick?: (r: StatusRow) => void }) {
     return (
         <div>
             <p className="mb-1.5 text-xs font-medium">{title} <span className="text-muted-foreground">({num(total)})</span></p>
             <div className="space-y-1">
                 {rows.map((r) => (
-                    <div key={r.statut} className="flex items-center gap-2 text-xs">
+                    <button key={r.statut} type="button" onClick={() => onPick?.(r)}
+                        className="flex w-full items-center gap-2 rounded-sm text-left text-xs transition-colors hover:bg-accent">
                         <span className="w-32 shrink-0 truncate">{r.label}</span>
                         <div className="h-3.5 flex-1 overflow-hidden rounded-sm bg-muted/40">
                             <div className={`h-full rounded-sm ${done.includes(r.statut) ? 'bg-emerald-500/80' : r.statut >= 6 ? 'bg-red-400/70' : 'bg-sky-500/80'}`}
                                 style={{ width: `${(r.n / Math.max(1, total)) * 100}%` }} />
                         </div>
                         <span className="w-10 shrink-0 text-right tabular-nums">{num(r.n)}</span>
-                    </div>
+                    </button>
                 ))}
             </div>
         </div>
