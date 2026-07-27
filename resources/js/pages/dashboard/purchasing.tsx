@@ -13,14 +13,15 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 interface SpendRow { principal: string; idr: number; docs: number }
 interface StatusRow { label: string; statut: number; n: number }
 interface LeadRow { principal: string; n_po: number; n_arrived: number; d_req_po: number | null; d_po_order: number | null; d_order_arrive: number | null; d_total: number | null }
-interface BalanceRow { principal: string; vendor: string; cur: string; amount: number; idr: number }
+interface BalanceRow { vendor_id: number; principal: string; vendor: string; cur: string; amount: number; idr: number }
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
-type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit' | 'pr_status' | 'po_status';
-interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string }
+type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit' | 'pr_status' | 'po_status' | 'ap';
+interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string; vendorId?: number; cur?: string }
 interface PurchaseDoc { po: string; has_po: boolean; docs: string; n_docs: number; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
 interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status?: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
 interface PrRow { ref: string; principal: string; vendor: string; tanggal: string; cur: string; total: number }
+interface ApRow { number: string; bill_number: string | null; trans_date: string | null; due_date: string | null; total: number; owing: number | null; overdue: number | null }
 interface Props {
     year: string | null;
     years: string[];
@@ -182,7 +183,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                             <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Tidak ada saldo terbuka.</TableCell></TableRow>
                                         )}
                                         {balances.payable.map((r) => (
-                                            <TableRow key={`p-${r.vendor}`}>
+                                            <TableRow key={`p-${r.vendor}`} className="cursor-pointer"
+                                                onClick={() => setDrill({ type: 'ap', vendorId: r.vendor_id, label: `Faktur Outstanding — ${r.vendor}`, cur: r.cur })}>
                                                 <TableCell className="font-medium">{r.principal}</TableCell>
                                                 <TableCell><Badge variant="outline" className="border-amber-400 text-[10px] text-amber-600 dark:text-amber-400">Utang</Badge></TableCell>
                                                 <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
@@ -190,7 +192,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                             </TableRow>
                                         ))}
                                         {balances.credit.map((r) => (
-                                            <TableRow key={`c-${r.vendor}`}>
+                                            <TableRow key={`c-${r.vendor}`} className="cursor-pointer"
+                                                onClick={() => setDrill({ type: 'ap', vendorId: r.vendor_id, label: `Saldo Kredit — ${r.vendor}`, cur: r.cur })}>
                                                 <TableCell className="font-medium">{r.principal}</TableCell>
                                                 <TableCell><Badge variant="outline" className="border-emerald-400 text-[10px] text-emerald-600 dark:text-emerald-400">CN / Kredit</Badge></TableCell>
                                                 <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
@@ -275,11 +278,19 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
     const [docs, setDocs] = useState<PurchaseDoc[] | null>(null);
     const [pos, setPos] = useState<OpenPoRow[] | null>(null);
     const [prs, setPrs] = useState<PrRow[] | null>(null);
+    const [aps, setAps] = useState<ApRow[] | null>(null);
     const [q, setQ] = useState('');
 
     useEffect(() => {
-        setDocs(null); setPos(null); setPrs(null); setQ('');
+        setDocs(null); setPos(null); setPrs(null); setAps(null); setQ('');
         if (!spec || spec.type === 'payable' || spec.type === 'credit') return;
+        if (spec.type === 'ap') {
+            fetch(route('dashboard.purchasing.ap-drill') + `?vendor_id=${spec.vendorId}`, { headers: { Accept: 'application/json' } })
+                .then((r) => r.json())
+                .then((d) => setAps(d.rows ?? []))
+                .catch(() => setAps([]));
+            return;
+        }
         const params = new URLSearchParams({ type: spec.type });
         if (year) params.set('year', year);
         if (spec.principal) params.set('principal', spec.principal);
@@ -303,7 +314,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
         return rows.filter((r) => !s || r.vendor.toLowerCase().includes(s) || r.principal.toLowerCase().includes(s));
     }, [type, balances, s]);
 
-    const loading = (type === 'purchase' && docs === null) || ((type === 'open_po' || type === 'po_status') && pos === null) || (type === 'pr_status' && prs === null);
+    const loading = (type === 'purchase' && docs === null) || ((type === 'open_po' || type === 'po_status') && pos === null) || (type === 'pr_status' && prs === null) || (type === 'ap' && aps === null);
 
     return (
         <Dialog open={spec !== null} onOpenChange={(o) => !o && onClose()}>
@@ -317,6 +328,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                         {type === 'purchase' && 'Per nomor PO ERP (kunci tracing lintas sistem), terurut nilai IDR terbesar; dokumen sumber tampil sebagai info sekunder.'}
                         {type === 'open_po' && 'PO ERP status Divalidasi/Approved/Ordered/Diterima sebagian, terurut paling lama — umur besar tanpa progres = kandidat ditutup/dibereskan.'}
                         {type === 'pr_status' && 'Daftar Request PO (RPO) berstatus ini, terurut terbaru.'}
+                        {type === 'ap' && 'Faktur belum lunas vendor ini, live dari Accurate, terurut paling telat. Vendor bersaldo kredit biasanya tanpa faktur outstanding — saldonya berasal dari uang muka / CN / kelebihan bayar.'}
                         {type === 'po_status' && 'Daftar PO berstatus ini, terurut terbaru, dengan progres penerimaan.'}
                         {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Accurate saat halaman dimuat.'}
                     </DialogDescription>
@@ -387,6 +399,38 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                                             : <span className="text-muted-foreground/50 text-[11px]">tak ada di Accurate</span>}
                                     </TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap"><span className="mr-1 text-[10px] text-muted-foreground">{r.cur}</span>{num(r.total, 2)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                ) : type === 'ap' ? (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Faktur</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead>Jatuh Tempo</TableHead>
+                                <TableHead className="text-right">Telat (hari)</TableHead>
+                                <TableHead className="text-right">Total ({spec?.cur ?? ''})</TableHead>
+                                <TableHead className="text-right">Sisa</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {(aps ?? []).length === 0 && (
+                                <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">
+                                    Tidak ada faktur outstanding — saldo vendor ini berasal dari uang muka / CN / kelebihan bayar.
+                                </TableCell></TableRow>
+                            )}
+                            {(aps ?? []).filter((r) => !s || r.number.toLowerCase().includes(s) || (r.bill_number ?? '').toLowerCase().includes(s)).map((r) => (
+                                <TableRow key={r.number}>
+                                    <TableCell className="font-medium whitespace-nowrap">{r.number}{r.bill_number && r.bill_number !== r.number && <span className="ml-1 text-muted-foreground">({r.bill_number})</span>}</TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.trans_date}</TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.due_date}</TableCell>
+                                    <TableCell className={`text-right tabular-nums ${r.overdue !== null && r.overdue > 30 ? 'font-semibold text-red-600 dark:text-red-400' : r.overdue !== null && r.overdue > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                                        {r.overdue !== null && r.overdue > 0 ? num(r.overdue) : '–'}
+                                    </TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(r.total, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{r.owing !== null ? num(r.owing, 2) : '–'}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>

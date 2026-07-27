@@ -205,6 +205,7 @@ class PurchasingDashboardController extends Controller
             $cur = $m->default_currency ?? 'IDR';
             $rate = $cur === 'IDR' ? 1 : ($latestFx[$cur] ?? self::DEFAULT_RATE);
             $row = [
+                'vendor_id' => (int) $v['id'],
                 'principal' => $m->principal ?? $v['name'],
                 'vendor' => $v['name'],
                 'cur' => $cur,
@@ -384,6 +385,65 @@ class PurchasingDashboardController extends Controller
             'acc_status' => $accPos[$r->ref]->status_name ?? null,
             'acc_percent' => isset($accPos[$r->ref]) && $accPos[$r->ref]->percent_shipped !== null ? (float) $accPos[$r->ref]->percent_shipped : null,
         ])->values()]);
+    }
+
+    /**
+     * Drill saldo vendor: faktur OUTSTANDING per vendor, live dari Accurate
+     * (filter.vendorId + filter.outstanding=true), plus sisa tagihan per faktur
+     * (owing dari detail — dipanggil per faktur, dibatasi 30) dan telat hari.
+     * Vendor bersaldo kredit biasanya tanpa faktur outstanding — saldo berasal
+     * dari uang muka / CN / kelebihan bayar.
+     */
+    public function apDrill(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate(['vendor_id' => ['required', 'integer']]);
+
+        try {
+            $s = AccurateSetting::current();
+            $acc = app(AccurateService::class);
+            $rows = [];
+            $page = 1;
+            do {
+                $l = $acc->apiGet($s, 'purchase-invoice/list.do', [
+                    'fields' => 'id,number,billNumber,transDate,dueDate,totalAmount',
+                    'filter.vendorId' => $data['vendor_id'],
+                    'filter.outstanding' => 'true',
+                    'sp.pageSize' => 100, 'sp.page' => $page,
+                ]);
+                foreach ($l['d'] ?? [] as $r) {
+                    $rows[] = $r;
+                }
+                $pc = $l['sp']['pageCount'] ?? 1;
+                $page++;
+            } while ($page <= $pc && count($rows) < 300);
+
+            $out = [];
+            foreach ($rows as $i => $r) {
+                $owing = null;
+                if ($i < 30) {
+                    try {
+                        $d = $acc->apiGet($s, 'purchase-invoice/detail.do', ['id' => $r['id']])['d'] ?? [];
+                        $owing = (float) ($d['primeOwing'] ?? $d['owing'] ?? 0) ?: null;
+                    } catch (\Throwable) {
+                    }
+                }
+                $due = isset($r['dueDate']) ? \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $r['dueDate']) : null;
+                $out[] = [
+                    'number' => $r['number'] ?? null,
+                    'bill_number' => $r['billNumber'] ?? null,
+                    'trans_date' => isset($r['transDate']) ? \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $r['transDate'])->toDateString() : null,
+                    'due_date' => $due?->toDateString(),
+                    'total' => (float) ($r['totalAmount'] ?? 0),
+                    'owing' => $owing,
+                    'overdue' => $due ? (int) $due->diffInDays(now(), false) : null,
+                ];
+            }
+            usort($out, fn ($a, $b) => ($b['overdue'] ?? -9999) <=> ($a['overdue'] ?? -9999));
+
+            return response()->json(['available' => true, 'rows' => $out]);
+        } catch (\Throwable $e) {
+            return response()->json(['available' => false, 'error' => mb_substr($e->getMessage(), 0, 150), 'rows' => []]);
+        }
     }
 
     /** Drill status: daftar dokumen PR (supplier_proposal) atau PO (commande_fournisseur) per status. */
