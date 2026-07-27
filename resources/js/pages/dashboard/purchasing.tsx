@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DashboardLayout from '@/layouts/dashboard-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -73,6 +74,13 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     </div>
                 </div>
 
+                <Tabs defaultValue="summary" className="flex flex-1 flex-col gap-4">
+                <TabsList className="w-fit">
+                    <TabsTrigger value="summary">Summary Executive</TabsTrigger>
+                    <TabsTrigger value="import">Analisa Biaya Impor</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="summary" className="mt-0 flex flex-col gap-4">
                 {/* KPI — klik untuk drill detail */}
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill({ type: 'purchase' })} />
@@ -147,30 +155,21 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     </CardContent>
                 </Card>
 
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-base">Status PR / PO (ERP)</CardTitle>
-                        <p className="text-xs text-muted-foreground">
-                            {num(status.pr_total)} Request PO (RPO) · {num(status.po_total)} PO{year ? ` — ${year}` : ''} · klik status untuk daftar dokumen.
-                        </p>
-                    </CardHeader>
-                    <CardContent className="grid gap-4 sm:grid-cols-2">
-                        <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]}
-                            onPick={(r) => setDrill({ type: 'pr_status', statut: r.statut, label: `Request PO — ${r.label}` })} />
-                        <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]}
-                            onPick={(r) => setDrill({ type: 'po_status', statut: r.statut, label: `PO — ${r.label}` })} />
-                    </CardContent>
-                </Card>
-                </div>
-
-                {/* Baris 4: payable & CN + import cost */}
-                <div className="grid gap-4 lg:grid-cols-2">
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Utang & Credit Note per Principal</CardTitle>
-                            <p className="text-xs text-muted-foreground">Saldo vendor live dari Accurate — positif = utang kita, negatif = kredit/CN kita di vendor.</p>
+                            <CardTitle className="text-base">Status PR/PO & Utang–CN per Principal</CardTitle>
+                            <p className="text-xs text-muted-foreground">
+                                {num(status.pr_total)} RPO · {num(status.po_total)} PO{year ? ` — ${year}` : ''} · klik status/baris untuk detail. Saldo vendor live dari Accurate.
+                            </p>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-4">
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]}
+                                    onPick={(r) => setDrill({ type: 'pr_status', statut: r.statut, label: `Request PO — ${r.label}` })} />
+                                <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]}
+                                    onPick={(r) => setDrill({ type: 'po_status', statut: r.statut, label: `PO — ${r.label}` })} />
+                            </div>
+                            <div className="border-t pt-3">
                             {!balances.available ? (
                                 <p className="py-6 text-center text-sm text-muted-foreground">Accurate tidak terjangkau: {balances.error}</p>
                             ) : (
@@ -208,18 +207,22 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                     </TableBody>
                                 </Table>
                             )}
+                            </div>
                         </CardContent>
                     </Card>
+                </div>
+                </TabsContent>
 
+                <TabsContent value="import" className="mt-0 flex flex-col gap-4">
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base">Analisa Biaya Impor</CardTitle>
                             <p className="text-xs text-muted-foreground">
-                                Dari baris biaya faktur pembelian Accurate (freight, PIB/bea, storage). Rate = biaya non-pajak ÷ nilai barang impor{year ? ` — ${year}` : ''}.
+                                Dari baris biaya faktur pembelian (freight, PIB/bea, storage). Rate = biaya non-pajak ÷ nilai barang impor{year ? ` — ${year}` : ''}.
                             </p>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-3 gap-2 lg:w-2/3">
                                 <MiniStat label="Nilai barang impor" value={`Rp ${rp(importCost.import_goods_idr)}`} />
                                 <MiniStat label="Biaya impor (non-pajak)" value={`Rp ${rp(importCost.cost_idr)}`} />
                                 <MiniStat label="Rate biaya impor" value={importCost.rate_pct !== null ? `${num(importCost.rate_pct, 2)}%` : '–'} accent />
@@ -227,7 +230,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
 
                             <div>
                                 <p className="mb-1.5 text-xs font-medium">Komposisi per kategori</p>
-                                <div className="space-y-1">
+                                <div className="space-y-1 lg:w-2/3">
                                     {importCost.by_category.map((c) => {
                                         const maxC = Math.max(1, ...importCost.by_category.map((x) => x.idr));
                                         return (
@@ -246,7 +249,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
 
                             <div>
                                 <p className="mb-1.5 text-xs font-medium">Per akun biaya</p>
-                                <div className="space-y-0.5 text-xs">
+                                <div className="space-y-0.5 text-xs lg:w-2/3">
                                     {importCost.by_account.map((a) => (
                                         <div key={a.account} className="flex items-center justify-between gap-2">
                                             <span className="truncate text-muted-foreground">{a.account} <span className="text-muted-foreground/60">({a.n})</span></span>
@@ -257,7 +260,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                             </div>
                         </CardContent>
                     </Card>
-                </div>
+                </TabsContent>
+                </Tabs>
             </div>
 
             <KpiDrillDialog spec={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
