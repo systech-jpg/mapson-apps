@@ -2,7 +2,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DashboardLayout from '@/layouts/dashboard-layout';
@@ -229,6 +228,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                         <Kpi label="Biaya termasuk pajak" value={`Rp ${rp(importCost.cost_with_tax_idr)}`} sub="PPN/PPh impor ikut dihitung" />
                     </div>
 
+                    <ImportPoCard />
+
                     <div className="grid gap-4 lg:grid-cols-2">
                         <Card>
                             <CardHeader className="pb-2">
@@ -344,7 +345,6 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                         </Card>
                     </div>
 
-                    <ImportPoCard onPick={(po) => setImpDrill({ label: `Biaya terkait ${po}`, params: { q: po } })} />
                 </TabsContent>
                 </Tabs>
             </div>
@@ -584,12 +584,15 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
 interface PoCostRow { po: string; principal: string | null; tanggal: string | null; goods: number; cost: number; tax: number; n_cost: number; rate_pct: number | null }
 
 /**
- * Biaya impor per PO: nilai barang vs total biaya keluar per PO + rate, dengan filter
- * principal & pencarian. Klik PO → baris biaya terkaitnya.
+ * Inti tab biaya impor: hierarki Principal → PO → baris biaya terkait.
+ * Level 1: total per principal (n PO, nilai barang, biaya, pajak, total keluar, rate).
+ * Level 2 (klik principal): daftar PO-nya. Level 3 (klik PO): baris biaya inline.
  */
-function ImportPoCard({ onPick }: { onPick: (po: string) => void }) {
+function ImportPoCard() {
     const [data, setData] = useState<{ rows: PoCostRow[]; unattributed: { cost: number; tax: number; n: number } } | null>(null);
-    const [principal, setPrincipal] = useState<string>('all');
+    const [openPrincipals, setOpenPrincipals] = useState<Set<string>>(new Set());
+    const [openPo, setOpenPo] = useState<string | null>(null);
+    const [poLines, setPoLines] = useState<Record<string, ExpDetailRow[] | null>>({});
     const [q, setQ] = useState('');
 
     useEffect(() => {
@@ -599,47 +602,73 @@ function ImportPoCard({ onPick }: { onPick: (po: string) => void }) {
             .catch(() => setData({ rows: [], unattributed: { cost: 0, tax: 0, n: 0 } }));
     }, []);
 
-    const principals = useMemo(() => [...new Set((data?.rows ?? []).map((r) => r.principal).filter(Boolean))].sort() as string[], [data]);
+    const togglePrincipal = (p: string) => setOpenPrincipals((prev) => {
+        const nx = new Set(prev);
+        if (nx.has(p)) nx.delete(p); else nx.add(p);
+        return nx;
+    });
+
+    const togglePo = (po: string) => {
+        const next = openPo === po ? null : po;
+        setOpenPo(next);
+        if (next && poLines[po] === undefined) {
+            setPoLines((m) => ({ ...m, [po]: null }));
+            fetch(route('dashboard.purchasing.import-cost-detail') + `?q=${encodeURIComponent(po)}`, { headers: { Accept: 'application/json' } })
+                .then((r) => r.json())
+                .then((d) => setPoLines((m) => ({ ...m, [po]: d.rows ?? [] })))
+                .catch(() => setPoLines((m) => ({ ...m, [po]: [] })));
+        }
+    };
+
     const s = q.trim().toLowerCase();
-    const filtered = useMemo(() => (data?.rows ?? []).filter((r) =>
-        (principal === 'all' || r.principal === principal) &&
-        (!s || r.po.toLowerCase().includes(s) || (r.principal ?? '').toLowerCase().includes(s))), [data, principal, s]);
-    const tGoods = filtered.reduce((a, r) => a + r.goods, 0);
-    const tCost = filtered.reduce((a, r) => a + r.cost, 0);
-    const tTax = filtered.reduce((a, r) => a + r.tax, 0);
+    const groups = useMemo(() => {
+        const rows = (data?.rows ?? []).filter((r) => !s || r.po.toLowerCase().includes(s) || (r.principal ?? '').toLowerCase().includes(s));
+        const g = new Map<string, { principal: string; pos: PoCostRow[]; goods: number; cost: number; tax: number }>();
+        for (const r of rows) {
+            const key = r.principal ?? '(principal tak dikenal)';
+            const cur = g.get(key) ?? { principal: key, pos: [], goods: 0, cost: 0, tax: 0 };
+            cur.pos.push(r);
+            cur.goods += r.goods; cur.cost += r.cost; cur.tax += r.tax;
+            g.set(key, cur);
+        }
+        return [...g.values()].sort((a, b) => (b.cost + b.tax) - (a.cost + a.tax));
+    }, [data, s]);
+
+    const tGoods = groups.reduce((a, g) => a + g.goods, 0);
+    const tCost = groups.reduce((a, g) => a + g.cost, 0);
+    const tTax = groups.reduce((a, g) => a + g.tax, 0);
+
+    const numCell = (v: number, cls = '') => (
+        <TableCell className={`text-right tabular-nums whitespace-nowrap ${cls}`}>{v ? num(v) : <span className="text-muted-foreground/40">–</span>}</TableCell>
+    );
+    const rateCell = (rate: number | null) => (
+        <TableCell className={`text-right tabular-nums ${rate !== null && rate > 12 ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
+            {rate !== null ? `${num(rate, 2)}%` : '–'}
+        </TableCell>
+    );
 
     return (
         <Card>
             <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="text-base">Biaya Impor per PO</CardTitle>
-                    <div className="flex items-center gap-2">
-                        <Select value={principal} onValueChange={setPrincipal}>
-                            <SelectTrigger className="h-8 w-64"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">— semua principal —</SelectItem>
-                                {principals.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                            </SelectContent>
-                        </Select>
-                        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari PO…" className="h-8 w-40" />
-                    </div>
+                    <CardTitle className="text-base">Monitor Biaya Impor — Principal → PO → Biaya</CardTitle>
+                    <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari principal / PO…" className="h-8 w-56" />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                    Nilai barang = realisasi faktur PO (IDR); biaya diekstrak dari ref PO di catatan biaya (multi-PO dibagi rata). Klik PO untuk baris biayanya.
-                    {data && data.unattributed.cost > 0 && ` Biaya tanpa ref PO: Rp ${num(data.unattributed.cost)} (${num(data.unattributed.n)} baris) — tak teralokasi ke PO.`}
+                    Klik principal untuk daftar PO-nya, klik PO untuk biaya-biaya terkaitnya. Nilai barang = realisasi faktur (IDR); biaya dialokasikan dari ref PO di catatan.
+                    {data && data.unattributed.cost > 0 && ` Biaya tanpa ref PO: Rp ${num(data.unattributed.cost)} (${num(data.unattributed.n)} baris) — tak bisa dialokasikan.`}
                 </p>
             </CardHeader>
             <CardContent>
                 {data === null ? (
                     <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat…</div>
                 ) : (
-                    <div className="max-h-[28rem] overflow-y-auto">
+                    <div className="max-h-[36rem] overflow-y-auto">
                         <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
-                            <TableHeader className="sticky top-0 bg-card">
+                            <TableHeader className="sticky top-0 z-10 bg-card">
                                 <TableRow>
-                                    <TableHead>PO</TableHead>
-                                    <TableHead>Principal</TableHead>
-                                    <TableHead>Tanggal</TableHead>
+                                    <TableHead>Principal / PO</TableHead>
+                                    <TableHead className="text-right">PO</TableHead>
                                     <TableHead className="text-right">Nilai Barang (IDR)</TableHead>
                                     <TableHead className="text-right">Biaya Impor</TableHead>
                                     <TableHead className="text-right">Pajak</TableHead>
@@ -648,28 +677,73 @@ function ImportPoCard({ onPick }: { onPick: (po: string) => void }) {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {filtered.length === 0 && <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Tidak ada PO.</TableCell></TableRow>}
-                                {filtered.map((r) => (
-                                    <TableRow key={r.po} className="cursor-pointer" onClick={() => onPick(r.po)}>
-                                        <TableCell className="font-medium whitespace-nowrap">{r.po}{r.n_cost > 0 && <span className="ml-1 text-muted-foreground">({r.n_cost})</span>}</TableCell>
-                                        <TableCell className="max-w-48 truncate text-muted-foreground" title={r.principal ?? ''}>{r.principal ?? '–'}</TableCell>
-                                        <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal ?? '–'}</TableCell>
-                                        <TableCell className="text-right tabular-nums whitespace-nowrap">{r.goods ? num(r.goods) : '–'}</TableCell>
-                                        <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cost ? num(r.cost) : '–'}</TableCell>
-                                        <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">{r.tax ? num(r.tax) : '–'}</TableCell>
-                                        <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.cost + r.tax)}</TableCell>
-                                        <TableCell className={`text-right tabular-nums ${r.rate_pct !== null && r.rate_pct > 12 ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
-                                            {r.rate_pct !== null ? `${num(r.rate_pct, 2)}%` : '–'}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
+                                {groups.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada data.</TableCell></TableRow>}
+                                {groups.map((g) => {
+                                    const open = openPrincipals.has(g.principal);
+                                    return [
+                                        <TableRow key={g.principal} className="cursor-pointer bg-muted/30 font-medium" onClick={() => togglePrincipal(g.principal)}>
+                                            <TableCell className="whitespace-nowrap">
+                                                <span className="mr-1.5 inline-block w-3 text-muted-foreground">{open ? '▾' : '▸'}</span>{g.principal}
+                                            </TableCell>
+                                            <TableCell className="text-right tabular-nums">{num(g.pos.length)}</TableCell>
+                                            {numCell(g.goods)}
+                                            {numCell(g.cost)}
+                                            {numCell(g.tax)}
+                                            {numCell(g.cost + g.tax, 'font-semibold')}
+                                            {rateCell(g.goods > 0 ? Math.round(g.cost / g.goods * 10000) / 100 : null)}
+                                        </TableRow>,
+                                        ...(open ? g.pos.flatMap((r) => {
+                                            const poOpen = openPo === r.po;
+                                            const lines = poLines[r.po];
+                                            return [
+                                                <TableRow key={r.po} className="cursor-pointer" onClick={() => togglePo(r.po)}>
+                                                    <TableCell className="whitespace-nowrap pl-8">
+                                                        <span className="mr-1.5 inline-block w-3 text-muted-foreground">{poOpen ? '▾' : '▸'}</span>
+                                                        <span className="font-medium">{r.po}</span>
+                                                        {r.tanggal && <span className="ml-1.5 text-muted-foreground">{r.tanggal}</span>}
+                                                    </TableCell>
+                                                    <TableCell className="text-right tabular-nums text-muted-foreground">{r.n_cost > 0 ? `${r.n_cost} biaya` : ''}</TableCell>
+                                                    {numCell(r.goods)}
+                                                    {numCell(r.cost)}
+                                                    {numCell(r.tax)}
+                                                    {numCell(r.cost + r.tax, 'font-medium')}
+                                                    {rateCell(r.rate_pct)}
+                                                </TableRow>,
+                                                ...(poOpen ? [
+                                                    <TableRow key={`${r.po}-lines`}>
+                                                        <TableCell colSpan={7} className="bg-muted/20 p-0">
+                                                            {lines === null || lines === undefined ? (
+                                                                <div className="flex items-center gap-2 px-10 py-3 text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Memuat biaya…</div>
+                                                            ) : lines.length === 0 ? (
+                                                                <p className="px-10 py-3 text-muted-foreground">Tidak ada baris biaya yang menyebut PO ini.</p>
+                                                            ) : (
+                                                                <div className="space-y-0.5 py-2 pr-3 pl-14">
+                                                                    {lines.map((l, i) => (
+                                                                        <div key={i} className="flex items-center justify-between gap-3">
+                                                                            <span className="min-w-0 truncate text-muted-foreground" title={`${l.doc_number} · ${l.account} · ${l.notes}`}>
+                                                                                <Badge variant="outline" className="mr-1.5 text-[9px]">{l.kategori}</Badge>
+                                                                                {l.doc_number} · {l.trans_date} · {l.vendor}
+                                                                            </span>
+                                                                            <span className="shrink-0 tabular-nums">{num(l.idr)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </TableCell>
+                                                    </TableRow>,
+                                                ] : []),
+                                            ];
+                                        }) : []),
+                                    ];
+                                })}
                                 <TableRow className="border-t-2 font-semibold">
-                                    <TableCell colSpan={3}>Total ({num(filtered.length)} PO)</TableCell>
-                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tGoods)}</TableCell>
-                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tCost)}</TableCell>
-                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tTax)}</TableCell>
-                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tCost + tTax)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{tGoods > 0 ? `${num(tCost / tGoods * 100, 2)}%` : '–'}</TableCell>
+                                    <TableCell>Grand Total</TableCell>
+                                    <TableCell className="text-right tabular-nums">{num(groups.reduce((a, g) => a + g.pos.length, 0))}</TableCell>
+                                    {numCell(tGoods)}
+                                    {numCell(tCost)}
+                                    {numCell(tTax)}
+                                    {numCell(tCost + tTax)}
+                                    {rateCell(tGoods > 0 ? Math.round(tCost / tGoods * 10000) / 100 : null)}
                                 </TableRow>
                             </TableBody>
                         </Table>
