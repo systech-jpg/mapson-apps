@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
+import DashboardLayout from '@/layouts/dashboard-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { Loader2 } from 'lucide-react';
@@ -57,9 +57,9 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
     const maxLead = Math.max(1, ...leadTime.map((r) => r.d_total ?? ((r.d_req_po ?? 0) + (r.d_po_order ?? 0) + (r.d_order_arrive ?? 0))));
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <DashboardLayout breadcrumbs={breadcrumbs}>
             <Head title="Purchasing" />
-            <div className="flex flex-1 flex-col gap-4 p-4">
+            <div className="flex flex-1 flex-col gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-2xl font-semibold">Purchasing — Executive Dashboard</h1>
@@ -261,7 +261,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
             </div>
 
             <KpiDrillDialog spec={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
-        </AppLayout>
+        </DashboardLayout>
     );
 }
 
