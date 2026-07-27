@@ -57,6 +57,28 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
     const [pivotPrincipal, setPivotPrincipal] = useState<string | null>(null);
     const maxCat = Math.max(1, ...importCost.by_category.map((x) => x.idr));
 
+    // Data biaya per PO (utk tab impor): dipakai tabel hierarki DAN kartu statistik per principal.
+    const [poCosts, setPoCosts] = useState<{ rows: PoCostRow[]; unattributed: { cost: number; tax: number; n: number } } | null>(null);
+    const [impPrincipal, setImpPrincipal] = useState<string | null>(null);
+    useEffect(() => {
+        fetch(route('dashboard.purchasing.import-po-costs'), { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then(setPoCosts)
+            .catch(() => setPoCosts({ rows: [], unattributed: { cost: 0, tax: 0, n: 0 } }));
+    }, []);
+    const impPrincipals = useMemo(() => [...new Set((poCosts?.rows ?? []).map((r) => r.principal).filter(Boolean))].sort() as string[], [poCosts]);
+    // Statistik mengikuti principal terpilih (dari alokasi per-PO); "semua" pakai angka global.
+    const impStats = useMemo(() => {
+        if (!impPrincipal) {
+            return { goods: importCost.import_goods_idr, cost: importCost.cost_idr, tax: importCost.cost_with_tax_idr - importCost.cost_idr, rate: importCost.rate_pct };
+        }
+        const rows = (poCosts?.rows ?? []).filter((r) => r.principal === impPrincipal);
+        const goods = rows.reduce((a, r) => a + r.goods, 0);
+        const cost = rows.reduce((a, r) => a + r.cost, 0);
+        const tax = rows.reduce((a, r) => a + r.tax, 0);
+        return { goods, cost, tax, rate: goods > 0 ? Math.round(cost / goods * 10000) / 100 : null };
+    }, [impPrincipal, poCosts, importCost]);
+
     const chartData = [
         ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, principal: r.principal, idr: r.idr })),
         ...(spending.others_n > 0 ? [{ name: `Lainnya (${spending.others_n})`, full: `${spending.others_n} vendor lain`, principal: undefined as string | undefined, idr: spending.others_idr }] : []),
@@ -221,14 +243,20 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </TabsContent>
 
                 <TabsContent value="import" className="mt-0 flex flex-col gap-4">
+                    <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
+
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                        <Kpi label={`Nilai barang impor${year ? ` ${year}` : ''}`} value={`Rp ${rp(importCost.import_goods_idr)}`} sub="baris item vendor bermata uang asing" />
-                        <Kpi label="Biaya impor (non-pajak)" value={`Rp ${rp(importCost.cost_idr)}`} sub="freight, PIB/bea, storage, dll" onClick={() => setImpDrill({ label: 'Semua biaya impor', params: {} })} />
-                        <Kpi label="Rate biaya impor" value={importCost.rate_pct !== null ? `${num(importCost.rate_pct, 2)}%` : '–'} sub="biaya non-pajak ÷ nilai barang impor" />
-                        <Kpi label="Biaya termasuk pajak" value={`Rp ${rp(importCost.cost_with_tax_idr)}`} sub="PPN/PPh impor ikut dihitung" />
+                        <Kpi label={`Nilai barang impor${impPrincipal ? '' : year ? ` ${year}` : ''}`} value={`Rp ${rp(impStats.goods)}`}
+                            sub={impPrincipal ? `${impPrincipal} — realisasi PO teralokasi` : 'baris item vendor bermata uang asing'} />
+                        <Kpi label="Biaya impor (non-pajak)" value={`Rp ${rp(impStats.cost)}`}
+                            sub={impPrincipal ? 'alokasi dari ref PO di catatan biaya' : 'freight, PIB/bea, storage, dll'}
+                            onClick={() => setImpDrill({ label: impPrincipal ? `Biaya impor — ${impPrincipal}` : 'Semua biaya impor', params: impPrincipal ? { q: impPrincipal } : {} })} />
+                        <Kpi label="Rate biaya impor" value={impStats.rate !== null ? `${num(impStats.rate, 2)}%` : '–'} sub="biaya non-pajak ÷ nilai barang impor" />
+                        <Kpi label={impPrincipal ? 'Pajak impor (alokasi)' : 'Biaya termasuk pajak'} value={`Rp ${rp(impPrincipal ? impStats.tax : importCost.cost_with_tax_idr)}`}
+                            sub={impPrincipal ? 'PPN/PPh teralokasi ke PO principal ini' : 'PPN/PPh impor ikut dihitung'} />
                     </div>
 
-                    <ImportPoCard />
+                    <ImportPoCard data={poCosts} principal={impPrincipal} />
 
                     <div className="grid gap-4 lg:grid-cols-2">
                         <Card>
@@ -588,19 +616,43 @@ interface PoCostRow { po: string; principal: string | null; tanggal: string | nu
  * Level 1: total per principal (n PO, nilai barang, biaya, pajak, total keluar, rate).
  * Level 2 (klik principal): daftar PO-nya. Level 3 (klik PO): baris biaya inline.
  */
-function ImportPoCard() {
-    const [data, setData] = useState<{ rows: PoCostRow[]; unattributed: { cost: number; tax: number; n: number } } | null>(null);
+/** Dropdown principal yang bisa dicari (ringan, tanpa lib tambahan). */
+function PrincipalPicker({ principals, value, onChange }: { principals: string[]; value: string | null; onChange: (v: string | null) => void }) {
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState('');
+    const s = q.trim().toLowerCase();
+    const filtered = principals.filter((p) => !s || p.toLowerCase().includes(s));
+
+    return (
+        <div className="relative w-full max-w-md">
+            <button type="button" onClick={() => { setOpen((v) => !v); setQ(''); }}
+                className="flex h-9 w-full items-center justify-between rounded-md border bg-background px-3 text-sm shadow-xs transition-colors hover:bg-accent">
+                <span className={value ? '' : 'text-muted-foreground'}>{value ?? '— semua principal —'}</span>
+                <span className="text-muted-foreground">▾</span>
+            </button>
+            {open && (
+                <div className="absolute z-20 mt-1 w-full rounded-md border bg-popover shadow-md">
+                    <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="ketik untuk mencari…" className="m-2 h-8 w-[calc(100%-1rem)]" />
+                    <div className="max-h-64 overflow-y-auto pb-1">
+                        <button type="button" onMouseDown={() => { onChange(null); setOpen(false); }}
+                            className="block w-full px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent">— semua principal —</button>
+                        {filtered.map((p) => (
+                            <button key={p} type="button" onMouseDown={() => { onChange(p); setOpen(false); }}
+                                className={`block w-full truncate px-3 py-1.5 text-left text-sm hover:bg-accent ${p === value ? 'font-semibold text-primary' : ''}`}>{p}</button>
+                        ))}
+                        {filtered.length === 0 && <p className="px-3 py-2 text-sm text-muted-foreground">Tidak ketemu.</p>}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ImportPoCard({ data, principal }: { data: { rows: PoCostRow[]; unattributed: { cost: number; tax: number; n: number } } | null; principal: string | null }) {
     const [openPrincipals, setOpenPrincipals] = useState<Set<string>>(new Set());
     const [openPo, setOpenPo] = useState<string | null>(null);
     const [poLines, setPoLines] = useState<Record<string, ExpDetailRow[] | null>>({});
     const [q, setQ] = useState('');
-
-    useEffect(() => {
-        fetch(route('dashboard.purchasing.import-po-costs'), { headers: { Accept: 'application/json' } })
-            .then((r) => r.json())
-            .then(setData)
-            .catch(() => setData({ rows: [], unattributed: { cost: 0, tax: 0, n: 0 } }));
-    }, []);
 
     const togglePrincipal = (p: string) => setOpenPrincipals((prev) => {
         const nx = new Set(prev);
@@ -622,7 +674,9 @@ function ImportPoCard() {
 
     const s = q.trim().toLowerCase();
     const groups = useMemo(() => {
-        const rows = (data?.rows ?? []).filter((r) => !s || r.po.toLowerCase().includes(s) || (r.principal ?? '').toLowerCase().includes(s));
+        const rows = (data?.rows ?? [])
+            .filter((r) => !principal || r.principal === principal)
+            .filter((r) => !s || r.po.toLowerCase().includes(s) || (r.principal ?? '').toLowerCase().includes(s));
         const g = new Map<string, { principal: string; pos: PoCostRow[]; goods: number; cost: number; tax: number }>();
         for (const r of rows) {
             const key = r.principal ?? '(principal tak dikenal)';
@@ -632,7 +686,7 @@ function ImportPoCard() {
             g.set(key, cur);
         }
         return [...g.values()].sort((a, b) => (b.cost + b.tax) - (a.cost + a.tax));
-    }, [data, s]);
+    }, [data, s, principal]);
 
     const tGoods = groups.reduce((a, g) => a + g.goods, 0);
     const tCost = groups.reduce((a, g) => a + g.cost, 0);
@@ -652,7 +706,7 @@ function ImportPoCard() {
             <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <CardTitle className="text-base">Monitor Biaya Impor — Principal → PO → Biaya</CardTitle>
-                    <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari principal / PO…" className="h-8 w-56" />
+                    <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari PO…" className="h-8 w-56" />
                 </div>
                 <p className="text-xs text-muted-foreground">
                     Klik principal untuk daftar PO-nya, klik PO untuk biaya-biaya terkaitnya. Nilai barang = realisasi faktur (IDR); biaya dialokasikan dari ref PO di catatan.
@@ -679,7 +733,7 @@ function ImportPoCard() {
                             <TableBody>
                                 {groups.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada data.</TableCell></TableRow>}
                                 {groups.map((g) => {
-                                    const open = openPrincipals.has(g.principal);
+                                    const open = principal !== null || openPrincipals.has(g.principal);
                                     return [
                                         <TableRow key={g.principal} className="cursor-pointer bg-muted/30 font-medium" onClick={() => togglePrincipal(g.principal)}>
                                             <TableCell className="whitespace-nowrap">
