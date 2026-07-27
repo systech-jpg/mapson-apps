@@ -47,6 +47,7 @@ const rp = (n: number) => {
 export default function PurchasingDashboard({ year, years, spending, status, leadTime, balances, importCost }: Props) {
     const setYear = (y: string | null) => router.get(route('dashboard.purchasing'), y ? { year: y } : {}, { preserveScroll: true, preserveState: true });
     const [drill, setDrill] = useState<DrillSpec | null>(null);
+    const [pivotPrincipal, setPivotPrincipal] = useState<string | null>(null);
 
     const chartData = [
         ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, principal: r.principal, idr: r.idr })),
@@ -85,7 +86,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     <Card>
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base">Purchase by Principal</CardTitle>
-                            <p className="text-xs text-muted-foreground">Nilai pembelian terkonversi IDR{year ? ` — ${year}` : ' — semua tahun'} · klik bar untuk rincian per PO.</p>
+                            <p className="text-xs text-muted-foreground">Nilai pembelian terkonversi IDR{year ? ` — ${year}` : ' — semua tahun'} · klik bar untuk ringkasan principal di kanan.</p>
                         </CardHeader>
                         <CardContent className="h-80">
                             <ResponsiveContainer width="100%" height="100%">
@@ -95,29 +96,17 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                     <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 11 }} />
                                     <Tooltip formatter={(v: number) => [`Rp ${num(v)}`, 'Nilai']} labelFormatter={(_, p) => (p?.[0]?.payload?.full ?? '') as string} />
                                     <Bar dataKey="idr" fill="var(--primary)" radius={[0, 4, 4, 0]} className="cursor-pointer"
-                                        onClick={(d: { payload?: { principal?: string } }) => d?.payload?.principal && setDrill({ type: 'purchase', principal: d.payload.principal })} />
+                                        onClick={(d: { payload?: { principal?: string } }) => d?.payload?.principal && setPivotPrincipal(d.payload.principal)} />
                                 </BarChart>
                             </ResponsiveContainer>
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Status PR / PO (ERP)</CardTitle>
-                            <p className="text-xs text-muted-foreground">
-                                {num(status.pr_total)} Request PO (RPO) · {num(status.po_total)} PO{year ? ` — ${year}` : ''}.
-                            </p>
-                        </CardHeader>
-                        <CardContent className="grid gap-4 sm:grid-cols-2">
-                            <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]}
-                                onPick={(r) => setDrill({ type: 'pr_status', statut: r.statut, label: `Request PO — ${r.label}` })} />
-                            <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]}
-                                onPick={(r) => setDrill({ type: 'po_status', statut: r.statut, label: `PO — ${r.label}` })} />
-                        </CardContent>
-                    </Card>
+                    <SpendPivotCard principal={pivotPrincipal} onClear={() => setPivotPrincipal(null)} />
                 </div>
 
-                {/* Baris 3: lead time */}
+                {/* Baris 3: lead time + status PR/PO */}
+                <div className="grid gap-4 lg:grid-cols-2">
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base">Lead Time per Principal (hari, rata-rata)</CardTitle>
@@ -157,6 +146,22 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                         </div>
                     </CardContent>
                 </Card>
+
+                <Card>
+                    <CardHeader className="pb-2">
+                        <CardTitle className="text-base">Status PR / PO (ERP)</CardTitle>
+                        <p className="text-xs text-muted-foreground">
+                            {num(status.pr_total)} Request PO (RPO) · {num(status.po_total)} PO{year ? ` — ${year}` : ''} · klik status untuk daftar dokumen.
+                        </p>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                        <StatusList title="Request PO" rows={status.pr} total={status.pr_total} done={[2, 4]}
+                            onPick={(r) => setDrill({ type: 'pr_status', statut: r.statut, label: `Request PO — ${r.label}` })} />
+                        <StatusList title="Purchase Order" rows={status.po} total={status.po_total} done={[5]}
+                            onPick={(r) => setDrill({ type: 'po_status', statut: r.statut, label: `PO — ${r.label}` })} />
+                    </CardContent>
+                </Card>
+                </div>
 
                 {/* Baris 4: payable & CN + import cost */}
                 <div className="grid gap-4 lg:grid-cols-2">
@@ -482,6 +487,93 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                 )}
             </DialogContent>
         </Dialog>
+    );
+}
+
+const BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+interface Pivot { mode: 'year' | 'month'; currencies: string[]; rows: { period: string; cells: Record<string, number>; docs: number }[]; totals: Record<string, number> }
+
+/**
+ * Ringkasan pembelian ala pivot Excel: baris tahun × kolom mata uang (nilai ASLI);
+ * klik tahun → pecah per bulan; klik bar principal di chart kiri → terfilter principal itu.
+ */
+function SpendPivotCard({ principal, onClear }: { principal: string | null; onClear: () => void }) {
+    const [pivotYear, setPivotYear] = useState<string | null>(null);
+    const [data, setData] = useState<Pivot | null>(null);
+
+    useEffect(() => { setPivotYear(null); }, [principal]);
+    useEffect(() => {
+        setData(null);
+        const params = new URLSearchParams();
+        if (principal) params.set('principal', principal);
+        if (pivotYear) params.set('year', pivotYear);
+        fetch(route('dashboard.purchasing.spend-pivot') + `?${params}`, { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then(setData)
+            .catch(() => setData({ mode: 'year', currencies: [], rows: [], totals: {} }));
+    }, [principal, pivotYear]);
+
+    return (
+        <Card>
+            <CardHeader className="pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-base">Summary Pembelian — {principal ?? 'Semua Principal'}</CardTitle>
+                    <div className="flex gap-1.5">
+                        {pivotYear && (
+                            <button type="button" onClick={() => setPivotYear(null)}
+                                className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent">← per tahun</button>
+                        )}
+                        {principal && (
+                            <button type="button" onClick={onClear}
+                                className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent">✕ semua principal</button>
+                        )}
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    Nilai asli per mata uang{pivotYear ? ` — per bulan ${pivotYear}` : ' — klik tahun untuk rincian per bulan'}.
+                </p>
+            </CardHeader>
+            <CardContent>
+                {data === null ? (
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat…</div>
+                ) : data.rows.length === 0 ? (
+                    <p className="py-10 text-center text-sm text-muted-foreground">Tidak ada data.</p>
+                ) : (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>{data.mode === 'year' ? 'Tahun' : 'Bulan'}</TableHead>
+                                {data.currencies.map((c) => <TableHead key={c} className="text-right">{c}</TableHead>)}
+                                <TableHead className="text-right">Dok</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {data.rows.map((r) => (
+                                <TableRow key={r.period} className={data.mode === 'year' ? 'cursor-pointer' : ''}
+                                    onClick={data.mode === 'year' ? () => setPivotYear(r.period) : undefined}>
+                                    <TableCell className={`font-medium ${data.mode === 'year' ? 'text-primary' : ''}`}>
+                                        {data.mode === 'year' ? r.period : BULAN[Number(r.period) - 1] ?? r.period}
+                                    </TableCell>
+                                    {data.currencies.map((c) => (
+                                        <TableCell key={c} className="text-right tabular-nums whitespace-nowrap">
+                                            {r.cells[c] !== undefined ? num(r.cells[c], 2) : <span className="text-muted-foreground/40">–</span>}
+                                        </TableCell>
+                                    ))}
+                                    <TableCell className="text-right tabular-nums text-muted-foreground">{num(r.docs)}</TableCell>
+                                </TableRow>
+                            ))}
+                            <TableRow className="border-t-2 font-semibold">
+                                <TableCell>Grand Total</TableCell>
+                                {data.currencies.map((c) => (
+                                    <TableCell key={c} className="text-right tabular-nums whitespace-nowrap">{num(data.totals[c] ?? 0, 2)}</TableCell>
+                                ))}
+                                <TableCell className="text-right tabular-nums text-muted-foreground">{num(data.rows.reduce((s2, r) => s2 + r.docs, 0))}</TableCell>
+                            </TableRow>
+                        </TableBody>
+                    </Table>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 

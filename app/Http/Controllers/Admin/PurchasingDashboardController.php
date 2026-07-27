@@ -388,6 +388,55 @@ class PurchasingDashboardController extends Controller
     }
 
     /**
+     * Pivot ringkasan pembelian: baris = tahun (atau bulan bila `year` diisi), kolom = mata
+     * uang, nilai = SUM nilai ASLI (bukan IDR) — meniru pivot Excel user. Filter principal
+     * opsional (dari klik bar chart).
+     */
+    public function spendPivot(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'principal' => ['nullable', 'string', 'max:255'],
+            'year' => ['nullable', 'regex:/^\d{4}$/'],
+        ]);
+        $year = $data['year'] ?? null;
+        $periodExpr = $year ? 'MONTH(s.trans_date)' : 'LEFT(s.trans_date,4)';
+
+        $rows = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+            ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
+            ->whereNotNull('s.trans_date')
+            ->when($year, fn ($q) => $q->whereRaw('LEFT(s.trans_date,4) = ?', [$year]))
+            ->when($data['principal'] ?? null, fn ($q, $pr) => $q->whereRaw('COALESCE(p.name, s.vendor_name) = ?', [$pr]))
+            ->groupBy('period', 'cur')
+            ->selectRaw("{$periodExpr} AS period, COALESCE(s.currency_code,'IDR') AS cur,
+                SUM(s.total) AS total, COUNT(DISTINCT s.doc_number) AS docs")
+            ->orderBy('period')
+            ->get();
+
+        // Susun pivot: IDR selalu kolom pertama, sisanya urut abjad; mata uang yang
+        // totalnya 0 (dokumen tanpa nilai) tidak dijadikan kolom.
+        $curSums = $rows->groupBy('cur')->map(fn ($g) => $g->sum('total'));
+        $curs = $rows->pluck('cur')->unique()
+            ->filter(fn ($c) => abs($curSums[$c] ?? 0) > 0.005)
+            ->sort()->sortBy(fn ($c) => $c === 'IDR' ? 0 : 1)->values();
+        $periods = [];
+        $totals = [];
+        foreach ($rows as $r) {
+            $periods[$r->period]['period'] = (string) $r->period;
+            $periods[$r->period]['cells'][$r->cur] = (float) $r->total;
+            $periods[$r->period]['docs'] = ($periods[$r->period]['docs'] ?? 0) + (int) $r->docs;
+            $totals[$r->cur] = ($totals[$r->cur] ?? 0) + (float) $r->total;
+        }
+
+        return response()->json([
+            'mode' => $year ? 'month' : 'year',
+            'currencies' => $curs,
+            'rows' => array_values($periods),
+            'totals' => $totals,
+        ]);
+    }
+
+    /**
      * Drill saldo vendor: faktur OUTSTANDING per vendor, live dari Accurate
      * (filter.vendorId + filter.outstanding=true), plus sisa tagihan per faktur
      * (owing dari detail — dipanggil per faktur, dibatasi 30) dan telat hari.
