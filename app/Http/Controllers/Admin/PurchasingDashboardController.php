@@ -382,6 +382,88 @@ class PurchasingDashboardController extends Controller
     }
 
     /**
+     * Biaya impor PER PO: nilai barang PO (realisasi faktur, IDR) vs total biaya terkait
+     * (dari ref PO di catatan biaya; catatan multi-PO dibagi rata; pajak dipisah) → rate
+     * per PO. Baris biaya tanpa ref PO dilaporkan terpisah agar total tetap tie-back.
+     * Filter principal/tahun/cari dilakukan di sisi klien (data dikirim utuh sekali).
+     */
+    public function importPoCosts(): \Illuminate\Http\JsonResponse
+    {
+        $catExpr = $this->expCatExpr();
+        $idrExpr = $this->expIdrExpr();
+
+        $exp = DB::table('dwh_stg_acc_purchase_expense as e')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 'e.vendor_name')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 'm.default_currency')->on('fx.period', '=', DB::raw('LEFT(e.trans_date, 7)'));
+            })
+            ->whereNotNull('e.trans_date')
+            ->selectRaw("e.notes, {$idrExpr} AS idr, ({$catExpr} = 'Pajak (PPN/PPh)') AS is_tax")
+            ->get();
+
+        $cost = [];
+        $tax = [];
+        $nCost = [];
+        $unattr = ['cost' => 0.0, 'tax' => 0.0, 'n' => 0];
+        foreach ($exp as $r) {
+            if (preg_match_all('/PO[\/-][A-Z]{0,4}\/?\d{4}\/\d{4,6}/i', (string) $r->notes, $mm)) {
+                $refs = array_unique(array_map('strtoupper', $mm[0]));
+                foreach ($refs as $ref) {
+                    $bag = $r->is_tax ? 'tax' : 'cost';
+                    ${$bag}[$ref] = (${$bag}[$ref] ?? 0) + (float) $r->idr / count($refs);
+                    if (! $r->is_tax) {
+                        $nCost[$ref] = ($nCost[$ref] ?? 0) + 1;
+                    }
+                }
+            } else {
+                $unattr[$r->is_tax ? 'tax' : 'cost'] += (float) $r->idr;
+                $unattr['n']++;
+            }
+        }
+
+        // Nilai barang per PO (realisasi faktur) + principal + penanda impor (vendor valas).
+        $goods = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+            ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 's.currency_code')->on('fx.period', '=', DB::raw('LEFT(s.trans_date, 7)'));
+            })
+            ->whereNotNull('s.po_number')->where('s.po_number', '<>', '')
+            ->groupBy('s.po_number')
+            ->selectRaw("s.po_number, MAX(COALESCE(p.name, s.vendor_name)) AS principal,
+                MIN(s.trans_date) AS tanggal, SUM(".$this->idrExpr().") AS goods,
+                MAX(m.default_currency <> 'IDR') AS is_import")
+            ->get()
+            ->keyBy('po_number');
+
+        $refs = collect(array_keys($cost))->merge(array_keys($tax))->merge($goods->keys())->unique();
+        $rows = $refs->map(function ($ref) use ($cost, $tax, $nCost, $goods) {
+            $g = $goods[$ref] ?? null;
+            $c = (float) ($cost[$ref] ?? 0);
+            $isImport = $g ? (bool) $g->is_import : true;
+            if (! $isImport && $c < 1) {
+                return null; // PO lokal tanpa biaya impor — di luar cakupan tab ini.
+            }
+
+            return [
+                'po' => $ref,
+                'principal' => $g->principal ?? null,
+                'tanggal' => $g->tanggal ?? null,
+                'goods' => $g ? round((float) $g->goods) : 0,
+                'cost' => round($c),
+                'tax' => round((float) ($tax[$ref] ?? 0)),
+                'n_cost' => (int) ($nCost[$ref] ?? 0),
+                'rate_pct' => $g && (float) $g->goods > 0 ? round($c / (float) $g->goods * 100, 2) : null,
+            ];
+        })->filter()->sortByDesc('cost')->values();
+
+        return response()->json([
+            'rows' => $rows,
+            'unattributed' => ['cost' => round($unattr['cost']), 'tax' => round($unattr['tax']), 'n' => $unattr['n']],
+        ]);
+    }
+
+    /**
      * Drill baris biaya impor: daftar mentah dgn filter kategori/akun/vendor/tahun + cari.
      * Untuk menelusuri angka mana pun di tab Analisa Biaya Impor sampai ke dokumennya.
      */

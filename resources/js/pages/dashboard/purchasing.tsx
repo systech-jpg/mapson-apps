@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import DashboardLayout from '@/layouts/dashboard-layout';
@@ -316,26 +317,25 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
 
                         <Card>
                             <CardHeader className="pb-2">
-                                <CardTitle className="text-base">Top PO by Biaya Impor</CardTitle>
-                                <p className="text-xs text-muted-foreground">Ref PO diekstrak dari catatan biaya (satu catatan multi-PO dibagi rata) · klik untuk baris biayanya.</p>
+                                <CardTitle className="text-base">Per Akun Biaya</CardTitle>
+                                <p className="text-xs text-muted-foreground">{year ? `Tahun ${year}` : 'Semua tahun'} · klik akun untuk baris biayanya.</p>
                             </CardHeader>
                             <CardContent>
                                 <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>PO</TableHead>
-                                            <TableHead>Principal</TableHead>
-                                            <TableHead className="text-right">Biaya (IDR)</TableHead>
+                                            <TableHead>Akun</TableHead>
+                                            <TableHead className="text-right">Baris</TableHead>
+                                            <TableHead className="text-right">Total (IDR)</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {importCost.top_po.length === 0 && <TableRow><TableCell colSpan={3} className="py-6 text-center text-muted-foreground">Tidak ada ref PO di catatan biaya.</TableCell></TableRow>}
-                                        {importCost.top_po.map((t) => (
-                                            <TableRow key={t.po} className="cursor-pointer"
-                                                onClick={() => setImpDrill({ label: `Biaya — ${t.po}`, params: { q: t.po } })}>
-                                                <TableCell className="font-medium whitespace-nowrap">{t.po}</TableCell>
-                                                <TableCell className="max-w-48 truncate text-muted-foreground">{t.principal ?? '–'}</TableCell>
-                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{num(t.idr)}</TableCell>
+                                        {importCost.by_account.map((a) => (
+                                            <TableRow key={a.account} className="cursor-pointer"
+                                                onClick={() => setImpDrill({ label: `Biaya — ${a.account}`, params: { account_no: a.account.split(' ')[0], ...(year ? { year } : {}) } })}>
+                                                <TableCell className="font-medium">{a.account}</TableCell>
+                                                <TableCell className="text-right tabular-nums text-muted-foreground">{num(a.n)}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{num(a.idr)}</TableCell>
                                             </TableRow>
                                         ))}
                                     </TableBody>
@@ -344,33 +344,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                         </Card>
                     </div>
 
-                    <Card>
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Per Akun Biaya</CardTitle>
-                            <p className="text-xs text-muted-foreground">{year ? `Tahun ${year}` : 'Semua tahun'} · klik akun untuk baris biayanya.</p>
-                        </CardHeader>
-                        <CardContent>
-                            <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Akun</TableHead>
-                                        <TableHead className="text-right">Baris</TableHead>
-                                        <TableHead className="text-right">Total (IDR)</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {importCost.by_account.map((a) => (
-                                        <TableRow key={a.account} className="cursor-pointer"
-                                            onClick={() => setImpDrill({ label: `Biaya — ${a.account}`, params: { account_no: a.account.split(' ')[0], ...(year ? { year } : {}) } })}>
-                                            <TableCell className="font-medium">{a.account}</TableCell>
-                                            <TableCell className="text-right tabular-nums text-muted-foreground">{num(a.n)}</TableCell>
-                                            <TableCell className="text-right tabular-nums whitespace-nowrap">{num(a.idr)}</TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </CardContent>
-                    </Card>
+                    <ImportPoCard onPick={(po) => setImpDrill({ label: `Biaya terkait ${po}`, params: { q: po } })} />
                 </TabsContent>
                 </Tabs>
             </div>
@@ -604,6 +578,105 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                 )}
             </DialogContent>
         </Dialog>
+    );
+}
+
+interface PoCostRow { po: string; principal: string | null; tanggal: string | null; goods: number; cost: number; tax: number; n_cost: number; rate_pct: number | null }
+
+/**
+ * Biaya impor per PO: nilai barang vs total biaya keluar per PO + rate, dengan filter
+ * principal & pencarian. Klik PO → baris biaya terkaitnya.
+ */
+function ImportPoCard({ onPick }: { onPick: (po: string) => void }) {
+    const [data, setData] = useState<{ rows: PoCostRow[]; unattributed: { cost: number; tax: number; n: number } } | null>(null);
+    const [principal, setPrincipal] = useState<string>('all');
+    const [q, setQ] = useState('');
+
+    useEffect(() => {
+        fetch(route('dashboard.purchasing.import-po-costs'), { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then(setData)
+            .catch(() => setData({ rows: [], unattributed: { cost: 0, tax: 0, n: 0 } }));
+    }, []);
+
+    const principals = useMemo(() => [...new Set((data?.rows ?? []).map((r) => r.principal).filter(Boolean))].sort() as string[], [data]);
+    const s = q.trim().toLowerCase();
+    const filtered = useMemo(() => (data?.rows ?? []).filter((r) =>
+        (principal === 'all' || r.principal === principal) &&
+        (!s || r.po.toLowerCase().includes(s) || (r.principal ?? '').toLowerCase().includes(s))), [data, principal, s]);
+    const tGoods = filtered.reduce((a, r) => a + r.goods, 0);
+    const tCost = filtered.reduce((a, r) => a + r.cost, 0);
+    const tTax = filtered.reduce((a, r) => a + r.tax, 0);
+
+    return (
+        <Card>
+            <CardHeader className="pb-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-base">Biaya Impor per PO</CardTitle>
+                    <div className="flex items-center gap-2">
+                        <Select value={principal} onValueChange={setPrincipal}>
+                            <SelectTrigger className="h-8 w-64"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">— semua principal —</SelectItem>
+                                {principals.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari PO…" className="h-8 w-40" />
+                    </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    Nilai barang = realisasi faktur PO (IDR); biaya diekstrak dari ref PO di catatan biaya (multi-PO dibagi rata). Klik PO untuk baris biayanya.
+                    {data && data.unattributed.cost > 0 && ` Biaya tanpa ref PO: Rp ${num(data.unattributed.cost)} (${num(data.unattributed.n)} baris) — tak teralokasi ke PO.`}
+                </p>
+            </CardHeader>
+            <CardContent>
+                {data === null ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat…</div>
+                ) : (
+                    <div className="max-h-[28rem] overflow-y-auto">
+                        <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                            <TableHeader className="sticky top-0 bg-card">
+                                <TableRow>
+                                    <TableHead>PO</TableHead>
+                                    <TableHead>Principal</TableHead>
+                                    <TableHead>Tanggal</TableHead>
+                                    <TableHead className="text-right">Nilai Barang (IDR)</TableHead>
+                                    <TableHead className="text-right">Biaya Impor</TableHead>
+                                    <TableHead className="text-right">Pajak</TableHead>
+                                    <TableHead className="text-right">Total Keluar</TableHead>
+                                    <TableHead className="text-right">Rate</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {filtered.length === 0 && <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Tidak ada PO.</TableCell></TableRow>}
+                                {filtered.map((r) => (
+                                    <TableRow key={r.po} className="cursor-pointer" onClick={() => onPick(r.po)}>
+                                        <TableCell className="font-medium whitespace-nowrap">{r.po}{r.n_cost > 0 && <span className="ml-1 text-muted-foreground">({r.n_cost})</span>}</TableCell>
+                                        <TableCell className="max-w-48 truncate text-muted-foreground" title={r.principal ?? ''}>{r.principal ?? '–'}</TableCell>
+                                        <TableCell className="whitespace-nowrap text-muted-foreground">{r.tanggal ?? '–'}</TableCell>
+                                        <TableCell className="text-right tabular-nums whitespace-nowrap">{r.goods ? num(r.goods) : '–'}</TableCell>
+                                        <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cost ? num(r.cost) : '–'}</TableCell>
+                                        <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">{r.tax ? num(r.tax) : '–'}</TableCell>
+                                        <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.cost + r.tax)}</TableCell>
+                                        <TableCell className={`text-right tabular-nums ${r.rate_pct !== null && r.rate_pct > 12 ? 'font-semibold text-red-600 dark:text-red-400' : ''}`}>
+                                            {r.rate_pct !== null ? `${num(r.rate_pct, 2)}%` : '–'}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                                <TableRow className="border-t-2 font-semibold">
+                                    <TableCell colSpan={3}>Total ({num(filtered.length)} PO)</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tGoods)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tCost)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tTax)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap">{num(tCost + tTax)}</TableCell>
+                                    <TableCell className="text-right tabular-nums">{tGoods > 0 ? `${num(tCost / tGoods * 100, 2)}%` : '–'}</TableCell>
+                                </TableRow>
+                            </TableBody>
+                        </Table>
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 
