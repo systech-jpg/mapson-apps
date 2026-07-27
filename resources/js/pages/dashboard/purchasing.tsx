@@ -628,10 +628,10 @@ function PrincipalPicker({ principals, value, onChange }: { principals: string[]
     const filtered = principals.filter((p) => !s || p.toLowerCase().includes(s));
 
     return (
-        <div className="relative w-72">
+        <div className="relative w-[26rem] max-w-full">
             <button type="button" onClick={() => { setOpen((v) => !v); setQ(''); }}
                 className="flex h-9 w-full items-center justify-between rounded-md border bg-background px-3 text-sm shadow-xs transition-colors hover:bg-accent">
-                <span className={value ? '' : 'text-muted-foreground'}>{value ?? '— semua principal —'}</span>
+                <span className={`truncate ${value ? "" : "text-muted-foreground"}`}>{value ?? "— semua principal —"}</span>
                 <span className="text-muted-foreground">▾</span>
             </button>
             {open && (
