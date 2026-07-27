@@ -36,6 +36,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('dashboard/purchasing/kpi-drill', [\App\Http\Controllers\Admin\PurchasingDashboardController::class, 'kpiDrill'])->middleware('menu.access:dashboard-purchasing,view')->name('dashboard.purchasing.kpi-drill');
     Route::get('dashboard/purchasing/ap-drill', [\App\Http\Controllers\Admin\PurchasingDashboardController::class, 'apDrill'])->middleware('menu.access:dashboard-purchasing,view')->name('dashboard.purchasing.ap-drill');
     Route::get('dashboard/purchasing/spend-pivot', [\App\Http\Controllers\Admin\PurchasingDashboardController::class, 'spendPivot'])->middleware('menu.access:dashboard-purchasing,view')->name('dashboard.purchasing.spend-pivot');
+    Route::get('dashboard/purchasing/import-cost-detail', [\App\Http\Controllers\Admin\PurchasingDashboardController::class, 'importCostDetail'])->middleware('menu.access:dashboard-purchasing,view')->name('dashboard.purchasing.import-cost-detail');
     Route::get('dashboard/cost', [DashboardController::class, 'cost'])->middleware('menu.access:dashboard-cost,view')->name('dashboard.cost');
     // Telusur baris buku besar di balik satu akun — supaya angka bisa diverifikasi sendiri.
     Route::get('dashboard/cost/drilldown', [DashboardController::class, 'costDrilldown'])->middleware('menu.access:dashboard-cost,view')->name('dashboard.cost.drilldown');

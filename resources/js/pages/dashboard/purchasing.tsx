@@ -17,6 +17,11 @@ interface LeadRow { principal: string; n_po: number; n_arrived: number; d_req_po
 interface BalanceRow { vendor_id: number; principal: string; vendor: string; cur: string; amount: number; idr: number }
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
+interface YearRateRow { tahun: string; goods: number; cost: number; rate_pct: number | null }
+interface ExpVendorRow { vendor: string; idr: number; n: number }
+interface TopPoRow { po: string; principal: string | null; idr: number }
+interface ImpDrill { label: string; params: Record<string, string> }
+interface ExpDetailRow { doc_number: string; trans_date: string; vendor: string; account: string; notes: string; kategori: string; amount: number; idr: number }
 type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit' | 'pr_status' | 'po_status' | 'ap';
 interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string; vendorId?: number; cur?: string }
 interface PurchaseDoc { po: string; has_po: boolean; docs: string; n_docs: number; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
@@ -30,7 +35,7 @@ interface Props {
     status: { pr: StatusRow[]; po: StatusRow[]; pr_total: number; po_total: number; open_po: number };
     leadTime: LeadRow[];
     balances: { available: boolean; error?: string; payable: BalanceRow[]; credit: BalanceRow[]; payable_idr: number; credit_idr: number };
-    importCost: { by_category: CatRow[]; by_account: AccRow[]; import_goods_idr: number; cost_idr: number; cost_with_tax_idr: number; rate_pct: number | null };
+    importCost: { by_category: CatRow[]; by_account: AccRow[]; by_year: YearRateRow[]; by_vendor: ExpVendorRow[]; top_po: TopPoRow[]; import_goods_idr: number; cost_idr: number; cost_with_tax_idr: number; rate_pct: number | null };
 }
 
 const breadcrumbs: BreadcrumbItem[] = [{ title: 'Purchasing', href: '/dashboard/purchasing' }];
@@ -48,7 +53,9 @@ const rp = (n: number) => {
 export default function PurchasingDashboard({ year, years, spending, status, leadTime, balances, importCost }: Props) {
     const setYear = (y: string | null) => router.get(route('dashboard.purchasing'), y ? { year: y } : {}, { preserveScroll: true, preserveState: true });
     const [drill, setDrill] = useState<DrillSpec | null>(null);
+    const [impDrill, setImpDrill] = useState<ImpDrill | null>(null);
     const [pivotPrincipal, setPivotPrincipal] = useState<string | null>(null);
+    const maxCat = Math.max(1, ...importCost.by_category.map((x) => x.idr));
 
     const chartData = [
         ...spending.rows.map((r) => ({ name: r.principal.length > 18 ? r.principal.slice(0, 17) + '…' : r.principal, full: r.principal, principal: r.principal, idr: r.idr })),
@@ -214,55 +221,161 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </TabsContent>
 
                 <TabsContent value="import" className="mt-0 flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <Kpi label={`Nilai barang impor${year ? ` ${year}` : ''}`} value={`Rp ${rp(importCost.import_goods_idr)}`} sub="baris item vendor bermata uang asing" />
+                        <Kpi label="Biaya impor (non-pajak)" value={`Rp ${rp(importCost.cost_idr)}`} sub="freight, PIB/bea, storage, dll" onClick={() => setImpDrill({ label: 'Semua biaya impor', params: {} })} />
+                        <Kpi label="Rate biaya impor" value={importCost.rate_pct !== null ? `${num(importCost.rate_pct, 2)}%` : '–'} sub="biaya non-pajak ÷ nilai barang impor" />
+                        <Kpi label="Biaya termasuk pajak" value={`Rp ${rp(importCost.cost_with_tax_idr)}`} sub="PPN/PPh impor ikut dihitung" />
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-2">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Tren Rate per Tahun</CardTitle>
+                                <p className="text-xs text-muted-foreground">Semua tahun (tak ikut filter) — klik tahun untuk baris biayanya.</p>
+                            </CardHeader>
+                            <CardContent>
+                                <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Tahun</TableHead>
+                                            <TableHead className="text-right">Barang Impor</TableHead>
+                                            <TableHead className="text-right">Biaya (non-pajak)</TableHead>
+                                            <TableHead className="text-right">Rate</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {importCost.by_year.map((r) => (
+                                            <TableRow key={r.tahun} className="cursor-pointer"
+                                                onClick={() => setImpDrill({ label: `Biaya impor ${r.tahun}`, params: { year: r.tahun } })}>
+                                                <TableCell className="font-medium text-primary">{r.tahun}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">Rp {rp(r.goods)}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">Rp {rp(r.cost)}</TableCell>
+                                                <TableCell className={`text-right tabular-nums font-medium ${r.rate_pct !== null && r.rate_pct > 12 ? 'text-red-600 dark:text-red-400' : ''}`}>
+                                                    {r.rate_pct !== null ? `${num(r.rate_pct, 2)}%` : '–'}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Komposisi per Kategori</CardTitle>
+                                <p className="text-xs text-muted-foreground">
+                                    {year ? `Tahun ${year}` : 'Semua tahun'} · klik kategori untuk baris biayanya. Pajak tampil tapi tak dihitung dalam rate (dapat dikreditkan).
+                                </p>
+                            </CardHeader>
+                            <CardContent className="space-y-1.5">
+                                {importCost.by_category.map((c) => (
+                                    <button key={c.kategori} type="button"
+                                        onClick={() => setImpDrill({ label: `Biaya — ${c.kategori}`, params: { kategori: c.kategori, ...(year ? { year } : {}) } })}
+                                        className="flex w-full items-center gap-2 rounded-sm text-left text-xs transition-colors hover:bg-accent">
+                                        <span className="w-36 shrink-0 truncate">{c.kategori}</span>
+                                        <div className="h-4 flex-1 overflow-hidden rounded-sm bg-muted/40">
+                                            <div className="h-full rounded-sm bg-primary/80" style={{ width: `${(c.idr / maxCat) * 100}%` }} />
+                                        </div>
+                                        <span className="w-24 shrink-0 text-right tabular-nums">Rp {rp(c.idr)}</span>
+                                        <span className="w-12 shrink-0 text-right text-muted-foreground">({c.n})</span>
+                                    </button>
+                                ))}
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-2">
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Biaya per Penyedia Jasa</CardTitle>
+                                <p className="text-xs text-muted-foreground">Vendor di faktur biaya (forwarder, bea cukai, dll){year ? ` — ${year}` : ''} · klik untuk rinciannya.</p>
+                            </CardHeader>
+                            <CardContent>
+                                <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>Vendor Jasa</TableHead>
+                                            <TableHead className="text-right">Baris</TableHead>
+                                            <TableHead className="text-right">Biaya (IDR)</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {importCost.by_vendor.map((v) => (
+                                            <TableRow key={v.vendor} className="cursor-pointer"
+                                                onClick={() => setImpDrill({ label: `Biaya — ${v.vendor}`, params: { vendor: v.vendor, ...(year ? { year } : {}) } })}>
+                                                <TableCell className="max-w-56 truncate font-medium" title={v.vendor}>{v.vendor}</TableCell>
+                                                <TableCell className="text-right tabular-nums text-muted-foreground">{num(v.n)}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{num(v.idr)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-base">Top PO by Biaya Impor</CardTitle>
+                                <p className="text-xs text-muted-foreground">Ref PO diekstrak dari catatan biaya (satu catatan multi-PO dibagi rata) · klik untuk baris biayanya.</p>
+                            </CardHeader>
+                            <CardContent>
+                                <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                    <TableHeader>
+                                        <TableRow>
+                                            <TableHead>PO</TableHead>
+                                            <TableHead>Principal</TableHead>
+                                            <TableHead className="text-right">Biaya (IDR)</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {importCost.top_po.length === 0 && <TableRow><TableCell colSpan={3} className="py-6 text-center text-muted-foreground">Tidak ada ref PO di catatan biaya.</TableCell></TableRow>}
+                                        {importCost.top_po.map((t) => (
+                                            <TableRow key={t.po} className="cursor-pointer"
+                                                onClick={() => setImpDrill({ label: `Biaya — ${t.po}`, params: { q: t.po } })}>
+                                                <TableCell className="font-medium whitespace-nowrap">{t.po}</TableCell>
+                                                <TableCell className="max-w-48 truncate text-muted-foreground">{t.principal ?? '–'}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{num(t.idr)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </CardContent>
+                        </Card>
+                    </div>
+
                     <Card>
                         <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Analisa Biaya Impor</CardTitle>
-                            <p className="text-xs text-muted-foreground">
-                                Dari baris biaya faktur pembelian (freight, PIB/bea, storage). Rate = biaya non-pajak ÷ nilai barang impor{year ? ` — ${year}` : ''}.
-                            </p>
+                            <CardTitle className="text-base">Per Akun Biaya</CardTitle>
+                            <p className="text-xs text-muted-foreground">{year ? `Tahun ${year}` : 'Semua tahun'} · klik akun untuk baris biayanya.</p>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid grid-cols-3 gap-2 lg:w-2/3">
-                                <MiniStat label="Nilai barang impor" value={`Rp ${rp(importCost.import_goods_idr)}`} />
-                                <MiniStat label="Biaya impor (non-pajak)" value={`Rp ${rp(importCost.cost_idr)}`} />
-                                <MiniStat label="Rate biaya impor" value={importCost.rate_pct !== null ? `${num(importCost.rate_pct, 2)}%` : '–'} accent />
-                            </div>
-
-                            <div>
-                                <p className="mb-1.5 text-xs font-medium">Komposisi per kategori</p>
-                                <div className="space-y-1 lg:w-2/3">
-                                    {importCost.by_category.map((c) => {
-                                        const maxC = Math.max(1, ...importCost.by_category.map((x) => x.idr));
-                                        return (
-                                            <div key={c.kategori} className="flex items-center gap-2 text-xs">
-                                                <span className="w-36 shrink-0 truncate">{c.kategori}</span>
-                                                <div className="h-3.5 flex-1 overflow-hidden rounded-sm bg-muted/40">
-                                                    <div className="h-full rounded-sm bg-primary/80" style={{ width: `${(c.idr / maxC) * 100}%` }} />
-                                                </div>
-                                                <span className="w-24 shrink-0 text-right tabular-nums">Rp {rp(c.idr)}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                <p className="mt-1 text-[11px] text-muted-foreground">Pajak (PPN/PPh) ditampilkan sebagai kategori tapi tidak dihitung dalam rate (dapat dikreditkan).</p>
-                            </div>
-
-                            <div>
-                                <p className="mb-1.5 text-xs font-medium">Per akun biaya</p>
-                                <div className="space-y-0.5 text-xs lg:w-2/3">
+                        <CardContent>
+                            <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Akun</TableHead>
+                                        <TableHead className="text-right">Baris</TableHead>
+                                        <TableHead className="text-right">Total (IDR)</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
                                     {importCost.by_account.map((a) => (
-                                        <div key={a.account} className="flex items-center justify-between gap-2">
-                                            <span className="truncate text-muted-foreground">{a.account} <span className="text-muted-foreground/60">({a.n})</span></span>
-                                            <span className="shrink-0 tabular-nums">Rp {num(a.idr)}</span>
-                                        </div>
+                                        <TableRow key={a.account} className="cursor-pointer"
+                                            onClick={() => setImpDrill({ label: `Biaya — ${a.account}`, params: { account_no: a.account.split(' ')[0], ...(year ? { year } : {}) } })}>
+                                            <TableCell className="font-medium">{a.account}</TableCell>
+                                            <TableCell className="text-right tabular-nums text-muted-foreground">{num(a.n)}</TableCell>
+                                            <TableCell className="text-right tabular-nums whitespace-nowrap">{num(a.idr)}</TableCell>
+                                        </TableRow>
                                     ))}
-                                </div>
-                            </div>
+                                </TableBody>
+                            </Table>
                         </CardContent>
                     </Card>
                 </TabsContent>
                 </Tabs>
             </div>
+
+            <ImportDrillDialog spec={impDrill} onClose={() => setImpDrill(null)} />
 
             <KpiDrillDialog spec={drill} year={year} balances={balances} onClose={() => setDrill(null)} />
         </DashboardLayout>
@@ -483,6 +596,67 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                                     <TableCell className="font-medium">{r.principal}</TableCell>
                                     <TableCell className="max-w-56 truncate text-muted-foreground" title={r.vendor}>{r.vendor}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
+                                    <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.idr)}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                )}
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/** Drill baris biaya impor: daftar mentah (dokumen, vendor jasa, akun, catatan, nilai). */
+function ImportDrillDialog({ spec, onClose }: { spec: ImpDrill | null; onClose: () => void }) {
+    const [rows, setRows] = useState<ExpDetailRow[] | null>(null);
+    const [q, setQ] = useState('');
+
+    useEffect(() => {
+        setRows(null); setQ('');
+        if (!spec) return;
+        fetch(route('dashboard.purchasing.import-cost-detail') + `?${new URLSearchParams(spec.params)}`, { headers: { Accept: 'application/json' } })
+            .then((r) => r.json())
+            .then((d) => setRows(d.rows ?? []))
+            .catch(() => setRows([]));
+    }, [spec]);
+
+    const s = q.trim().toLowerCase();
+    const filtered = (rows ?? []).filter((r) => !s || r.doc_number.toLowerCase().includes(s) || r.vendor.toLowerCase().includes(s) || r.notes.toLowerCase().includes(s) || r.account.toLowerCase().includes(s));
+
+    return (
+        <Dialog open={spec !== null} onOpenChange={(o) => !o && onClose()}>
+            <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-5xl">
+                <DialogHeader>
+                    <DialogTitle>{spec?.label}</DialogTitle>
+                    <DialogDescription>Baris biaya dari faktur pembelian, terurut nilai terbesar (maks 500). Kolom IDR memakai kurs bulan dokumen.</DialogDescription>
+                </DialogHeader>
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="cari dokumen / vendor / catatan…" className="h-8 w-72" />
+                {rows === null ? (
+                    <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Memuat…</div>
+                ) : (
+                    <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Dokumen</TableHead>
+                                <TableHead>Tanggal</TableHead>
+                                <TableHead>Vendor Jasa</TableHead>
+                                <TableHead>Akun</TableHead>
+                                <TableHead>Kategori</TableHead>
+                                <TableHead>Catatan</TableHead>
+                                <TableHead className="text-right">IDR</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {filtered.length === 0 && <TableRow><TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Tidak ada baris biaya.</TableCell></TableRow>}
+                            {filtered.map((r, i) => (
+                                <TableRow key={i}>
+                                    <TableCell className="font-medium whitespace-nowrap">{r.doc_number}</TableCell>
+                                    <TableCell className="whitespace-nowrap text-muted-foreground">{r.trans_date}</TableCell>
+                                    <TableCell className="max-w-36 truncate" title={r.vendor}>{r.vendor}</TableCell>
+                                    <TableCell className="max-w-36 truncate text-muted-foreground" title={r.account}>{r.account}</TableCell>
+                                    <TableCell><Badge variant="outline" className="text-[10px]">{r.kategori}</Badge></TableCell>
+                                    <TableCell className="max-w-64 truncate text-muted-foreground" title={r.notes}>{r.notes}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.idr)}</TableCell>
                                 </TableRow>
                             ))}

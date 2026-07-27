@@ -235,21 +235,32 @@ class PurchasingDashboardController extends Controller
      * vendor dokumen) vs nilai barang impor (baris item vendor non-IDR), komposisi per
      * kategori (PIB/bea, freight, storage, pajak, lainnya) dan per akun.
      */
-    protected function importCost(?string $year): array
+    /** Kategori biaya dari catatan/akun — kata kunci nyata di data: PIB/DJBC, freight, storage. */
+    protected function expCatExpr(): string
     {
-        // Kategori dari catatan/akun — kata kunci nyata di data: PIB/DJBC, freight, storage.
-        $catExpr = "CASE
+        return "CASE
             WHEN e.account_no IN ('1171000','1175000','2122000') OR e.account_name LIKE '%Tax%' OR e.account_name LIKE '%Art %' THEN 'Pajak (PPN/PPh)'
             WHEN e.notes LIKE '%PIB%' OR e.notes LIKE '%DJBC%' OR e.account_no = '5500000' THEN 'PIB / Bea & Cukai'
             WHEN e.notes LIKE '%storage%' THEN 'Storage'
             WHEN e.notes LIKE '%freight%' OR e.account_no = '5400000' THEN 'Freight & Handling'
             ELSE 'Lainnya' END";
+    }
 
-        // Pengaman skala: baris pajak/biaya kadang di-input RUPIAH pada dokumen valas
-        // (BS25-654 A: VAT 12,4jt di faktur USD). Baris valas >= 50.000 mustahil benar-benar
-        // valas (USD 50rb utk satu baris biaya ≈ Rp 800jt) → perlakukan IDR.
-        $idrExpr = "e.amount * CASE WHEN m.default_currency IS NULL OR m.default_currency = 'IDR' OR e.amount >= 50000 THEN 1
+    /**
+     * IDR per baris biaya. Pengaman skala: baris pajak/biaya kadang di-input RUPIAH pada
+     * dokumen valas (BS25-654 A: VAT 12,4jt di faktur USD). Baris valas >= 50.000 mustahil
+     * benar-benar valas (USD 50rb utk satu baris ≈ Rp 800jt) → perlakukan IDR.
+     */
+    protected function expIdrExpr(): string
+    {
+        return "e.amount * CASE WHEN m.default_currency IS NULL OR m.default_currency = 'IDR' OR e.amount >= 50000 THEN 1
             ELSE COALESCE(fx.rate_to_idr, ".self::DEFAULT_RATE.') END';
+    }
+
+    protected function importCost(?string $year): array
+    {
+        $catExpr = $this->expCatExpr();
+        $idrExpr = $this->expIdrExpr();
 
         $base = fn () => DB::table('dwh_stg_acc_purchase_expense as e')
             ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 'e.vendor_name')
@@ -288,14 +299,131 @@ class PurchasingDashboardController extends Controller
         // Rate dihitung TANPA pajak (PPN/PPh bukan biaya impor murni — bisa dikreditkan).
         $costNonTax = (float) $byCategory->where('kategori', '<>', 'Pajak (PPN/PPh)')->sum('idr');
 
+        // Tren per TAHUN (selalu semua tahun, tak ikut filter — utk melihat pergerakan rate).
+        $costYear = DB::table('dwh_stg_acc_purchase_expense as e')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 'e.vendor_name')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 'm.default_currency')->on('fx.period', '=', DB::raw('LEFT(e.trans_date, 7)'));
+            })
+            ->whereNotNull('e.trans_date')
+            ->groupBy('th')
+            ->selectRaw("LEFT(e.trans_date,4) AS th,
+                SUM(CASE WHEN {$catExpr} <> 'Pajak (PPN/PPh)' THEN {$idrExpr} ELSE 0 END) AS cost,
+                SUM({$idrExpr}) AS cost_tax")
+            ->pluck('cost', 'th');
+        $goodsYear = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->join('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 's.currency_code')->on('fx.period', '=', DB::raw('LEFT(s.trans_date, 7)'));
+            })
+            ->where('m.default_currency', '<>', 'IDR')
+            ->whereNotNull('s.trans_date')
+            ->groupBy('th')
+            ->selectRaw('LEFT(s.trans_date,4) AS th, SUM('.$this->idrExpr().') AS goods')
+            ->pluck('goods', 'th');
+        $byYear = collect($goodsYear->keys()->merge($costYear->keys())->unique()->sort()->values())
+            ->map(fn ($th) => [
+                'tahun' => $th,
+                'goods' => (float) ($goodsYear[$th] ?? 0),
+                'cost' => (float) ($costYear[$th] ?? 0),
+                'rate_pct' => ($goodsYear[$th] ?? 0) > 0 ? round(($costYear[$th] ?? 0) / $goodsYear[$th] * 100, 2) : null,
+            ]);
+
+        // Biaya (non-pajak) per PENYEDIA JASA — vendor di faktur biaya (forwarder, DJBC, dll).
+        $byVendor = $base()
+            ->whereRaw("{$catExpr} <> 'Pajak (PPN/PPh)'")
+            ->groupBy('e.vendor_name')
+            ->selectRaw("e.vendor_name, SUM({$idrExpr}) AS idr, COUNT(*) AS n")
+            ->orderByDesc('idr')->limit(15)->get()
+            ->map(fn ($r) => ['vendor' => $r->vendor_name, 'idr' => (float) $r->idr, 'n' => (int) $r->n]);
+
+        // Biaya per PO — ekstrak ref PO dari catatan (satu catatan bisa menyebut beberapa PO:
+        // nilai dibagi rata). Principal barang dari mapping vendor faktur ber-PO tsb.
+        $expRows = $base()
+            ->whereRaw("{$catExpr} <> 'Pajak (PPN/PPh)'")
+            ->selectRaw("e.notes, {$idrExpr} AS idr")
+            ->get();
+        $poCost = [];
+        foreach ($expRows as $r) {
+            if (! preg_match_all('/PO[\/-][A-Z]{0,4}\/?\d{4}\/\d{4,6}/i', (string) $r->notes, $mm)) {
+                continue;
+            }
+            $refs = array_unique(array_map('strtoupper', $mm[0]));
+            foreach ($refs as $ref) {
+                $poCost[$ref] = ($poCost[$ref] ?? 0) + (float) $r->idr / count($refs);
+            }
+        }
+        arsort($poCost);
+        $topPoRefs = array_slice(array_keys($poCost), 0, 15);
+        $poPrincipal = DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 's.vendor_name')
+            ->leftJoin('pricing_principals as p', 'p.id', '=', 'm.principal_id')
+            ->whereIn('s.po_number', $topPoRefs)
+            ->groupBy('s.po_number')
+            ->selectRaw('s.po_number, MAX(COALESCE(p.name, s.vendor_name)) AS principal')
+            ->pluck('principal', 's.po_number');
+        $topPo = collect($topPoRefs)->map(fn ($ref) => [
+            'po' => $ref,
+            'principal' => $poPrincipal[$ref] ?? null,
+            'idr' => round($poCost[$ref], 0),
+        ]);
+
         return [
             'by_category' => $byCategory->values(),
             'by_account' => $byAccount->values(),
+            'by_year' => $byYear->values(),
+            'by_vendor' => $byVendor->values(),
+            'top_po' => $topPo->values(),
             'import_goods_idr' => $importGoods,
             'cost_idr' => $costNonTax,
             'cost_with_tax_idr' => (float) $byCategory->sum('idr'),
             'rate_pct' => $importGoods > 0 ? round($costNonTax / $importGoods * 100, 2) : null,
         ];
+    }
+
+    /**
+     * Drill baris biaya impor: daftar mentah dgn filter kategori/akun/vendor/tahun + cari.
+     * Untuk menelusuri angka mana pun di tab Analisa Biaya Impor sampai ke dokumennya.
+     */
+    public function importCostDetail(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate([
+            'year' => ['nullable', 'regex:/^\d{4}$/'],
+            'kategori' => ['nullable', 'string', 'max:64'],
+            'account_no' => ['nullable', 'string', 'max:32'],
+            'vendor' => ['nullable', 'string', 'max:255'],
+            'q' => ['nullable', 'string', 'max:255'],
+        ]);
+        $catExpr = $this->expCatExpr();
+        $idrExpr = $this->expIdrExpr();
+
+        $rows = DB::table('dwh_stg_acc_purchase_expense as e')
+            ->leftJoin('dwh_map_vendor_principal as m', 'm.vendor_name', '=', 'e.vendor_name')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 'm.default_currency')->on('fx.period', '=', DB::raw('LEFT(e.trans_date, 7)'));
+            })
+            ->whereNotNull('e.trans_date')
+            ->when($data['year'] ?? null, fn ($q2, $y) => $q2->whereRaw('LEFT(e.trans_date,4) = ?', [$y]))
+            ->when($data['kategori'] ?? null, fn ($q2, $k) => $q2->whereRaw("{$catExpr} = ?", [$k]))
+            ->when($data['account_no'] ?? null, fn ($q2, $a) => $q2->where('e.account_no', $a))
+            ->when($data['vendor'] ?? null, fn ($q2, $v) => $q2->where('e.vendor_name', $v))
+            ->when($data['q'] ?? null, fn ($q2, $s) => $q2->where(fn ($w) => $w
+                ->where('e.doc_number', 'like', "%{$s}%")
+                ->orWhere('e.notes', 'like', "%{$s}%")
+                ->orWhere('e.vendor_name', 'like', "%{$s}%")))
+            ->selectRaw("e.doc_number, e.trans_date, e.vendor_name, e.account_no, e.account_name,
+                e.notes, e.amount, {$catExpr} AS kategori, {$idrExpr} AS idr")
+            ->orderByDesc(DB::raw("ABS({$idrExpr})"))
+            ->limit(500)
+            ->get()
+            ->map(fn ($r) => [
+                'doc_number' => $r->doc_number, 'trans_date' => $r->trans_date, 'vendor' => $r->vendor_name,
+                'account' => trim(($r->account_no ?? '').' '.($r->account_name ?? '')),
+                'notes' => mb_substr(trim(preg_replace('/\s+/', ' ', (string) $r->notes)), 0, 160),
+                'kategori' => $r->kategori, 'amount' => (float) $r->amount, 'idr' => (float) $r->idr,
+            ]);
+
+        return response()->json(['rows' => $rows]);
     }
 
     /**
