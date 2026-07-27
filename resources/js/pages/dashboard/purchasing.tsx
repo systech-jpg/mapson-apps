@@ -94,22 +94,11 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
         <DashboardLayout breadcrumbs={breadcrumbs}>
             <Head title="Purchasing" />
             <div className="flex flex-1 flex-col gap-4">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                        <h1 className="text-2xl font-semibold">Purchasing — Executive Dashboard</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Pembelian dari Accurate & ERP: spending per principal, status PR/PO, lead time, utang & CN, dan biaya impor.
-                        </p>
-                        {tab === 'import' && (
-                            <div className="mt-2">
-                                <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
-                            </div>
-                        )}
-                    </div>
-                    <div className="flex gap-1">
-                        <Seg active={!year} onClick={() => setYear(null)}>Semua</Seg>
-                        {years.map((y) => <Seg key={y} active={year === y} onClick={() => setYear(y)}>{y}</Seg>)}
-                    </div>
+                <div>
+                    <h1 className="text-2xl font-semibold">Purchasing — Executive Dashboard</h1>
+                    <p className="text-sm text-muted-foreground">
+                        Pembelian dari Accurate & ERP: spending per principal, status PR/PO, lead time, utang & CN, dan biaya impor.
+                    </p>
                 </div>
 
                 <Tabs value={tab} onValueChange={setTab} className="flex flex-1 flex-col gap-4">
@@ -252,6 +241,14 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 </TabsContent>
 
                 <TabsContent value="import" className="mt-0 flex flex-col gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <PrincipalPicker principals={impPrincipals} value={impPrincipal} onChange={setImpPrincipal} />
+                        <div className="flex flex-wrap gap-1">
+                            <Seg active={!year} onClick={() => setYear(null)}>Semua</Seg>
+                            {years.map((y) => <Seg key={y} active={year === y} onClick={() => setYear(y)}>{y}</Seg>)}
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                         <Kpi label={`Nilai barang impor${year ? ` ${year}` : ""}`} value={`Rp ${rp(impStats.goods)}`}
                             sub={impStats.alloc ? `${impPrincipal ?? 'semua principal'} — realisasi PO teralokasi` : 'baris item vendor bermata uang asing'} />
