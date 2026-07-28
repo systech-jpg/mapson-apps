@@ -5,7 +5,7 @@ import { computeEngine, rupiah, type EngineInputs } from '@/lib/pricing-engine';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Building2, Eye, FileDown, FileSpreadsheet, History, Plus, Save, Search, SendHorizonal, Upload } from 'lucide-react';
+import { Building2, Eye, FileDown, FileSpreadsheet, History, Lock, LockOpen, Plus, Save, Search, SendHorizonal, Upload } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
@@ -36,6 +36,9 @@ interface Row extends EngineInputs {
     currency_code: string;
     qty_beli: number | string; uom_beli: string; qty_jual: number | string; uom_jual: string;
     buffer_pct: number | string;
+    locked_gudang?: number | string | null;    // E dikunci (null = mengikuti %)
+    locked_bottom?: number | string | null;    // G dikunci
+    locked_pricelist?: number | string | null; // L dikunci
     prices_by_profile?: Record<string, ProfilePrice>;
     _dirty?: boolean; // edited/new since last load — only these are submitted
 }
@@ -109,7 +112,7 @@ const DEFAULT_INPUTS: Record<number, HeaderKey> = {
 // Widths match cell content (input width + px-1 padding) so sticky offsets line up.
 const LEFT_W = [40, 120, 232];
 const LEFT_OFFSET = LEFT_W.map((_, i) => LEFT_W.slice(0, i).reduce((a, b) => a + b, 0));
-const RIGHT_W_FROM_END = [76, 112]; // [actions, pricelist]
+const RIGHT_W_FROM_END = [76, 148]; // [actions, pricelist (input + tombol kunci)]
 const isLeftFrozen = (idx: number) => idx < LEFT_W.length;
 const isRightFrozen = (idx: number) => COLS.length - 1 - idx < RIGHT_W_FROM_END.length;
 const isFrozen = (idx: number) => isLeftFrozen(idx) || isRightFrozen(idx);
@@ -228,6 +231,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         cat1: '', cat2: '', cat3: '', cat4: '', product_type: '',
         currency_code: headerCurrency, price_principle: 0, disc_principle_pct: 0,
         qty_beli: 1, uom_beli: 'pcs', qty_jual: 1, uom_jual: 'pcs',
+        locked_gudang: null, locked_bottom: null, locked_pricelist: null,
         ...header,
         _dirty: true,
     });
@@ -257,7 +261,7 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
         setRows((rs) => rs.map((r, i) => (overrides[i]?.[key] ? r : { ...r, [key]: value, _dirty: true })));
     };
     // Stable identity (useCallback) so memoized rows only re-render when their own row/override changes.
-    const updateCell = useCallback((i: number, key: keyof Row, value: string | number) => {
+    const updateCell = useCallback((i: number, key: keyof Row, value: string | number | null) => {
         setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, [key]: value, _dirty: true } : r)));
         if ((HEADER_KEYS as readonly string[]).includes(key as string)) {
             setOverrides((o) => ({ ...o, [i]: { ...o[i], [key]: true } }));
@@ -305,7 +309,9 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                 const field = resolveField(normH(rawKey));
                 if (!field) continue;
                 if (NUMERIC_FIELDS.has(field)) {
-                    (r as unknown as Record<string, unknown>)[field] = parseIdNum(val);
+                    const parsed = parseIdNum(val);
+                    // Price principle dibatasi 2 angka di belakang koma.
+                    (r as unknown as Record<string, unknown>)[field] = field === 'price_principle' ? Math.round(parsed * 100) / 100 : parsed;
                 } else if (field === 'currency_code') {
                     r.currency_code = String(val ?? '').trim().toUpperCase();
                 } else {
@@ -458,8 +464,8 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                 +r.price_principle || 0, +r.disc_principle_pct || 0, r.currency_code, +r.kurs || 0,
                 +r.qty_beli || 0, r.uom_beli, +r.qty_jual || 0, r.uom_jual,
                 c.a_principal_idr, +r.bm_pct || 0, c.bm, +r.pph22_pct || 0, c.pph22, +r.ppn_pct || 0, c.ppn, +r.shipment_pct || 0, c.shipment,
-                c.b_total_cost, c.c_warehouse, +r.ops_pct || 0, c.e_harga_gudang, +r.profit_pct || 0, c.g_bottom,
-                +r.komisi_pct || 0, +r.event_pct || 0, +r.lainnya_pct || 0, +r.buffer_pct || 0, +(r.rounding_step ?? 0) || 0, c.l_pricelist];
+                c.b_total_cost, c.c_warehouse, c.d_ops_pct, c.e_harga_gudang, c.d_profit_pct, c.g_bottom,
+                c.d_komisi_pct, c.d_event_pct, c.d_lainnya_pct, +r.buffer_pct || 0, +(r.rounding_step ?? 0) || 0, c.l_pricelist];
         });
         const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
         const wb = XLSX.utils.book_new();
@@ -695,19 +701,22 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                                 </DSection>
                                 <DSection title="Gudang & Profit">
                                     <DRow label="C · Harga Masuk Gudang" value={rupiah(c.c_warehouse)} />
-                                    <DRow label={`D · Alokasi Ops (${pct(detail.ops_pct)})`} value={rupiah(c.e_harga_gudang - c.c_warehouse)} />
-                                    <DRow label="E · Harga Gudang" value={rupiah(c.e_harga_gudang)} strong />
-                                    <DRow label={`F · Profit (${pct(detail.profit_pct)})`} value={rupiah(c.g_bottom - c.e_harga_gudang)} />
-                                    <DRow label="G · Harga Bawah" value={rupiah(c.g_bottom)} strong />
+                                    <DRow label={`D · Alokasi Ops (${pct(c.d_ops_pct)})`} value={rupiah(c.e_harga_gudang - c.c_warehouse)} />
+                                    <DRow label={`E · Harga Gudang${detail.locked_gudang ? ' 🔒' : ''}`} value={rupiah(c.e_harga_gudang)} strong />
+                                    <DRow label={`F · Profit (${pct(c.d_profit_pct)})`} value={rupiah(c.g_bottom - c.e_harga_gudang)} />
+                                    <DRow label={`G · Harga Bawah${detail.locked_bottom ? ' 🔒' : ''}`} value={rupiah(c.g_bottom)} strong />
                                 </DSection>
                                 <DSection title="Alokasi Diskon & Pricelist">
-                                    <DRow label="H · Komisi" value={pct(detail.komisi_pct)} />
-                                    <DRow label="I · Event" value={pct(detail.event_pct)} />
-                                    <DRow label="J · Lainnya" value={pct(detail.lainnya_pct)} />
+                                    <DRow label="H · Komisi" value={pct(c.d_komisi_pct)} />
+                                    <DRow label="I · Event" value={pct(c.d_event_pct)} />
+                                    <DRow label="J · Lainnya" value={pct(c.d_lainnya_pct)} />
                                     <DRow label="K · Total Diskon/Komisi" value={`${c.k_disc_total.toLocaleString('id-ID')}%`} />
                                     <DRow label="M · Maks Discount" value={pct(detail.buffer_pct)} />
-                                    <DRow label="L · Harga Pricelist" value={rupiah(c.l_pricelist)} big />
+                                    <DRow label={`L · Harga Pricelist${detail.locked_pricelist ? ' 🔒' : ''}`} value={rupiah(c.l_pricelist)} big />
                                 </DSection>
+                                {c.any_lock && (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400">🔒 Ada harga yang dikunci — persentase di atas adalah nilai efektif hasil prorata.</p>
+                                )}
                             </div>
                         );
                     })()}
@@ -837,7 +846,7 @@ interface PricingRowProps {
     roots: Category[];
     childrenOf: (label: string) => Category[];
     currencies: Currency[];
-    updateCell: (i: number, key: keyof Row, value: string | number) => void;
+    updateCell: (i: number, key: keyof Row, value: string | number | null) => void;
     updateCat: (i: number, level: number, value: string) => void;
     updateCurrency: (i: number, code: string) => void;
     removeRow: (i: number) => void;
@@ -864,7 +873,7 @@ const PricingRow = memo(function PricingRow({ r, i, ov: ovProp, roots, childrenO
                     <option value="bhp">BHP</option>
                 </select>
             </Td>
-            <TdNum v={r.price_principle} onC={(v) => updateCell(i, 'price_principle', v)} />
+            <TdNum v={r.price_principle} onC={(v) => updateCell(i, 'price_principle', Math.round(v * 100) / 100)} step="0.01" />
             <TdNum v={r.disc_principle_pct} onC={(v) => updateCell(i, 'disc_principle_pct', v)} w="w-14" />
             <Td>
                 <select className="h-6 w-16 rounded border bg-background px-1" value={r.currency_code} onChange={(e) => updateCurrency(i, e.target.value)}>
@@ -888,16 +897,16 @@ const PricingRow = memo(function PricingRow({ r, i, ov: ovProp, roots, childrenO
             <TdCalc>{num(c.shipment)}</TdCalc>
             <TdCalc>{num(c.b_total_cost)}</TdCalc>
             <TdCalc>{num(c.c_warehouse)}</TdCalc>
-            <TdNum v={r.ops_pct} onC={(v) => updateCell(i, 'ops_pct', v)} w="w-12" over={ov.ops_pct} />
-            <TdCalc>{num(c.e_harga_gudang)}</TdCalc>
-            <TdNum v={r.profit_pct} onC={(v) => updateCell(i, 'profit_pct', v)} w="w-12" over={ov.profit_pct} />
-            <TdCalc>{num(c.g_bottom)}</TdCalc>
-            <TdNum v={r.komisi_pct} onC={(v) => updateCell(i, 'komisi_pct', v)} w="w-12" over={ov.komisi_pct} />
-            <TdNum v={r.event_pct} onC={(v) => updateCell(i, 'event_pct', v)} w="w-12" over={ov.event_pct} />
-            <TdNum v={r.lainnya_pct} onC={(v) => updateCell(i, 'lainnya_pct', v)} w="w-12" over={ov.lainnya_pct} />
+            <TdNum v={r.ops_pct} onC={(v) => updateCell(i, 'ops_pct', v)} w="w-12" over={ov.ops_pct} eff={c.any_lock ? c.d_ops_pct : undefined} />
+            <TdLock calc={c.e_harga_gudang} locked={r.locked_gudang} onChange={(v) => updateCell(i, 'locked_gudang', v)} />
+            <TdNum v={r.profit_pct} onC={(v) => updateCell(i, 'profit_pct', v)} w="w-12" over={ov.profit_pct} eff={c.any_lock ? c.d_profit_pct : undefined} />
+            <TdLock calc={c.g_bottom} locked={r.locked_bottom} onChange={(v) => updateCell(i, 'locked_bottom', v)} />
+            <TdNum v={r.komisi_pct} onC={(v) => updateCell(i, 'komisi_pct', v)} w="w-12" over={ov.komisi_pct} eff={c.any_lock ? c.d_komisi_pct : undefined} />
+            <TdNum v={r.event_pct} onC={(v) => updateCell(i, 'event_pct', v)} w="w-12" over={ov.event_pct} eff={c.any_lock ? c.d_event_pct : undefined} />
+            <TdNum v={r.lainnya_pct} onC={(v) => updateCell(i, 'lainnya_pct', v)} w="w-12" over={ov.lainnya_pct} eff={c.any_lock ? c.d_lainnya_pct : undefined} />
             <TdNum v={r.buffer_pct} onC={(v) => updateCell(i, 'buffer_pct', v)} w="w-12" over={ov.buffer_pct} />
             <TdNum v={r.rounding_step ?? ''} onC={(v) => updateCell(i, 'rounding_step', v)} w="w-16" over={ov.rounding_step} />
-            <TdCalc frozenIdx={COLS.length - 2} className="!bg-emerald-100 font-bold !text-emerald-800 dark:!bg-emerald-900/50 dark:!text-emerald-200">{rupiah(c.l_pricelist)}</TdCalc>
+            <TdLock calc={c.l_pricelist} locked={r.locked_pricelist} onChange={(v) => updateCell(i, 'locked_pricelist', v)} frozenIdx={COLS.length - 2} emerald />
             <Td frozenIdx={COLS.length - 1}>
                 <div className="flex items-center justify-center gap-1.5">
                     <button onClick={() => onDetail(r)} title="Lihat detail" className="text-slate-600 hover:text-slate-900 dark:text-slate-300"><Eye className="h-3.5 w-3.5" /></button>
@@ -921,8 +930,51 @@ function TdCalc({ children, className = '', frozenIdx }: { children: React.React
 function TdIn({ v, onC, w = 'w-24', frozenIdx, invalid }: { v: string; onC: (v: string) => void; w?: string; frozenIdx?: number; invalid?: boolean }) {
     return <Td frozenIdx={frozenIdx}><input className={`h-6 ${w} rounded border px-1 ${invalid ? 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400' : 'bg-background'}`} value={v ?? ''} onChange={(e) => onC(e.target.value)} /></Td>;
 }
-function TdNum({ v, onC, w = 'w-20', over }: { v: number | string; onC: (v: number) => void; w?: string; over?: boolean }) {
-    return <Td><input type="number" step="any" className={`h-6 ${w} rounded border px-1 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${over ? 'border-amber-400 bg-amber-50 font-medium' : 'bg-background'}`} value={v ?? 0} onChange={(e) => onC(+e.target.value)} /></Td>;
+function TdNum({ v, onC, w = 'w-20', over, eff, step = 'any' }: { v: number | string; onC: (v: number) => void; w?: string; over?: boolean; eff?: number; step?: string }) {
+    // eff = persentase efektif setelah kunci harga (ditampilkan bila berbeda dari input).
+    const showEff = eff != null && Math.abs(eff - (+v || 0)) > 0.005;
+    return (
+        <Td>
+            <input type="number" step={step} className={`h-6 ${w} rounded border px-1 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${over ? 'border-amber-400 bg-amber-50 font-medium' : 'bg-background'}`} value={v ?? 0} onChange={(e) => onC(+e.target.value)} />
+            {showEff && (
+                <div className="text-right text-[9px] leading-tight text-amber-600 dark:text-amber-400" title="Persentase efektif setelah kunci harga">
+                    → {eff.toLocaleString('id-ID', { maximumFractionDigits: 2 })}
+                </div>
+            )}
+        </Td>
+    );
+}
+// Harga yang bisa dikunci (E/G/L). Terbuka: nilai hasil hitungan + gembok abu; terkunci: input
+// editable + gembok kuning — persentase di belakangnya menyesuaikan prorata (lihat pricing-engine.ts).
+function TdLock({ calc, locked, onChange, frozenIdx, emerald }: { calc: number; locked?: number | string | null; onChange: (v: number | null) => void; frozenIdx?: number; emerald?: boolean }) {
+    const isLocked = locked != null && locked !== '' && +locked > 0;
+    const tone = emerald
+        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200'
+        : 'bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200';
+    return (
+        <Td frozenIdx={frozenIdx} className={`text-right tabular-nums ${isLocked ? 'bg-amber-100 dark:bg-amber-900/40' : tone}`}>
+            <div className="flex items-center justify-end gap-1">
+                {isLocked ? (
+                    <input
+                        type="number" step="any"
+                        className="h-6 w-24 rounded border border-amber-400 bg-background px-1 text-right font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                        value={locked ?? 0}
+                        onChange={(e) => onChange(+e.target.value)}
+                    />
+                ) : (
+                    <span className={emerald ? 'font-bold' : 'font-medium'}>{num(calc)}</span>
+                )}
+                <button
+                    type="button"
+                    title={isLocked ? 'Buka kunci — harga kembali dihitung dari %' : 'Kunci harga ini — % di belakangnya menyesuaikan prorata'}
+                    onClick={() => onChange(isLocked ? null : Math.round(calc))}
+                    className={isLocked ? 'text-amber-600 hover:text-amber-800' : 'text-muted-foreground/50 hover:text-foreground'}
+                >
+                    {isLocked ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+                </button>
+            </div>
+        </Td>
+    );
 }
 function TdCat({ v, opts, onC }: { v: string; opts: Category[]; onC: (v: string) => void }) {
     const hasCurrent = !v || opts.some((o) => o.label === v);

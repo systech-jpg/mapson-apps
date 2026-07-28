@@ -35,6 +35,9 @@ class PricingEngineController extends Controller
         'ops_pct', 'profit_pct', 'komisi_pct', 'event_pct', 'lainnya_pct', 'buffer_pct', 'rounding_step',
     ];
 
+    /** Lockable price points (null = unlocked). When locked, effective %s are derived pro-rata. */
+    private const LOCK_FIELDS = ['locked_gudang', 'locked_bottom', 'locked_pricelist'];
+
     /** Percentage columns are decimal(6,3): clamp so stray nominal values can't overflow. */
     private const PCT_FIELDS = [
         'disc_principle_pct', 'bm_pct', 'pph22_pct', 'ppn_pct', 'shipment_pct',
@@ -47,7 +50,21 @@ class PricingEngineController extends Controller
             return max(-999.999, min(999.999, (float) $value));
         }
 
+        if ($field === 'price_principle') {
+            return round((float) $value, 2);
+        }
+
         return $value;
+    }
+
+    /** Normalize a lock value from the grid: positive number = locked, anything else = null. */
+    private function lockVal(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float) $value > 0 ? round((float) $value, 2) : null;
     }
 
     public function index(Request $request): Response
@@ -135,6 +152,9 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) $pr->lainnya_pct,
             'buffer_pct' => (float) $pr->buffer_pct,
             'rounding_step' => (int) $pr->rounding_step,
+            'locked_gudang' => $pr->locked_gudang !== null ? (float) $pr->locked_gudang : null,
+            'locked_bottom' => $pr->locked_bottom !== null ? (float) $pr->locked_bottom : null,
+            'locked_pricelist' => $pr->locked_pricelist !== null ? (float) $pr->locked_pricelist : null,
             'pricelist' => (float) $pr->pricelist,
             'status' => $pr->status,
         ];
@@ -161,6 +181,9 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) ($current?->lainnya_pct ?? 0),
             'buffer_pct' => (float) ($current?->buffer_pct ?? 0),
             'rounding_step' => (int) ($current?->rounding_step ?? 1000),
+            'locked_gudang' => $current?->locked_gudang !== null ? (float) $current->locked_gudang : null,
+            'locked_bottom' => $current?->locked_bottom !== null ? (float) $current->locked_bottom : null,
+            'locked_pricelist' => $current?->locked_pricelist !== null ? (float) $current->locked_pricelist : null,
             'prices_by_profile' => $byProfile,
         ];
     }
@@ -180,6 +203,9 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) $src->lainnya_pct,
             'buffer_pct' => (float) $src->buffer_pct,
             'rounding_step' => (int) $src->rounding_step,
+            'locked_gudang' => $src->locked_gudang !== null ? (float) $src->locked_gudang : null,
+            'locked_bottom' => $src->locked_bottom !== null ? (float) $src->locked_bottom : null,
+            'locked_pricelist' => $src->locked_pricelist !== null ? (float) $src->locked_pricelist : null,
         ]);
     }
 
@@ -336,8 +362,10 @@ class PricingEngineController extends Controller
                     collect(self::PRODUCT_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->clean($f, $row[$f] ?? null)])->all()
                 );
 
+                $locks = collect(self::LOCK_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->lockVal($row[$f] ?? null)])->all();
+
                 $calc = PricingEngineCalculator::compute([
-                    'price_principle' => $row['price_principle'] ?? 0,
+                    'price_principle' => round((float) ($row['price_principle'] ?? 0), 2),
                     'disc_principle_pct' => $row['disc_principle_pct'] ?? 0,
                     'kurs' => $row['kurs'] ?? 0,
                     'bm_pct' => $row['bm_pct'] ?? 0,
@@ -350,6 +378,7 @@ class PricingEngineController extends Controller
                     'event_pct' => $row['event_pct'] ?? 0,
                     'lainnya_pct' => $row['lainnya_pct'] ?? 0,
                     'rounding_step' => $row['rounding_step'] ?? $profile->rounding_step,
+                    ...$locks,
                 ]);
 
                 $existing = PricingProductPrice::where('product_id', $product->id)
@@ -365,11 +394,19 @@ class PricingEngineController extends Controller
 
                 $newValues = collect(self::PRICE_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->clean($f, $row[$f] ?? 0)])->all();
 
+                // With locks active the stored %s are the derived effective values, so the saved
+                // row reproduces the locked prices even without re-reading the lock columns.
+                if ($calc['any_lock']) {
+                    foreach (['ops_pct' => 'd_ops_pct', 'profit_pct' => 'd_profit_pct', 'komisi_pct' => 'd_komisi_pct', 'event_pct' => 'd_event_pct', 'lainnya_pct' => 'd_lainnya_pct'] as $field => $derived) {
+                        $newValues[$field] = $this->clean($field, $calc[$derived]);
+                    }
+                }
+
                 PricingProductPrice::updateOrCreate(
                     ['product_id' => $product->id, 'profile_id' => $profile->id, 'hospital_id' => $hospitalId],
-                    $newValues + [
+                    $newValues + $locks + [
                         'pricelist' => $calc['l_pricelist'],
-                        'breakdown' => $calc,
+                        'breakdown' => collect($calc)->except('any_lock')->all(),
                         'status' => PricingProductPrice::STATUS_DRAFT,
                         'requested_by' => $request->user()->id,
                     ]
