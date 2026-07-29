@@ -107,6 +107,10 @@ const DEFAULT_INPUTS: Record<number, HeaderKey> = {
     27: 'ops_pct', 29: 'profit_pct', 31: 'komisi_pct', 32: 'event_pct', 33: 'lainnya_pct', 34: 'buffer_pct',
     35: 'rounding_step',
 };
+// Column index → lockable price field (header lock button locks/unlocks ALL rows at once).
+type LockField = 'locked_gudang' | 'locked_bottom' | 'locked_pricelist';
+const LOCK_COLS: Record<number, LockField> = { 28: 'locked_gudang', 30: 'locked_bottom', 36: 'locked_pricelist' };
+const isLockedVal = (v: number | string | null | undefined) => v != null && v !== '' && +v > 0;
 
 // Frozen columns. Left: #, Kode, Deskripsi. Right: Harga Pricelist + actions.
 // Widths match cell content (input width + px-1 padding) so sticky offsets line up.
@@ -275,6 +279,29 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
             ? { ...r, currency_code: code, _dirty: true, ...(overridesRef.current[i]?.kurs || !cur ? {} : { kurs: +cur.rate_to_idr }) }
             : r)));
     }, [currencies]);
+
+    // Header lock: lock/unlock a whole price column. Locking pins every row (that isn't already
+    // locked) at its CURRENT computed value; when all rows are locked, the toggle unlocks all.
+    const lockValueOf = (r: Row, f: LockField): number => {
+        const c = computeEngine(r);
+        return f === 'locked_gudang' ? c.e_harga_gudang : f === 'locked_bottom' ? c.g_bottom : c.l_pricelist;
+    };
+    const toggleLockColumn = (f: LockField) => {
+        setRows((rs) => {
+            const allLocked = rs.length > 0 && rs.every((r) => isLockedVal(r[f]));
+            return rs.map((r) => allLocked
+                ? (isLockedVal(r[f]) ? { ...r, [f]: null, _dirty: true } : r)
+                : (isLockedVal(r[f]) ? r : { ...r, [f]: Math.round(lockValueOf(r, f)), _dirty: true }));
+        });
+    };
+    // Per-column lock counts drive the header icon (full = amber lock, none/partial = open lock).
+    const lockStats = useMemo(() => {
+        const s = {} as Record<LockField, number>;
+        (['locked_gudang', 'locked_bottom', 'locked_pricelist'] as LockField[]).forEach((f) => {
+            s[f] = rows.reduce((n, r) => n + (isLockedVal(r[f]) ? 1 : 0), 0);
+        });
+        return s;
+    }, [rows]);
 
     // Copy = server reload: load a source (profile / base) into the current context as drafts.
     const copyFromProfile = (sourceProfileId: string) => nav({ copy_from: sourceProfileId });
@@ -604,6 +631,25 @@ export default function PricingEngineIndex({ profiles, selectedProfile, principa
                                                     </select>
                                                 ) : DEFAULT_INPUTS[idx] ? (
                                                     <input type="number" step="any" className="h-6 w-full min-w-10 rounded border border-input bg-background px-1 text-right text-[11px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none" value={header[DEFAULT_INPUTS[idx]]} onChange={(e) => applyHeader(DEFAULT_INPUTS[idx], +e.target.value)} />
+                                                ) : LOCK_COLS[idx] ? (
+                                                    (() => {
+                                                        const f = LOCK_COLS[idx];
+                                                        const count = lockStats[f];
+                                                        const all = rows.length > 0 && count === rows.length;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => rows.length && toggleLockColumn(f)}
+                                                                title={all
+                                                                    ? `Buka kunci semua baris (${count} terkunci)`
+                                                                    : `Kunci SEMUA baris di nilai hitungan saat ini${count ? ` (${count}/${rows.length} sudah terkunci)` : ''}`}
+                                                                className={`flex w-full items-center justify-end gap-1 text-[10px] font-normal ${all ? 'text-amber-600' : count ? 'text-amber-500/80' : 'text-muted-foreground/60 hover:text-foreground'}`}
+                                                            >
+                                                                {count ? `${count}` : ''}
+                                                                {all ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+                                                            </button>
+                                                        );
+                                                    })()
                                                 ) : null}
                                             </th>
                                         ))}
