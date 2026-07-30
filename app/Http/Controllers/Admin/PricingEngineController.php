@@ -35,8 +35,8 @@ class PricingEngineController extends Controller
         'ops_pct', 'profit_pct', 'komisi_pct', 'event_pct', 'lainnya_pct', 'buffer_pct', 'rounding_step',
     ];
 
-    /** Lockable price points (null = unlocked). When locked, effective %s are derived pro-rata. */
-    private const LOCK_FIELDS = ['locked_gudang', 'locked_bottom', 'locked_pricelist'];
+    /** Flag kunci per-% jual: saat L terkunci, hanya % yang TIDAK dikunci yang menyesuaikan. */
+    private const LOCK_FLAG_FIELDS = ['lock_ops_pct', 'lock_profit_pct', 'lock_komisi_pct', 'lock_event_pct', 'lock_lainnya_pct'];
 
     /** Percentage columns are decimal(6,3): clamp so stray nominal values can't overflow. */
     private const PCT_FIELDS = [
@@ -152,9 +152,8 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) $pr->lainnya_pct,
             'buffer_pct' => (float) $pr->buffer_pct,
             'rounding_step' => (int) $pr->rounding_step,
-            'locked_gudang' => $pr->locked_gudang !== null ? (float) $pr->locked_gudang : null,
-            'locked_bottom' => $pr->locked_bottom !== null ? (float) $pr->locked_bottom : null,
             'locked_pricelist' => $pr->locked_pricelist !== null ? (float) $pr->locked_pricelist : null,
+            ...collect(self::LOCK_FLAG_FIELDS)->mapWithKeys(fn ($f) => [$f => (bool) $pr->{$f}])->all(),
             'pricelist' => (float) $pr->pricelist,
             'status' => $pr->status,
         ];
@@ -181,9 +180,8 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) ($current?->lainnya_pct ?? 0),
             'buffer_pct' => (float) ($current?->buffer_pct ?? 0),
             'rounding_step' => (int) ($current?->rounding_step ?? 1000),
-            'locked_gudang' => $current?->locked_gudang !== null ? (float) $current->locked_gudang : null,
-            'locked_bottom' => $current?->locked_bottom !== null ? (float) $current->locked_bottom : null,
             'locked_pricelist' => $current?->locked_pricelist !== null ? (float) $current->locked_pricelist : null,
+            ...collect(self::LOCK_FLAG_FIELDS)->mapWithKeys(fn ($f) => [$f => (bool) ($current?->{$f} ?? false)])->all(),
             'prices_by_profile' => $byProfile,
         ];
     }
@@ -203,9 +201,8 @@ class PricingEngineController extends Controller
             'lainnya_pct' => (float) $src->lainnya_pct,
             'buffer_pct' => (float) $src->buffer_pct,
             'rounding_step' => (int) $src->rounding_step,
-            'locked_gudang' => $src->locked_gudang !== null ? (float) $src->locked_gudang : null,
-            'locked_bottom' => $src->locked_bottom !== null ? (float) $src->locked_bottom : null,
             'locked_pricelist' => $src->locked_pricelist !== null ? (float) $src->locked_pricelist : null,
+            ...collect(self::LOCK_FLAG_FIELDS)->mapWithKeys(fn ($f) => [$f => (bool) $src->{$f}])->all(),
         ]);
     }
 
@@ -362,7 +359,8 @@ class PricingEngineController extends Controller
                     collect(self::PRODUCT_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->clean($f, $row[$f] ?? null)])->all()
                 );
 
-                $locks = collect(self::LOCK_FIELDS)->mapWithKeys(fn ($f) => [$f => $this->lockVal($row[$f] ?? null)])->all();
+                $locks = ['locked_pricelist' => $this->lockVal($row['locked_pricelist'] ?? null)]
+                    + collect(self::LOCK_FLAG_FIELDS)->mapWithKeys(fn ($f) => [$f => (bool) ($row[$f] ?? false)])->all();
 
                 $calc = PricingEngineCalculator::compute([
                     'price_principle' => round((float) ($row['price_principle'] ?? 0), 2),

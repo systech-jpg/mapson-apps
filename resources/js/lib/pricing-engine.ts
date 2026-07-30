@@ -1,11 +1,12 @@
 // Profile-based waterfall pricing engine — mirrors app/Support/PricingEngineCalculator.php exactly.
 // See that file for the full formula & cost-base documentation.
 //
-// Locks: E (harga gudang), G (harga bawah), L (harga pricelist) can each be locked to a fixed
-// value. Locked points become anchors; unlocked points BETWEEN anchors are prorated along the
-// baseline margins, points AFTER the last anchor follow the original percentages. The effective
-// percentages (d_*) are then derived back from the final prices — komisi/event/lainnya keep
-// their original proportions inside the derived K total.
+// Lock model: only L (harga pricelist) can be locked as a rupiah value. Each sell percentage
+// (ops/profit/komisi/event/lainnya) can be locked as a FLAG. When L is locked and the cost side
+// (kurs, harga principal, %biaya) moves, the price must not move — instead every UNLOCKED
+// percentage is scaled by a common factor s (pro-rata to its own value) until the waterfall
+// from C lands exactly on the locked L. Locked percentages keep their value. Solved numerically
+// (bisection on s); if nothing is free to adjust, L stays pinned and the %s are left as-is.
 
 export interface EngineInputs {
     price_principle: number | string;
@@ -21,9 +22,12 @@ export interface EngineInputs {
     event_pct: number | string; // I
     lainnya_pct: number | string; // J
     rounding_step?: number | string;
-    locked_gudang?: number | string | null; // E locked value (null/'' = unlocked)
-    locked_bottom?: number | string | null; // G locked value
-    locked_pricelist?: number | string | null; // L locked value
+    locked_pricelist?: number | string | null; // L locked value (null/'' = unlocked)
+    lock_ops_pct?: boolean | number;
+    lock_profit_pct?: boolean | number;
+    lock_komisi_pct?: boolean | number;
+    lock_event_pct?: boolean | number;
+    lock_lainnya_pct?: boolean | number;
 }
 
 export interface EngineResult {
@@ -39,7 +43,7 @@ export interface EngineResult {
     g_bottom: number;
     k_disc_total: number;
     l_pricelist: number;
-    // Effective percentages after locks (equal to the inputs when nothing is locked).
+    // Effective percentages after the L lock (equal to the inputs when L is not locked).
     d_ops_pct: number;
     d_profit_pct: number;
     d_komisi_pct: number;
@@ -48,12 +52,12 @@ export interface EngineResult {
     any_lock: boolean;
 }
 
-const n = (v: number | string | undefined | null): number => {
-    const x = typeof v === 'string' ? parseFloat(v) : (v ?? 0);
+const n = (v: number | string | boolean | undefined | null): number => {
+    const x = typeof v === 'string' ? parseFloat(v) : typeof v === 'boolean' ? +v : (v ?? 0);
     return Number.isFinite(x) ? x : 0;
 };
 
-// A lock is active when a positive value is set (null/''/0 = unlocked).
+// The L lock is active when a positive value is set (null/''/0 = unlocked).
 const lockVal = (v: number | string | undefined | null): number | null => {
     if (v == null || v === '') return null;
     const x = n(v);
@@ -80,60 +84,46 @@ export function computeEngine(i: EngineInputs): EngineResult {
     const komisi = n(i.komisi_pct);
     const event = n(i.event_pct);
     const lainnya = n(i.lainnya_pct);
-    const k = komisi + event + lainnya;
 
-    // Baseline waterfall (no locks).
-    const e0 = c * (1 + ops / 100);
-    const g0 = profit >= 100 ? e0 : e0 / (1 - profit / 100);
-    const l0 = k >= 100 ? g0 : g0 / (1 - k / 100); // raw, pre-rounding
+    const lTarget = lockVal(i.locked_pricelist);
 
-    const locks: (number | null)[] = [null, lockVal(i.locked_gudang), lockVal(i.locked_bottom), lockVal(i.locked_pricelist)];
-    const anyLock = locks.some((v) => v != null);
+    // Effective %s: default to the raw inputs (no L lock, or lock unsolvable).
+    let dOps = ops, dProfit = profit, dKomisi = komisi, dEvent = event, dLainnya = lainnya;
 
-    // Points: [C, E, G, L]. C is always fixed; locked points anchor; intermediates prorate.
-    const base = [c, e0, g0, l0];
-    const pts: (number | null)[] = [c, null, null, null];
-    let lastAnchor = 0;
-    for (let j = 1; j <= 3; j++) {
-        if (locks[j] == null) continue;
-        pts[j] = locks[j];
-        const denom = base[j] - base[lastAnchor];
-        for (let m = lastAnchor + 1; m < j; m++) {
-            pts[m] = denom !== 0
-                ? (pts[lastAnchor] as number) + ((base[m] - base[lastAnchor]) * ((pts[j] as number) - (pts[lastAnchor] as number))) / denom
-                : (pts[lastAnchor] as number) + (((pts[j] as number) - (pts[lastAnchor] as number)) * (m - lastAnchor)) / (j - lastAnchor);
+    if (lTarget != null && c > 0) {
+        const lockF = [!!i.lock_ops_pct, !!i.lock_profit_pct, !!i.lock_komisi_pct, !!i.lock_event_pct, !!i.lock_lainnya_pct];
+        const vals = [ops, profit, komisi, event, lainnya];
+        // Effective %s at scale s: locked keep their value, free scale pro-rata.
+        const at = (s: number) => vals.map((v, idx) => (lockF[idx] ? v : v * s));
+        const priceAt = (s: number): number => {
+            const [o, p, h, ev, la] = at(s);
+            const k = h + ev + la;
+            if (p >= 99.999 || k >= 99.999) return Infinity;
+            return (c * (1 + o / 100)) / (1 - p / 100) / (1 - k / 100);
+        };
+        const freeMag = vals.reduce((sum, v, idx) => sum + (lockF[idx] ? 0 : Math.abs(v)), 0);
+
+        if (freeMag > 0) {
+            // Bisection on s — priceAt is monotonic increasing for the usual positive %s.
+            let lo = -1, hi = 1;
+            for (let it = 0; it < 60 && priceAt(hi) < lTarget && hi < 1e6; it++) hi *= 2;
+            for (let it = 0; it < 60 && priceAt(lo) > lTarget && lo > -1e6; it++) lo *= 2;
+            for (let it = 0; it < 200; it++) {
+                const mid = (lo + hi) / 2;
+                if (priceAt(mid) < lTarget) lo = mid; else hi = mid;
+            }
+            [dOps, dProfit, dKomisi, dEvent, dLainnya] = at((lo + hi) / 2);
         }
-        lastAnchor = j;
-    }
-    // Points after the last anchor follow the original percentages.
-    if (pts[1] == null) pts[1] = (pts[0] as number) * (1 + ops / 100);
-    if (pts[2] == null) pts[2] = profit >= 100 ? (pts[1] as number) : (pts[1] as number) / (1 - profit / 100);
-    if (pts[3] == null) {
-        const raw = k >= 100 ? (pts[2] as number) : (pts[2] as number) / (1 - k / 100);
-        pts[3] = Math.round(raw / step) * step;
+        // freeMag === 0 (every % locked, or free %s all zero): nothing can absorb the change —
+        // L stays pinned, %s stay as entered (numbers won't reconcile until something is freed).
     }
 
-    const e = pts[1] as number;
-    const g = pts[2] as number;
-    const l = pts[3] as number;
-
-    // Effective percentages. Without locks keep the raw inputs (so rounding of L never shifts them).
-    let dOps = ops, dProfit = profit, dK = k;
-    let dKomisi = komisi, dEvent = event, dLainnya = lainnya;
-    if (anyLock) {
-        dOps = c > 0 ? (e / c - 1) * 100 : ops;
-        dProfit = g > 0 ? (1 - e / g) * 100 : profit;
-        dK = l > 0 ? (1 - g / l) * 100 : k;
-        if (k > 0) {
-            dKomisi = (komisi * dK) / k;
-            dEvent = (event * dK) / k;
-            dLainnya = (lainnya * dK) / k;
-        } else {
-            dKomisi = 0;
-            dEvent = 0;
-            dLainnya = dK;
-        }
-    }
+    const kEff = dKomisi + dEvent + dLainnya;
+    const e = c * (1 + dOps / 100);
+    const g = dProfit >= 100 ? e : e / (1 - dProfit / 100);
+    const l = lTarget != null
+        ? lTarget
+        : Math.round((kEff >= 100 ? g : g / (1 - kEff / 100)) / step) * step;
 
     return {
         price_after_disc: priceAfterDisc,
@@ -146,14 +136,14 @@ export function computeEngine(i: EngineInputs): EngineResult {
         c_warehouse: c,
         e_harga_gudang: e,
         g_bottom: g,
-        k_disc_total: dK,
+        k_disc_total: kEff,
         l_pricelist: l,
         d_ops_pct: dOps,
         d_profit_pct: dProfit,
         d_komisi_pct: dKomisi,
         d_event_pct: dEvent,
         d_lainnya_pct: dLainnya,
-        any_lock: anyLock,
+        any_lock: lTarget != null,
     };
 }
 

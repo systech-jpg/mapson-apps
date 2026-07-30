@@ -20,11 +20,12 @@ namespace App\Support;
  *   L  Harga Pricelist = round(G ÷ (1 - K%), rounding_step)
  *   M  Buffer disc max — carried only, not part of the price.
  *
- * Locks: E/G/L may each be locked to a fixed value (keys locked_gudang / locked_bottom /
- * locked_pricelist, null|0 = unlocked). Locked points anchor the chain; unlocked points
- * BETWEEN anchors are prorated along the baseline margins, points AFTER the last anchor
- * follow the original percentages. Effective percentages (d_*) are derived back from the
- * final prices — komisi/event/lainnya keep their original proportions inside derived K.
+ * Lock model: only L can be locked as a rupiah value (`locked_pricelist`). Each sell %
+ * can be locked as a FLAG (`lock_ops_pct` … `lock_lainnya_pct`). When L is locked and the
+ * cost side moves, the price must not move — every UNLOCKED % is scaled by a common factor
+ * s (pro-rata to its own value) until the waterfall from C lands exactly on L. Locked %s
+ * keep their value. Solved numerically (bisection); if nothing is free, L stays pinned and
+ * the %s are left as-is.
  */
 class PricingEngineCalculator
 {
@@ -35,14 +36,6 @@ class PricingEngineCalculator
     public static function compute(array $i): array
     {
         $f = fn ($k) => (float) ($i[$k] ?? 0);
-        $lock = function ($k) use ($i): ?float {
-            $v = $i[$k] ?? null;
-            if ($v === null || $v === '') {
-                return null;
-            }
-
-            return (float) $v > 0 ? (float) $v : null;
-        };
         $step = (float) ($i['rounding_step'] ?? 1000);
         $step = $step > 0 ? $step : 1000;
 
@@ -58,67 +51,72 @@ class PricingEngineCalculator
         $b = $bm + $pph22 + $ppn + $shipment;
         $c = $a + $b;
 
-        $ops = $f('ops_pct');
-        $profit = $f('profit_pct');
-        $komisi = $f('komisi_pct');
-        $event = $f('event_pct');
-        $lainnya = $f('lainnya_pct');
-        $k = $komisi + $event + $lainnya;
+        $vals = [$f('ops_pct'), $f('profit_pct'), $f('komisi_pct'), $f('event_pct'), $f('lainnya_pct')];
 
-        // Baseline waterfall (no locks).
-        $e0 = $c * (1 + $ops / 100);
-        $g0 = $profit >= 100 ? $e0 : $e0 / (1 - $profit / 100);
-        $l0 = $k >= 100 ? $g0 : $g0 / (1 - $k / 100);   // raw, pre-rounding
+        $lRaw = $i['locked_pricelist'] ?? null;
+        $lTarget = ($lRaw === null || $lRaw === '' || (float) $lRaw <= 0) ? null : (float) $lRaw;
 
-        $locks = [null, $lock('locked_gudang'), $lock('locked_bottom'), $lock('locked_pricelist')];
-        $anyLock = collect($locks)->contains(fn ($v) => $v !== null);
+        // Effective %s: default to the raw inputs (no L lock, or lock unsolvable).
+        $d = $vals;
 
-        // Points: [C, E, G, L]. C is always fixed; locked points anchor; intermediates prorate.
-        $base = [$c, $e0, $g0, $l0];
-        $pts = [$c, null, null, null];
-        $lastAnchor = 0;
-        for ($j = 1; $j <= 3; $j++) {
-            if ($locks[$j] === null) {
-                continue;
+        if ($lTarget !== null && $c > 0) {
+            $lockF = [
+                (bool) ($i['lock_ops_pct'] ?? false),
+                (bool) ($i['lock_profit_pct'] ?? false),
+                (bool) ($i['lock_komisi_pct'] ?? false),
+                (bool) ($i['lock_event_pct'] ?? false),
+                (bool) ($i['lock_lainnya_pct'] ?? false),
+            ];
+            // Effective %s at scale s: locked keep their value, free scale pro-rata.
+            $at = fn (float $s): array => array_map(
+                fn ($v, $locked) => $locked ? $v : $v * $s,
+                $vals, $lockF
+            );
+            $priceAt = function (float $s) use ($at, $c): float {
+                [$o, $p, $h, $ev, $la] = $at($s);
+                $k = $h + $ev + $la;
+                if ($p >= 99.999 || $k >= 99.999) {
+                    return INF;
+                }
+
+                return $c * (1 + $o / 100) / (1 - $p / 100) / (1 - $k / 100);
+            };
+            $freeMag = 0.0;
+            foreach ($vals as $idx => $v) {
+                $freeMag += $lockF[$idx] ? 0 : abs($v);
             }
-            $pts[$j] = $locks[$j];
-            $denom = $base[$j] - $base[$lastAnchor];
-            for ($m = $lastAnchor + 1; $m < $j; $m++) {
-                $pts[$m] = $denom != 0.0
-                    ? $pts[$lastAnchor] + ($base[$m] - $base[$lastAnchor]) * ($pts[$j] - $pts[$lastAnchor]) / $denom
-                    : $pts[$lastAnchor] + ($pts[$j] - $pts[$lastAnchor]) * ($m - $lastAnchor) / ($j - $lastAnchor);
+
+            if ($freeMag > 0) {
+                // Bisection on s — priceAt is monotonic increasing for the usual positive %s.
+                $lo = -1.0;
+                $hi = 1.0;
+                for ($it = 0; $it < 60 && $priceAt($hi) < $lTarget && $hi < 1e6; $it++) {
+                    $hi *= 2;
+                }
+                for ($it = 0; $it < 60 && $priceAt($lo) > $lTarget && $lo > -1e6; $it++) {
+                    $lo *= 2;
+                }
+                for ($it = 0; $it < 200; $it++) {
+                    $mid = ($lo + $hi) / 2;
+                    if ($priceAt($mid) < $lTarget) {
+                        $lo = $mid;
+                    } else {
+                        $hi = $mid;
+                    }
+                }
+                $d = $at(($lo + $hi) / 2);
             }
-            $lastAnchor = $j;
-        }
-        // Points after the last anchor follow the original percentages.
-        if ($pts[1] === null) {
-            $pts[1] = $pts[0] * (1 + $ops / 100);
-        }
-        if ($pts[2] === null) {
-            $pts[2] = $profit >= 100 ? $pts[1] : $pts[1] / (1 - $profit / 100);
-        }
-        if ($pts[3] === null) {
-            $raw = $k >= 100 ? $pts[2] : $pts[2] / (1 - $k / 100);
-            $pts[3] = round($raw / $step) * $step;
+            // freeMag == 0 (every % locked, or free %s all zero): nothing can absorb the change —
+            // L stays pinned, %s stay as entered (numbers won't reconcile until something is freed).
         }
 
-        [, $e, $g, $l] = $pts;
-
-        // Effective percentages. Without locks keep the raw inputs (so rounding of L never shifts them).
-        [$dOps, $dProfit, $dK] = [$ops, $profit, $k];
-        [$dKomisi, $dEvent, $dLainnya] = [$komisi, $event, $lainnya];
-        if ($anyLock) {
-            $dOps = $c > 0 ? ($e / $c - 1) * 100 : $ops;
-            $dProfit = $g > 0 ? (1 - $e / $g) * 100 : $profit;
-            $dK = $l > 0 ? (1 - $g / $l) * 100 : $k;
-            if ($k > 0) {
-                $dKomisi = $komisi * $dK / $k;
-                $dEvent = $event * $dK / $k;
-                $dLainnya = $lainnya * $dK / $k;
-            } else {
-                [$dKomisi, $dEvent, $dLainnya] = [0.0, 0.0, $dK];
-            }
-        }
+        [$dOps, $dProfit, $dKomisi, $dEvent, $dLainnya] = $d;
+        $kEff = $dKomisi + $dEvent + $dLainnya;
+        $e = $c * (1 + $dOps / 100);
+        $g = $dProfit >= 100 ? $e : $e / (1 - $dProfit / 100);
+        $l = $lTarget !== null
+            ? $lTarget
+            : round(($kEff >= 100 ? $g : $g / (1 - $kEff / 100)) / $step) * $step;
 
         return [
             'price_after_disc' => round($priceAfterDisc, 2),
@@ -131,14 +129,14 @@ class PricingEngineCalculator
             'c_warehouse' => round($c, 2),
             'e_harga_gudang' => round($e, 2),
             'g_bottom' => round($g, 2),
-            'k_disc_total' => round($dK, 4),
+            'k_disc_total' => round($kEff, 4),
             'l_pricelist' => round($l, 2),
             'd_ops_pct' => round($dOps, 4),
             'd_profit_pct' => round($dProfit, 4),
             'd_komisi_pct' => round($dKomisi, 4),
             'd_event_pct' => round($dEvent, 4),
             'd_lainnya_pct' => round($dLainnya, 4),
-            'any_lock' => $anyLock,
+            'any_lock' => $lTarget !== null,
         ];
     }
 }
