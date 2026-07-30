@@ -114,9 +114,11 @@ class PricingEngineCalculator
         $kEff = $dKomisi + $dEvent + $dLainnya;
         $e = $c * (1 + $dOps / 100);
         $g = $dProfit >= 100 ? $e : $e / (1 - $dProfit / 100);
+        // Pembulatan SELALU ke atas (kebijakan finance); epsilon menahan float error agar
+        // nilai yang sudah pas kelipatan step tidak melompat satu step.
         $l = $lTarget !== null
             ? $lTarget
-            : round(($kEff >= 100 ? $g : $g / (1 - $kEff / 100)) / $step) * $step;
+            : ceil(($kEff >= 100 ? $g : $g / (1 - $kEff / 100)) / $step - 1e-9) * $step;
 
         return [
             'price_after_disc' => round($priceAfterDisc, 2),
