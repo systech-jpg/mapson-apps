@@ -14,7 +14,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 interface SpendRow { principal: string; idr: number; docs: number }
 interface StatusRow { label: string; statut: number; n: number }
 interface LeadRow { principal: string; n_po: number; n_arrived: number; d_req_po: number | null; d_po_order: number | null; d_order_arrive: number | null; d_total: number | null }
-interface BalanceRow { vendor_id: number; principal: string; vendor: string; cur: string; amount: number; idr: number }
+interface BalanceRow { vendor_id: number | null; principal: string; vendor: string; cur: string; amount: number; idr: number; kind?: string; n_po?: number; refs?: string[] }
 interface CatRow { kategori: string; idr: number; n: number }
 interface AccRow { account: string; idr: number; n: number }
 interface YearRateRow { tahun: string; goods: number; cost: number; rate_pct: number | null }
@@ -23,7 +23,7 @@ interface TopPoRow { po: string; principal: string | null; idr: number }
 interface ImpDrill { label: string; params: Record<string, string> }
 interface ExpDetailRow { doc_number: string; trans_date: string; vendor: string; account: string; notes: string; kategori: string; amount: number; idr: number }
 type DrillType = 'purchase' | 'open_po' | 'payable' | 'credit' | 'pr_status' | 'po_status' | 'ap';
-interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string; vendorId?: number; cur?: string }
+interface DrillSpec { type: DrillType; principal?: string; statut?: number; label?: string; vendorId?: number | null; cur?: string }
 interface PurchaseDoc { po: string; has_po: boolean; docs: string; n_docs: number; trans_date: string; vendor: string; principal: string; cur: string; asli: number; idr: number; n_items: number }
 interface OpenPoRow { ref: string; principal: string; vendor: string; tanggal: string; status?: string; cur: string; total: number; umur: number; acc_status: string | null; acc_percent: number | null }
 interface PrRow { ref: string; principal: string; vendor: string; tanggal: string; cur: string; total: number }
@@ -34,7 +34,7 @@ interface Props {
     spending: { total_idr: number; rows: SpendRow[]; others_idr: number; others_n: number };
     status: { pr: StatusRow[]; po: StatusRow[]; pr_total: number; po_total: number; open_po: number };
     leadTime: LeadRow[];
-    balances: { available: boolean; error?: string; payable: BalanceRow[]; credit: BalanceRow[]; payable_idr: number; credit_idr: number };
+    balances: { available: boolean; error?: string; payable: BalanceRow[]; credit: BalanceRow[]; unbilled: BalanceRow[]; payable_idr: number; credit_idr: number; unbilled_idr: number };
     importCost: { by_category: CatRow[]; by_account: AccRow[]; by_year: YearRateRow[]; by_vendor: ExpVendorRow[]; top_po: TopPoRow[]; import_goods_idr: number; cost_idr: number; cost_with_tax_idr: number; rate_pct: number | null };
 }
 
@@ -112,7 +112,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill({ type: 'purchase' })} />
                     <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''} · belum diterima penuh`} onClick={() => setDrill({ type: 'open_po' })} />
-                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr)}` : '—'} sub={balances.available ? `${balances.payable.length} vendor · saldo live Accurate` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'payable' }) : undefined} />
+                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr + balances.unbilled_idr)}` : '—'} sub={balances.available ? `faktur Rp ${rp(balances.payable_idr)} + PO belum difaktur Rp ${rp(balances.unbilled_idr)}` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'payable' }) : undefined} />
                     <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'credit' }) : undefined} />
                 </div>
 
@@ -140,8 +140,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                     <SpendPivotCard principal={pivotPrincipal} onClear={() => setPivotPrincipal(null)} />
                 </div>
 
-                {/* Baris 3: lead time + status PR/PO */}
-                <div className="grid gap-4 lg:grid-cols-2">
+                {/* Baris 3: lead time (full-width — daftar principal panjang) lalu status PR/PO */}
+                <div className="flex flex-col gap-4">
                 <Card>
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base">Lead Time per Principal (hari, rata-rata)</CardTitle>
@@ -156,7 +156,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                             <span><i className="mr-1 inline-block size-2.5 rounded-sm bg-emerald-500" />Order → Barang datang</span>
                         </div>
                         <div className="space-y-1.5">
-                            {leadTime.filter((r) => r.n_po >= 2).map((r) => {
+                            {leadTime.map((r) => {
                                 const segs = [
                                     { v: r.d_req_po, cls: 'bg-sky-500' },
                                     { v: r.d_po_order, cls: 'bg-amber-500' },
@@ -210,7 +210,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {balances.payable.length + balances.credit.length === 0 && (
+                                        {balances.payable.length + balances.credit.length + balances.unbilled.length === 0 && (
                                             <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Tidak ada saldo terbuka.</TableCell></TableRow>
                                         )}
                                         {balances.payable.map((r) => (
@@ -218,6 +218,14 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                                 onClick={() => setDrill({ type: 'ap', vendorId: r.vendor_id, label: `Faktur Outstanding — ${r.vendor}`, cur: r.cur })}>
                                                 <TableCell className="font-medium">{r.principal}</TableCell>
                                                 <TableCell><Badge variant="outline" className="border-amber-400 text-[10px] text-amber-600 dark:text-amber-400">Utang</Badge></TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">{num(r.idr)}</TableCell>
+                                            </TableRow>
+                                        ))}
+                                        {balances.unbilled.map((r) => (
+                                            <TableRow key={`u-${r.vendor}-${r.cur}`} title={`${r.n_po} PO sudah jalan tapi belum ada faktur di Accurate${r.refs?.length ? `: ${r.refs.join(', ')}${(r.n_po ?? 0) > r.refs.length ? ', …' : ''}` : ''}`}>
+                                                <TableCell className="font-medium">{r.principal}</TableCell>
+                                                <TableCell><Badge variant="outline" className="border-sky-400 text-[10px] text-sky-600 dark:text-sky-400">PO belum difaktur ({r.n_po})</Badge></TableCell>
                                                 <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
                                                 <TableCell className="text-right tabular-nums whitespace-nowrap">{num(r.idr)}</TableCell>
                                             </TableRow>
@@ -438,7 +446,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
     const fPos = useMemo(() => (pos ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [pos, s]);
     const fPrs = useMemo(() => (prs ?? []).filter((d) => !s || d.ref.toLowerCase().includes(s) || (d.vendor ?? '').toLowerCase().includes(s) || (d.principal ?? '').toLowerCase().includes(s)), [prs, s]);
     const fBal = useMemo(() => {
-        const rows = type === 'payable' ? balances.payable : type === 'credit' ? balances.credit : [];
+        const rows = type === 'payable' ? [...balances.payable, ...balances.unbilled] : type === 'credit' ? balances.credit : [];
         return rows.filter((r) => !s || r.vendor.toLowerCase().includes(s) || r.principal.toLowerCase().includes(s));
     }, [type, balances, s]);
 
@@ -598,9 +606,11 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                         <TableBody>
                             {fBal.length === 0 && <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Tidak ada saldo.</TableCell></TableRow>}
                             {fBal.map((r) => (
-                                <TableRow key={r.vendor}>
+                                <TableRow key={`${r.kind ?? 'inv'}-${r.vendor}-${r.cur}`}>
                                     <TableCell className="font-medium">{r.principal}</TableCell>
-                                    <TableCell className="max-w-56 truncate text-muted-foreground" title={r.vendor}>{r.vendor}</TableCell>
+                                    <TableCell className="max-w-56 truncate text-muted-foreground" title={r.kind === 'po_unbilled' ? `${r.vendor} — ${r.n_po} PO belum difaktur${r.refs?.length ? `: ${r.refs.join(', ')}` : ''}` : r.vendor}>
+                                        {r.vendor}{r.kind === 'po_unbilled' && <span className="ml-1 text-sky-600 dark:text-sky-400">· PO belum difaktur ({r.n_po})</span>}
+                                    </TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap font-medium">{num(r.idr)}</TableCell>
                                 </TableRow>

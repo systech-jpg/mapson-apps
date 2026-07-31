@@ -187,7 +187,7 @@ class PurchasingDashboardController extends Controller
                 $page++;
             } while ($page <= $pc);
         } catch (\Throwable $e) {
-            return ['available' => false, 'error' => mb_substr($e->getMessage(), 0, 150), 'payable' => [], 'credit' => [], 'payable_idr' => 0, 'credit_idr' => 0];
+            return ['available' => false, 'error' => mb_substr($e->getMessage(), 0, 150), 'payable' => [], 'credit' => [], 'unbilled' => [], 'payable_idr' => 0, 'credit_idr' => 0, 'unbilled_idr' => 0];
         }
 
         // Mata uang & principal dari mapping; kurs terbaru per mata uang.
@@ -221,12 +221,57 @@ class PurchasingDashboardController extends Controller
         usort($payable, fn ($a, $b) => $b['idr'] <=> $a['idr']);
         usort($credit, fn ($a, $b) => $b['idr'] <=> $a['idr']);
 
+        // Utang belum tertagih: PO ERP yang sudah jalan (ordered/diterima) tapi BELUM ada
+        // fakturnya di Accurate — belum dibayar, jadi tetap kewajiban walau belum masuk AP.
+        $unbilled = [];
+        try {
+            $p = config('erp.prefix');
+            $appDb = DB::connection()->getDatabaseName();
+            $billedRefs = DB::table('dwh_stg_acc_purchase_invoice_item')
+                ->whereNotNull('po_number')->where('po_number', '<>', '')
+                ->distinct()->pluck('po_number')
+                ->mapWithKeys(fn ($x) => [strtoupper($x) => true])->all();
+
+            $pos = DB::connection(config('erp.connection'))->select("
+                SELECT c.ref, so.nom AS vendor, COALESCE(pp.name, so.nom) AS principal,
+                       COALESCE(NULLIF(c.multicurrency_code,''),'IDR') AS cur,
+                       COALESCE(NULLIF(c.multicurrency_total_ttc,0), c.total_ttc) AS total
+                FROM {$p}commande_fournisseur c
+                LEFT JOIN {$p}societe so ON so.rowid = c.fk_soc
+                LEFT JOIN `{$appDb}`.pricing_principals pp ON pp.erp_societe_id = so.rowid
+                WHERE c.fk_statut IN (3,4,5)
+                  AND COALESCE(c.date_commande, c.date_creation) >= '2000-01-01'");
+
+            $byKey = [];
+            foreach ($pos as $po) {
+                if (isset($billedRefs[strtoupper((string) $po->ref)])) {
+                    continue; // sudah ada faktur Accurate → tercakup saldo AP vendor
+                }
+                $k = $po->vendor.'|'.$po->cur;
+                $byKey[$k] ??= ['vendor_id' => null, 'principal' => $po->principal, 'vendor' => $po->vendor,
+                    'cur' => $po->cur, 'amount' => 0.0, 'idr' => 0.0, 'kind' => 'po_unbilled', 'n_po' => 0, 'refs' => []];
+                $rate = $po->cur === 'IDR' ? 1 : ($latestFx[$po->cur] ?? self::DEFAULT_RATE);
+                $byKey[$k]['amount'] += (float) $po->total;
+                $byKey[$k]['idr'] += (float) $po->total * $rate;
+                $byKey[$k]['n_po']++;
+                if (count($byKey[$k]['refs']) < 10) {
+                    $byKey[$k]['refs'][] = $po->ref;
+                }
+            }
+            $unbilled = array_values($byKey);
+            usort($unbilled, fn ($a, $b) => $b['idr'] <=> $a['idr']);
+        } catch (\Throwable) {
+            // ERP offline — bagian belum-tertagih dilewati, saldo AP tetap tampil.
+        }
+
         return [
             'available' => true,
             'payable' => $payable,
             'credit' => $credit,
+            'unbilled' => $unbilled,
             'payable_idr' => array_sum(array_column($payable, 'idr')),
             'credit_idr' => array_sum(array_column($credit, 'idr')),
+            'unbilled_idr' => array_sum(array_column($unbilled, 'idr')),
         ];
     }
 
@@ -255,6 +300,40 @@ class PurchasingDashboardController extends Controller
     {
         return "e.amount * CASE WHEN m.default_currency IS NULL OR m.default_currency = 'IDR' OR e.amount >= 50000 THEN 1
             ELSE COALESCE(fx.rate_to_idr, ".self::DEFAULT_RATE.') END';
+    }
+
+    /**
+     * Bobot alokasi biaya utk catatan multi-PO: PRORATA nilai barang (total faktur) tiap PO —
+     * PO 100/200/300 → PO pertama menanggung 100/600 dari biaya. PO tanpa data nilai barang
+     * berbobot 0 selama ada PO lain yang bernilai; jika semua tanpa data → bagi rata.
+     *
+     * @param  array<int, string>  $refs
+     * @param  array<string, float>|\Illuminate\Support\Collection  $goodsByPo  UPPER(po) => IDR
+     * @return array<string, float>
+     */
+    protected function allocWeights(array $refs, $goodsByPo): array
+    {
+        $vals = array_map(fn ($ref) => max(0.0, (float) ($goodsByPo[strtoupper($ref)] ?? 0)), $refs);
+        $sum = array_sum($vals);
+        $w = [];
+        foreach ($refs as $i => $ref) {
+            $w[$ref] = $sum > 0 ? $vals[$i] / $sum : 1 / count($refs);
+        }
+
+        return $w;
+    }
+
+    /** Nilai barang (IDR) per PO dari realisasi faktur — basis bobot alokasi biaya. */
+    protected function goodsIdrByPo(): \Illuminate\Support\Collection
+    {
+        return DB::table('dwh_stg_acc_purchase_invoice_item as s')
+            ->leftJoin('dwh_fx_rate as fx', function ($j) {
+                $j->on('fx.currency', '=', 's.currency_code')->on('fx.period', '=', DB::raw('LEFT(s.trans_date, 7)'));
+            })
+            ->whereNotNull('s.po_number')->where('s.po_number', '<>', '')
+            ->groupBy('s.po_number')
+            ->selectRaw('UPPER(s.po_number) AS po, SUM('.$this->idrExpr().') AS idr')
+            ->pluck('idr', 'po');
     }
 
     protected function importCost(?string $year): array
@@ -337,20 +416,22 @@ class PurchasingDashboardController extends Controller
             ->orderByDesc('idr')->limit(15)->get()
             ->map(fn ($r) => ['vendor' => $r->vendor_name, 'idr' => (float) $r->idr, 'n' => (int) $r->n]);
 
-        // Biaya per PO — ekstrak ref PO dari catatan (satu catatan bisa menyebut beberapa PO:
-        // nilai dibagi rata). Principal barang dari mapping vendor faktur ber-PO tsb.
+        // Biaya per PO — ekstrak ref PO dari catatan. Satu catatan bisa menyebut beberapa PO:
+        // biaya dialokasikan PRORATA nilai barang (total faktur) tiap PO, bukan bagi rata.
         $expRows = $base()
             ->whereRaw("{$catExpr} <> 'Pajak (PPN/PPh)'")
             ->selectRaw("e.notes, {$idrExpr} AS idr")
             ->get();
+        $goodsByPo = $this->goodsIdrByPo();
         $poCost = [];
         foreach ($expRows as $r) {
             if (! preg_match_all('/PO[\/-][A-Z]{0,4}\/?\d{4}\/\d{4,6}/i', (string) $r->notes, $mm)) {
                 continue;
             }
             $refs = array_unique(array_map('strtoupper', $mm[0]));
+            $w = $this->allocWeights($refs, $goodsByPo);
             foreach ($refs as $ref) {
-                $poCost[$ref] = ($poCost[$ref] ?? 0) + (float) $r->idr / count($refs);
+                $poCost[$ref] = ($poCost[$ref] ?? 0) + (float) $r->idr * $w[$ref];
             }
         }
         arsort($poCost);
@@ -420,16 +501,18 @@ class PurchasingDashboardController extends Controller
         $tax = [];
         $nCost = [];
         $unattr = ['cost' => 0.0, 'tax' => 0.0, 'n' => 0];
+        $goodsByPo = $this->goodsIdrByPo();   // bobot alokasi multi-PO = prorata nilai faktur
         foreach ($exp as $r) {
             if (preg_match_all('/PO[\/-][A-Z]{0,4}\/?\d{4}\/\d{4,6}/i', (string) $r->notes, $mm)) {
                 $refs = array_unique(array_map(
                     fn ($x) => $canonMap[$canon($x) ?? ''] ?? strtoupper($x),
                     $mm[0]
                 ));
+                $w = $this->allocWeights($refs, $goodsByPo);
                 foreach ($refs as $ref) {
                     $bag = $r->is_tax ? 'tax' : 'cost';
-                    ${$bag}[$ref] = (${$bag}[$ref] ?? 0) + (float) $r->idr / count($refs);
-                    if (! $r->is_tax) {
+                    ${$bag}[$ref] = (${$bag}[$ref] ?? 0) + (float) $r->idr * $w[$ref];
+                    if (! $r->is_tax && $w[$ref] > 0) {
                         $nCost[$ref] = ($nCost[$ref] ?? 0) + 1;
                     }
                 }
