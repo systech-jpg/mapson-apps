@@ -9,6 +9,9 @@ use Illuminate\Support\Facades\DB;
 
 class AccurateSyncService
 {
+    /** Baris faktur < nilai ini dianggap USD pada heuristik mata uang vendor tanpa data PO. */
+    public const USD_LINE_THRESHOLD = 600000;
+
     public function __construct(protected AccurateService $acc)
     {
     }
@@ -874,6 +877,65 @@ class AccurateSyncService
         } while ($page <= $pageCount);
 
         return ['payment_docs' => $docs, 'payment_rows' => $rows];
+    }
+
+    /**
+     * Daftarkan vendor baru dari staging faktur ke dwh_map_vendor_principal, tetapkan mata
+     * uang default (dokumen PO Accurate > heuristik baris dominan < Rp600rb), lalu turunkan
+     * currency_code ke seluruh baris faktur — baris hasil sync tidak menyimpan currency
+     * sendiri, jadi tanpa langkah ini baris baru ber-currency NULL.
+     * Murni SQL lokal (tanpa API). Dipakai tombol sync Monitoring Pembelian dan sync:daily.
+     *
+     * @return int jumlah vendor baru terdaftar
+     */
+    public function syncVendorPrincipalMap(): int
+    {
+        $t = self::USD_LINE_THRESHOLD;
+
+        $added = DB::affectingStatement('
+            INSERT IGNORE INTO dwh_map_vendor_principal (vendor_name, default_currency, currency_source, created_at, updated_at)
+            SELECT DISTINCT vendor_name, \'IDR\', \'auto\', NOW(), NOW()
+            FROM dwh_stg_acc_purchase_invoice_item WHERE vendor_name IS NOT NULL
+        ');
+
+        // Mata uang vendor dari DOKUMEN PO Accurate bila ada (mayoritas dokumen) — sumber
+        // paling akurat; heuristik <600rb di bawah hanya utk vendor tanpa data PO.
+        DB::statement("
+            UPDATE dwh_map_vendor_principal m
+            JOIN (
+                SELECT vendor_name, SUBSTRING_INDEX(GROUP_CONCAT(currency_code ORDER BY cnt DESC), ',', 1) cur
+                FROM (
+                    SELECT vendor_name, currency_code, COUNT(*) cnt
+                    FROM dwh_stg_acc_purchase_order
+                    WHERE currency_code IS NOT NULL AND vendor_name IS NOT NULL
+                    GROUP BY vendor_name, currency_code
+                ) x GROUP BY vendor_name
+            ) g ON g.vendor_name = m.vendor_name
+            SET m.default_currency = g.cur, m.updated_at = NOW()
+            WHERE m.currency_source = 'auto'
+        ");
+
+        // Tebak mata uang via aturan DOMINAN <600rb — hanya vendor 'auto' TANPA data PO Accurate.
+        DB::statement("
+            UPDATE dwh_map_vendor_principal m
+            JOIN (
+                SELECT vendor_name, CASE WHEN SUM(total < {$t}) > SUM(total >= {$t}) THEN 'USD' ELSE 'IDR' END cur
+                FROM dwh_stg_acc_purchase_invoice_item GROUP BY vendor_name
+            ) g ON g.vendor_name = m.vendor_name
+            SET m.default_currency = g.cur, m.updated_at = NOW()
+            WHERE m.currency_source = 'auto'
+              AND NOT EXISTS (SELECT 1 FROM dwh_stg_acc_purchase_order o
+                              WHERE o.vendor_name = m.vendor_name AND o.currency_code IS NOT NULL)
+        ");
+
+        // Turunkan mata uang ke seluruh baris (data hasil sync tak menyimpan currency sendiri).
+        DB::statement('
+            UPDATE dwh_stg_acc_purchase_invoice_item s
+            JOIN dwh_map_vendor_principal m ON m.vendor_name = s.vendor_name
+            SET s.currency_code = m.default_currency
+        ');
+
+        return $added;
     }
 
     /**

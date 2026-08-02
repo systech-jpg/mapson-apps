@@ -2,6 +2,7 @@ import { Can } from '@/components/can';
 import { Pagination } from '@/components/pagination';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
@@ -37,7 +38,7 @@ const txt = (v: string | number | null) => (v === null || v === '' ? '-' : Strin
 
 export default function ErpStock({ erpStock, stockMeta, filters }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
-    const sync = useForm({ as_of: stockMeta.snapshotDate ?? stockMeta.today });
+    const sync = useForm({ as_of: stockMeta.snapshotDate ?? stockMeta.today, fresh: false as boolean });
 
     const pull = () => sync.post(route('integration.sync-stock'), { preserveScroll: true });
     const submitSearch: FormEventHandler = (e) => {
@@ -69,6 +70,13 @@ export default function ErpStock({ erpStock, stockMeta, filters }: Props) {
                                 {sync.processing ? <LoaderCircle className="size-4 animate-spin" /> : <Boxes className="size-4" />}
                                 Tarik Stok ERP
                             </Button>
+                            <label
+                                className="flex h-8 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+                                title="Baris ERP pada tanggal yang dipilih dihapus dulu sebelum insert — membersihkan kode barang lama yang nyangkut karena rename/hapus di ERP. Riwayat tanggal lain & data Accurate tidak disentuh."
+                            >
+                                <Checkbox checked={sync.data.fresh} onCheckedChange={(v) => sync.setData('fresh', v === true)} />
+                                Hapus & tarik ulang
+                            </label>
                         </Can>
                         <form onSubmit={submitSearch} className="flex items-center gap-2">
                             <div className="relative">

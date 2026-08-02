@@ -97,11 +97,11 @@ class IntegrationController extends Controller
     /** Pull the ERP stock snapshot as of a chosen date (truncate + insert). */
     public function syncStock(Request $request, ErpStockSyncService $stockSync): RedirectResponse
     {
-        $data = $request->validate(['as_of' => ['nullable', 'date']]);
+        $data = $request->validate(['as_of' => ['nullable', 'date'], 'fresh' => ['nullable', 'boolean']]);
 
         $start = microtime(true);
         try {
-            $r = $stockSync->sync($data['as_of'] ?? null);
+            $r = $stockSync->sync($data['as_of'] ?? null, (bool) ($data['fresh'] ?? false));
         } catch (Throwable $e) {
             report($e);
             SyncLog::record('erp', 'ERP stock snapshot', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
@@ -111,7 +111,9 @@ class IntegrationController extends Controller
 
         SyncLog::record('erp', 'ERP stock snapshot', 'success', $r, null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
-        return back()->with('success', "Stok ERP ditarik — {$r['items']} item (per {$r['as_of']}).");
+        $freshMsg = ! empty($r['deleted']) ? " {$r['deleted']} baris lama tanggal itu dihapus dulu." : '';
+
+        return back()->with('success', "Stok ERP ditarik — {$r['items']} item (per {$r['as_of']}).".$freshMsg);
     }
 
     /** Sync log page — recent runs of all integrations (ERP / Accurate / Hadirr). */

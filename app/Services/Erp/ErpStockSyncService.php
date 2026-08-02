@@ -30,11 +30,23 @@ class ErpStockSyncService
      * menjalankan ulang tanggal lampau BISA menghasilkan qty berbeda dari hasil sync
      * sebelumnya — itu koreksi data telat, bukan bug.
      */
-    public function sync(?string $asOf = null): array
+    public function sync(?string $asOf = null, bool $fresh = false): array
     {
         @set_time_limit(0);
         $asOf = $asOf ?: now()->toDateString();
         $rows = DB::connection(config('erp.connection'))->select($this->query($asOf));
+
+        // $fresh: hapus dulu baris ERP TANGGAL INI saja sebelum insert — membersihkan ref
+        // nyangkut (kode barang di-rename/dihapus di ERP) yang tak tersentuh upsert.
+        // Riwayat tanggal lain & snapshot Accurate tidak disentuh. Delete SETELAH query ERP
+        // sukses, supaya kegagalan koneksi tidak meninggalkan tanggal kosong.
+        $deleted = 0;
+        if ($fresh) {
+            $deleted = DB::table(InventorySnapshot::TABLE)
+                ->where('source', InventorySnapshot::ERP)
+                ->where('snapshot_date', $asOf)
+                ->delete();
+        }
 
         $now = now()->toDateTimeString();
 
@@ -59,7 +71,7 @@ class ErpStockSyncService
             $count += count($chunk);
         }
 
-        return ['items' => $count, 'as_of' => $asOf];
+        return ['items' => $count, 'as_of' => $asOf, 'deleted' => $deleted];
     }
 
     /**

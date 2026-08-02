@@ -22,7 +22,7 @@ class SyncDaily extends Command
 {
     protected $signature = 'sync:daily {--days=7 : Rolling window (hari) untuk data transaksi}';
 
-    protected $description = 'Sinkronisasi harian: ERP (sales_facts + stok), Accurate (sales/stok/movements), Hadirr (karyawan + absensi).';
+    protected $description = 'Sinkronisasi harian: ERP (sales_facts + stok), Accurate (sales/stok/movements/pembelian+payment+HPP), Hadirr (karyawan + absensi).';
 
     public function handle(SalesSyncService $erpSales, ErpStockSyncService $erpStock, AccurateSyncService $acc, HadirrSyncService $hadirr): int
     {
@@ -44,6 +44,14 @@ class SyncDaily extends Command
             $this->step('accurate', 'Accurate sales (faktur+SO+DO)', fn () => $acc->syncSales($af, $at));
             $this->step('accurate', 'Accurate stock snapshot', fn () => $acc->syncItemStock(null, true));
             $this->step('accurate', 'Accurate stock movements', fn () => $acc->syncStockMovements($af, $at));
+            $this->step('accurate', 'Accurate purchase invoices (faktur pembelian)', fn () => $acc->syncPurchaseInvoices($af, $at));
+            $this->step('accurate', 'Accurate purchase orders (PO)', fn () => $acc->syncPurchaseOrders($af, $at));
+            $this->step('accurate', 'Accurate purchase payments (pembayaran)', fn () => $acc->syncPurchasePayments($af, $at));
+            // Daftarkan vendor baru + turunkan mata uang ke baris faktur — tanpa ini baris
+            // hasil sync ber-currency NULL sampai tombol manual Monitoring Pembelian ditekan.
+            $this->step('accurate', 'Vendor map & currency pembelian', fn () => ['vendors_added' => $acc->syncVendorPrincipalMap()]);
+            // HPP dihitung ulang dari staging faktur (tulis ke dwh_map_product_cost saja, tidak tampil di UI baru).
+            $this->step('accurate', 'Recompute HPP per item', fn () => $acc->recomputeProductCost());
         } else {
             $this->warn('Accurate: belum terhubung — dilewati.');
         }
