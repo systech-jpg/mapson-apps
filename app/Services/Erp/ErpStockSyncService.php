@@ -34,7 +34,7 @@ class ErpStockSyncService
     {
         @set_time_limit(0);
         $asOf = $asOf ?: now()->toDateString();
-        $rows = DB::connection(config('erp.connection'))->select($this->query($asOf));
+        $rows = $this->mergeDuplicateRefs(DB::connection(config('erp.connection'))->select($this->query($asOf)));
 
         // $fresh: hapus dulu baris ERP TANGGAL INI saja sebelum insert — membersihkan ref
         // nyangkut (kode barang di-rename/dihapus di ERP) yang tak tersentuh upsert.
@@ -72,6 +72,54 @@ class ErpStockSyncService
         }
 
         return ['items' => $count, 'as_of' => $asOf, 'deleted' => $deleted];
+    }
+
+    /**
+     * Kode `01-xxx` di ERP (mis. 01-102191000) = duplikat kode utama `xxx` — barang
+     * fisiknya sama, kode dipisah hanya karena beda pricelist saat keluar barang
+     * (kit Hicren_Mis_Pelni). Saldo dilipat ke kode utama supaya tidak pecah dua baris
+     * di Rekon Data Stok / Rekon vs Stocktake. Sejalan dengan merge yang sama di
+     * report_all_stock.php Dolibarr. Hanya `01-` yang kode utamanya benar-benar ada
+     * di ERP yang dilipat.
+     *
+     * @param  array<int, object>  $rows
+     * @return array<int, object>
+     */
+    private function mergeDuplicateRefs(array $rows): array
+    {
+        $dupRefs = array_values(array_filter(array_map(fn ($r) => $r->ref, $rows), fn ($ref) => str_starts_with((string) $ref, '01-')));
+        if (! $dupRefs) {
+            return $rows;
+        }
+
+        $bases = array_unique(array_map(fn ($ref) => substr($ref, 3), $dupRefs));
+        $p = config('erp.prefix');
+        $valid = collect(DB::connection(config('erp.connection'))
+            ->select("SELECT rowid, ref, label FROM {$p}product WHERE ref IN ('".implode("','", array_map('addslashes', $bases))."')"))
+            ->keyBy('ref');
+
+        $byRef = [];
+        foreach ($rows as $r) {
+            $byRef[$r->ref] = $r;
+        }
+        foreach ($dupRefs as $ref) {
+            $base = substr($ref, 3);
+            if (! isset($valid[$base])) {
+                continue; // bukan pola duplikat yang dikenal — biarkan apa adanya
+            }
+            $dup = $byRef[$ref];
+            if (isset($byRef[$base])) {
+                $byRef[$base]->qty += $dup->qty;
+            } else {
+                $dup->ref = $base;
+                $dup->rowid = $valid[$base]->rowid;
+                $dup->label = $valid[$base]->label;
+                $byRef[$base] = $dup;
+            }
+            unset($byRef[$ref]);
+        }
+
+        return array_values($byRef);
     }
 
     /**

@@ -180,11 +180,55 @@ class StocktakeReconController extends Controller
         if (! $batch) {
             return back()->with('error', 'Sesi tidak punya baris item.');
         }
+        $batch = $this->canonicalizeCodes($batch);
         foreach (array_chunk($batch, 500) as $chunk) {
             DB::table('stocktake_counts')->upsert($chunk, ['code'], ['name', 'qty', 'counted_at', 'updated_at']);
         }
 
         return back()->with('success', "Tarik stocktake '{$session->label}' selesai — ".count($batch).' item.');
+    }
+
+    /**
+     * Excel/CSV sering menukar '/' pada kode item menjadi '_' (mis. TE_S50722-003 vs
+     * TE/S50722-003 di ERP) → baris rekon pecah dua. Kode ber-'_' yang TIDAK dikenal
+     * snapshot ERP/Accurate tapi versi '/'-nya dikenal dipetakan ke kode kanonik;
+     * duplikat hasil pemetaan digabung (qty dijumlah). Kode '_' yang memang sah dibiarkan.
+     *
+     * @param  array<int, array<string, mixed>>  $batch
+     * @return array<int, array<string, mixed>>
+     */
+    private function canonicalizeCodes(array $batch): array
+    {
+        $underscored = array_values(array_unique(array_filter(array_column($batch, 'code'), fn ($c) => str_contains((string) $c, '_'))));
+        if (! $underscored) {
+            return $batch;
+        }
+
+        $candidates = array_merge($underscored, array_map(fn ($c) => str_replace('_', '/', $c), $underscored));
+        $known = array_flip(DB::table(InventorySnapshot::TABLE)->whereIn('ref', $candidates)->distinct()->pluck('ref')->all());
+
+        $map = [];
+        foreach ($underscored as $c) {
+            $slash = str_replace('_', '/', $c);
+            if (! isset($known[$c]) && isset($known[$slash])) {
+                $map[$c] = $slash;
+            }
+        }
+        if (! $map) {
+            return $batch;
+        }
+
+        $out = [];
+        foreach ($batch as $row) {
+            $row['code'] = $map[$row['code']] ?? $row['code'];
+            if (isset($out[$row['code']])) {
+                $out[$row['code']]['qty'] += $row['qty'];
+            } else {
+                $out[$row['code']] = $row;
+            }
+        }
+
+        return array_values($out);
     }
 
     /**
@@ -277,6 +321,7 @@ class StocktakeReconController extends Controller
             return back()->with('error', 'Tidak ada baris valid. Pastikan ada kolom Kode & Total/Qty.');
         }
 
+        $batch = $this->canonicalizeCodes($batch);
         foreach (array_chunk($batch, 500) as $chunk) {
             DB::table('stocktake_counts')->upsert($chunk, ['code'], ['name', 'principal', 'qty', 'counted_at', 'updated_at']);
         }
