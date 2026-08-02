@@ -134,7 +134,10 @@ class StockReconController extends Controller
         };
         $erpDocs = [];
         foreach ($erpMov as $m) {
-            $doc = $m->do_ref ?: $m->gr_ref ?: $m->po_ref ?: $m->so_ref ?: '(tanpa dokumen)';
+            // Tanpa SO/DO/GR/PO → tampilkan keterangan mutasinya (mis. "Stock Correction",
+            // "Manual In") supaya koreksi stok tetap tertelusur, bukan "(tanpa dokumen)".
+            $doc = $m->do_ref ?: $m->gr_ref ?: $m->po_ref ?: $m->so_ref
+                ?: (filled($m->label ?? null) ? mb_substr(trim(preg_replace('/\s+/', ' ', (string) $m->label)), 0, 60) : '(tanpa dokumen)');
             $cat = $erpCat($m);
             $k = $cat.'|'.$doc;
             $erpDocs[$k] ??= ['doc' => $doc, 'category' => $cat, 'qty' => 0.0, 'lines' => 0, 'date' => ''];
