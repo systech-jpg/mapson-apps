@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class SalesDailyController extends Controller
 {
@@ -61,6 +62,66 @@ class SalesDailyController extends Controller
             ],
             'options' => $this->formOptions(),
         ]);
+    }
+
+    /**
+     * Lookup data tindakan dari ERP (diinput TS/warehouse) untuk prefill form Sales Daily.
+     * Kolom dokter & nama_ts di tabel tindakan berisi ID → di-join ke master dokter & user ERP.
+     */
+    public function tindakan(Request $request): \Illuminate\Http\JsonResponse
+    {
+        $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->input('from'))
+            ? $request->input('from') : now()->subDays(14)->toDateString();
+        $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $request->input('to'))
+            ? $request->input('to') : now()->toDateString();
+        $q = trim((string) $request->input('q'));
+
+        try {
+            $p = config('erp.prefix');
+            $rows = DB::connection(config('erp.connection'))->table($p.'tindakan as t')
+                ->leftJoin($p.'societe as s', 's.rowid', '=', 't.fk_soc')
+                ->leftJoin($p.'c_doctor as d', 'd.rowid', '=', 't.dokter')
+                ->leftJoin($p.'user as u', 'u.rowid', '=', 't.nama_ts')
+                ->whereBetween('t.tanggal', [$from, $to])
+                ->when($q !== '', fn ($qq) => $qq->where(fn ($w) => $w
+                    ->where('t.pasien', 'like', "%{$q}%")
+                    ->orWhere('t.ref', 'like', "%{$q}%")
+                    ->orWhere('d.fullname', 'like', "%{$q}%")
+                    ->orWhere('s.name_alias', 'like', "%{$q}%")))
+                ->orderByDesc('t.tanggal')->orderByDesc('t.id')
+                ->limit(50)
+                ->selectRaw("t.id, t.ref, t.tanggal, t.pasien, t.jenis_tindakan,
+                    COALESCE(NULLIF(s.name_alias, ''), s.nom) hospital,
+                    COALESCE(d.fullname, NULLIF(t.dokter, '')) doctor,
+                    TRIM(CONCAT(COALESCE(u.firstname, ''), ' ', COALESCE(u.lastname, ''))) ts_name")
+                ->get();
+            // Detail alat TERPAKAI per tindakan (usage report diisi TS/warehouse) — qty_used > 0
+            // saja; qty_sent tidak dipakai karena berisi seluruh isi tray yang dikirim.
+            $details = DB::connection(config('erp.connection'))->table($p.'usage_report as ur')
+                ->join($p.'usage_report_det as d', 'd.fk_usage_report', '=', 'ur.rowid')
+                ->leftJoin($p.'product as pr', 'pr.rowid', '=', 'd.fk_product')
+                ->whereIn('ur.fk_tindakan', $rows->pluck('id'))
+                ->where('d.qty_used', '>', 0)
+                ->orderBy('d.rowid')
+                ->selectRaw('ur.fk_tindakan tid, pr.ref code, pr.label description, pr.price, d.qty_used qty')
+                ->get()
+                ->groupBy('tid');
+
+            $rows = $rows->map(function ($r) use ($details) {
+                $r->items = ($details[$r->id] ?? collect())->map(fn ($d) => [
+                    'code' => $d->code, 'description' => $d->description,
+                    'price' => (float) $d->price, 'qty' => (float) $d->qty,
+                ])->values();
+
+                return $r;
+            });
+        } catch (Throwable $e) {
+            report($e);
+
+            return response()->json(['error' => 'Tidak bisa membaca data tindakan dari ERP.'], 503);
+        }
+
+        return response()->json(['rows' => $rows]);
     }
 
     public function store(Request $request): RedirectResponse

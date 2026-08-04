@@ -57,6 +57,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('sales-daily', [SalesDailyController::class, 'index'])->middleware('menu.access:sales-daily,view')->name('sales-daily.index');
     Route::post('sales-daily', [SalesDailyController::class, 'store'])->middleware('menu.access:sales-daily,create')->name('sales-daily.store');
     Route::post('sales-daily/import', [SalesDailyController::class, 'import'])->middleware('menu.access:sales-daily,create')->name('sales-daily.import');
+    Route::get('sales-daily/tindakan', [SalesDailyController::class, 'tindakan'])->middleware('menu.access:sales-daily,create')->name('sales-daily.tindakan');
     Route::put('sales-daily/{entry}', [SalesDailyController::class, 'update'])->middleware('menu.access:sales-daily,edit')->name('sales-daily.update');
     Route::delete('sales-daily/{entry}', [SalesDailyController::class, 'destroy'])->middleware('menu.access:sales-daily,delete')->name('sales-daily.destroy');
 

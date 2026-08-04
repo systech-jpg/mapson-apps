@@ -12,7 +12,7 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type Paginated, type SharedData } from '@/types';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Download, Pencil, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { type FormEventHandler, Fragment, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 
@@ -172,6 +172,85 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
     const fileRef = useRef<HTMLInputElement>(null);
     const [preview, setPreview] = useState<{ entries: ImportEntry[]; skipped: number; itemRows: number; total: number } | null>(null);
     const [importing, setImporting] = useState(false);
+
+    // Picker "Tarik dari Tindakan" — lookup data tindakan ERP (input TS/warehouse).
+    interface TindakanRow {
+        id: number;
+        ref: string;
+        tanggal: string;
+        pasien: string | null;
+        jenis_tindakan: string | null;
+        hospital: string | null;
+        doctor: string | null;
+        ts_name: string | null;
+        items: { code: string | null; description: string | null; price: number; qty: number }[];
+    }
+    const [tOpen, setTOpen] = useState(false);
+    const [tRows, setTRows] = useState<TindakanRow[]>([]);
+    const [tLoading, setTLoading] = useState(false);
+    const [tError, setTError] = useState<string | null>(null);
+    const [tFrom, setTFrom] = useState(() => new Date(Date.now() - 14 * 86400000).toISOString().substring(0, 10));
+    const [tTo, setTTo] = useState(() => new Date().toISOString().substring(0, 10));
+    const [tQ, setTQ] = useState('');
+
+    const searchTindakan = async (from = tFrom, to = tTo, q = tQ) => {
+        setTLoading(true);
+        setTError(null);
+        try {
+            const res = await fetch(`${route('sales-daily.tindakan')}?from=${from}&to=${to}&q=${encodeURIComponent(q)}`, {
+                headers: { Accept: 'application/json' },
+            });
+            const json = (await res.json()) as { rows?: TindakanRow[]; error?: string };
+            if (!res.ok || json.error) {
+                setTError(json.error ?? 'Gagal memuat data tindakan.');
+                setTRows([]);
+            } else {
+                setTRows(json.rows ?? []);
+            }
+        } catch {
+            setTError('Gagal memuat data tindakan.');
+            setTRows([]);
+        } finally {
+            setTLoading(false);
+        }
+    };
+
+    const openTindakan = () => {
+        setTOpen(true);
+        void searchTindakan();
+    };
+
+    const applyTindakan = (r: TindakanRow) => {
+        // Detail alat terpakai (qty_used) ikut ditarik; harga dari master produk ERP dengan
+        // fallback katalog. Usage report yang belum diisi qty terpakai → baris item dibiarkan.
+        const items: Item[] = r.items.length
+            ? r.items.map((it) => {
+                  const hit = options.catalog.find((c) => c.code.toLowerCase() === (it.code ?? '').toLowerCase());
+                  const price = it.price > 0 ? it.price : hit && hit.price > 0 ? hit.price : '';
+                  return {
+                      item_code: it.code ?? '',
+                      description: it.description ?? hit?.description ?? '',
+                      principal: hit?.principal ?? '',
+                      product_line: hit?.line ?? '',
+                      price,
+                      qty: it.qty,
+                      disc_pct: 0,
+                  };
+              })
+            : data.items;
+
+        setData((d) => ({
+            ...d,
+            entry_date: r.tanggal.substring(0, 10),
+            sales_type: 'tindakan',
+            hospital_name: r.hospital ?? '',
+            doctor_name: r.doctor ?? '',
+            patient_name: r.pasien ?? '',
+            notes: d.notes || [r.ref, r.jenis_tindakan].filter(Boolean).join(' — '),
+            items,
+        }));
+        setTOpen(false);
+    };
 
     const { data, setData, post, put, processing, errors, clearErrors } = useForm<{
         entry_date: string;
@@ -643,6 +722,12 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                     <DialogHeader>
                         <DialogTitle>{editingId ? 'Ubah Input Sales' : 'Input Sales Harian'}</DialogTitle>
                     </DialogHeader>
+                    <div>
+                        <Button type="button" variant="outline" size="sm" onClick={openTindakan}>
+                            <ClipboardPaste className="size-4" /> Tarik dari Tindakan
+                        </Button>
+                        <span className="ml-2 text-xs text-muted-foreground">isi otomatis tanggal, RS, dokter & pasien dari data tindakan yang diinput TS/warehouse</span>
+                    </div>
                     <form onSubmit={submit} className="grid gap-4">
                         <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-4">
                             <div className="grid gap-2">
@@ -835,6 +920,90 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                             </option>
                         ))}
                     </datalist>
+                </DialogContent>
+            </Dialog>
+
+            {/* Picker tindakan ERP — lookup by tanggal / pasien untuk prefill form */}
+            <Dialog open={tOpen} onOpenChange={setTOpen}>
+                <DialogContent className="max-h-[90vh] w-[95vw] !max-w-3xl overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Tarik dari Data Tindakan</DialogTitle>
+                    </DialogHeader>
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            void searchTindakan();
+                        }}
+                        className="flex flex-wrap items-end gap-2"
+                    >
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="t_from" className="text-xs">Dari</Label>
+                            <Input id="t_from" type="date" className="h-9" value={tFrom} onChange={(e) => setTFrom(e.target.value)} />
+                        </div>
+                        <div className="grid gap-1.5">
+                            <Label htmlFor="t_to" className="text-xs">Sampai</Label>
+                            <Input id="t_to" type="date" className="h-9" value={tTo} onChange={(e) => setTTo(e.target.value)} />
+                        </div>
+                        <div className="grid min-w-40 flex-1 gap-1.5">
+                            <Label htmlFor="t_q" className="text-xs">Cari pasien / dokter / RS / ref</Label>
+                            <Input id="t_q" className="h-9" value={tQ} onChange={(e) => setTQ(e.target.value)} placeholder="mis. nama pasien" />
+                        </div>
+                        <Button type="submit" className="h-9" disabled={tLoading}>
+                            <Search className="size-4" /> Cari
+                        </Button>
+                    </form>
+
+                    {tError && <p className="text-sm text-rose-600 dark:text-rose-400">{tError}</p>}
+
+                    <div className="max-h-[50vh] overflow-auto rounded-md border">
+                        <table className="w-full text-xs">
+                            <thead className="sticky top-0 bg-muted text-muted-foreground">
+                                <tr className="[&>th]:px-2 [&>th]:py-1.5 [&>th]:text-left [&>th]:font-medium">
+                                    <th>Tanggal</th>
+                                    <th>Ref</th>
+                                    <th>Rumah Sakit</th>
+                                    <th>Dokter</th>
+                                    <th>Pasien</th>
+                                    <th>Tindakan</th>
+                                    <th>TS</th>
+                                    <th className="!text-right">Item Terpakai</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {tLoading ? (
+                                    <tr>
+                                        <td colSpan={8} className="py-8 text-center text-muted-foreground">Memuat…</td>
+                                    </tr>
+                                ) : tRows.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={8} className="py-8 text-center text-muted-foreground">
+                                            Tidak ada tindakan pada rentang/kata kunci ini.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    tRows.map((r) => (
+                                        <tr key={r.id} className="cursor-pointer border-t hover:bg-accent [&>td]:px-2 [&>td]:py-1.5" onClick={() => applyTindakan(r)}>
+                                            <td className="whitespace-nowrap">{r.tanggal.substring(0, 10)}</td>
+                                            <td className="font-mono whitespace-nowrap">{r.ref}</td>
+                                            <td>{r.hospital ?? '—'}</td>
+                                            <td className="max-w-44 truncate">{r.doctor ?? '—'}</td>
+                                            <td>{r.pasien ?? '—'}</td>
+                                            <td>{r.jenis_tindakan || '—'}</td>
+                                            <td>{r.ts_name || '—'}</td>
+                                            <td className="text-right">
+                                                {r.items.length > 0 ? (
+                                                    r.items.length
+                                                ) : (
+                                                    <span className="text-amber-600 dark:text-amber-400">belum diisi</span>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Klik salah satu baris untuk mengisi form. Maksimal 50 hasil — persempit rentang tanggal bila perlu.</p>
                 </DialogContent>
             </Dialog>
 
