@@ -121,6 +121,7 @@ class MenuSeeder extends Seeder
         ]);
         $this->menu(['key' => 'sales-daily', 'title' => 'Sales Daily', 'route' => 'sales-daily.index', 'icon' => 'ClipboardList', 'sort_order' => 1], $sales->id);
         $this->menu(['key' => 'sales-hospitals', 'title' => 'Database Rumah Sakit', 'route' => 'sales-hospitals.index', 'icon' => 'Building2', 'sort_order' => 2], $sales->id);
+        $this->menu(['key' => 'sales-doctors', 'title' => 'Database Dokter', 'route' => 'sales-doctors.index', 'icon' => 'Stethoscope', 'sort_order' => 3], $sales->id);
 
         // Module: User Management.
         $userManagement = $this->menu([

@@ -215,6 +215,24 @@ class SalesDailyController extends Controller
             ->merge(PricingHospital::where('is_active', true)->pluck('name'))
             ->map(fn ($n) => trim((string) $n))->filter()->unique()->sort()->values();
 
+        // Harga jual resmi per kode dari master produk ERP (kolom price = HT, sebelum PPN —
+        // konsisten dengan form yang menambahkan PPN 11% sendiri). Prioritas di atas harga histori.
+        $erpPrice = [];
+        try {
+            $rows = DB::connection(config('erp.connection'))->table(config('erp.prefix').'product')
+                ->whereNotNull('ref')->where('ref', '!=', '')->where('price', '>', 0)
+                ->pluck('price', 'ref');
+            foreach ($rows as $ref => $pr) {
+                $erpPrice[mb_strtolower((string) $ref)] = (float) $pr;
+            }
+        } catch (\Throwable) {
+            // ERP offline → pakai harga histori saja.
+        }
+        $priceFor = fn (string $code, float $fallback) => $erpPrice[mb_strtolower($code)] ?? $fallback;
+
+        // Katalog kode = histori input (punya jenis & harga terakhir) DIPERKAYA master item
+        // dari snapshot stok ERP (ref → label + principal) — sumber lookup principal per kode,
+        // karena principal tidak lagi diketik manual di form.
         $latestPerCode = SalesDailyItem::query()
             ->whereNotNull('item_code')->where('item_code', '!=', '')
             ->selectRaw('MAX(id) id')->groupBy('item_code');
@@ -223,14 +241,54 @@ class SalesDailyController extends Controller
             ->get(['item_code', 'principal', 'product_line', 'description', 'price'])
             ->map(fn ($r) => [
                 'code' => $r->item_code, 'principal' => $r->principal,
-                'line' => $r->product_line, 'description' => $r->description, 'price' => (float) $r->price,
+                'line' => $r->product_line, 'description' => $r->description,
+                'price' => $priceFor($r->item_code, (float) $r->price),
             ]);
+
+        try {
+            $known = $catalog->pluck('code')->map(fn ($c) => mb_strtolower($c))->flip();
+            $snapshot = \App\Support\InventorySnapshot::erp()
+                ->whereNotNull('ref')->where('ref', '!=', '')
+                ->get(['ref', 'label', 'principal'])
+                ->filter(fn ($r) => ! isset($known[mb_strtolower($r->ref)]))
+                ->map(fn ($r) => [
+                    'code' => $r->ref, 'principal' => $r->principal ?: null,
+                    'line' => null, 'description' => $r->label ?: null,
+                    'price' => $priceFor((string) $r->ref, 0.0),
+                ])->values();
+            $catalog = $catalog->concat($snapshot)->sortBy('code')->values();
+        } catch (\Throwable) {
+            // Snapshot belum ada → katalog dari histori saja.
+        }
+
+        // Master dokter & principal dari ERP + histori input; ERP offline → histori tetap jalan.
+        $erpDoctors = collect();
+        $erpPrincipals = collect();
+        try {
+            $erp = DB::connection(config('erp.connection'));
+            $p = config('erp.prefix');
+            $erpDoctors = $erp->table($p.'c_doctor')
+                ->where('status', 1)->orderBy('fullname')->pluck('fullname');
+            // Principal = societe dengan third-party type TE_PRINCIPLE; nama tampil pakai alias.
+            $erpPrincipals = $erp->table($p.'societe as s')
+                ->join($p.'c_typent as t', 't.id', '=', 's.fk_typent')
+                ->where('t.code', 'TE_PRINCIPLE')->where('s.status', 1)
+                ->get(['s.nom', 's.name_alias'])
+                ->map(fn ($r) => trim((string) ($r->name_alias ?: $r->nom)));
+        } catch (\Throwable) {
+        }
 
         return [
             'hospitals' => $hospitals,
-            'doctors' => SalesDailyEntry::query()->whereNotNull('doctor_name')->distinct()->orderBy('doctor_name')->pluck('doctor_name'),
+            'doctors' => SalesDailyEntry::query()->whereNotNull('doctor_name')->distinct()->pluck('doctor_name')
+                ->merge($erpDoctors)
+                ->map(fn ($n) => trim((string) $n))->filter(fn ($n) => $n !== '' && $n !== '-')
+                ->unique(fn ($n) => mb_strtolower($n))->sort()->values(),
             'salesNames' => SalesDailyEntry::query()->whereNotNull('sales_name')->distinct()->orderBy('sales_name')->pluck('sales_name'),
-            'principals' => SalesDailyItem::query()->whereNotNull('principal')->where('principal', '!=', '')->distinct()->orderBy('principal')->pluck('principal'),
+            'principals' => SalesDailyItem::query()->whereNotNull('principal')->where('principal', '!=', '')->distinct()->pluck('principal')
+                ->merge($erpPrincipals)
+                ->map(fn ($n) => trim((string) $n))->filter()
+                ->unique(fn ($n) => mb_strtolower($n))->sort()->values(),
             'lines' => SalesDailyItem::query()->whereNotNull('product_line')->where('product_line', '!=', '')->distinct()->orderBy('product_line')->pluck('product_line'),
             'catalog' => $catalog,
         ];

@@ -13,7 +13,7 @@ import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type Paginated } from '@/types';
 import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, RefreshCw, Search } from 'lucide-react';
+import { Pencil, RefreshCw, Search } from 'lucide-react';
 import { type FormEventHandler, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -57,7 +57,7 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
     const [editing, setEditing] = useState<Hospital | null>(null);
     const [syncing, setSyncing] = useState(false);
 
-    const { data, setData, post, put, processing, errors, clearErrors } = useForm<{ name: string; city: string; is_active: boolean }>({
+    const { data, setData, put, processing, errors, clearErrors } = useForm<{ name: string; city: string; is_active: boolean }>({
         name: '',
         city: '',
         is_active: true,
@@ -68,16 +68,9 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
     };
 
     const doSync = () => {
-        if (!confirm('Tarik ulang seluruh rumah sakit (societe bertipe RS) dari ERP Dolibarr?')) return;
+        if (!confirm('Tarik ulang seluruh rumah sakit dari ERP?')) return;
         setSyncing(true);
         router.post(route('sales-hospitals.sync'), {}, { preserveScroll: true, onFinish: () => setSyncing(false) });
-    };
-
-    const openAdd = () => {
-        clearErrors();
-        setData({ name: '', city: '', is_active: true });
-        setEditing(null);
-        setOpen(true);
     };
 
     const openEdit = (h: Hospital) => {
@@ -89,12 +82,8 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
 
     const submit: FormEventHandler = (ev) => {
         ev.preventDefault();
-        const opts = { preserveScroll: true, onSuccess: () => setOpen(false) };
-        if (editing) {
-            put(route('sales-hospitals.update', editing.id), opts);
-        } else {
-            post(route('sales-hospitals.store'), opts);
-        }
+        if (!editing) return;
+        put(route('sales-hospitals.update', editing.id), { preserveScroll: true, onSuccess: () => setOpen(false) });
     };
 
     const toggleActive = (h: Hospital, value: boolean) => {
@@ -113,7 +102,7 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
                     <div>
                         <h1 className="text-xl font-semibold">Database Rumah Sakit</h1>
                         <p className="text-sm text-muted-foreground">
-                            Master rumah sakit dari ERP Dolibarr (societe bertipe RS Swasta / Pemerintah / Corporate / Sub Distributor).
+                            Master rumah sakit dari ERP (third party bertipe RS Swasta / Pemerintah / Corporate / Sub Distributor).
                             {lastSync && <> Sync terakhir: {new Date(lastSync).toLocaleString('id-ID')}.</>}
                         </p>
                     </div>
@@ -151,11 +140,6 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
                                 <SelectItem value="inactive">Nonaktif</SelectItem>
                             </SelectContent>
                         </Select>
-                        <Can on="sales-hospitals" do="create">
-                            <Button variant="outline" onClick={openAdd}>
-                                <Plus className="size-4" /> Tambah Manual
-                            </Button>
-                        </Can>
                         <Can on="sales-hospitals" do="edit">
                             <Button onClick={doSync} disabled={syncing}>
                                 <RefreshCw className={cn('size-4', syncing && 'animate-spin')} /> Sync dari ERP
@@ -205,7 +189,7 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
                                     {hospitals.data.length === 0 ? (
                                         <TableRow>
                                             <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                                                Belum ada data. Klik <b>Sync dari ERP</b> untuk menarik rumah sakit dari Dolibarr.
+                                                Belum ada data. Klik <b>Sync dari ERP</b> untuk menarik rumah sakit dari ERP.
                                             </TableCell>
                                         </TableRow>
                                     ) : (
@@ -247,16 +231,23 @@ export default function SalesHospitals({ q, type, status, hospitals, summary, ty
 
                 <Pagination links={hospitals.links} />
 
+                <Card className="border-sky-200 bg-sky-50/60 dark:border-sky-900 dark:bg-sky-950/30">
+                    <CardContent className="py-3 text-sm text-sky-900 dark:text-sky-200">
+                        <b>Penambahan rumah sakit baru dilakukan di ERP.</b> Silakan hubungi <b>Admin Sales</b> untuk menambahkan rumah sakit
+                        (third party bertipe RS Swasta / Pemerintah / Corporate / Sub Distributor) pada ERP, lalu klik <b>Sync dari ERP</b> di halaman ini.
+                    </CardContent>
+                </Card>
+
                 <p className="text-xs text-muted-foreground">
-                    Nama tampil memakai alias societe di Dolibarr (nama RS yang dikenal); badan hukum (PT/Yayasan) disimpan terpisah.
-                    Baris ERP tidak bisa diubah dari sini — perbaiki datanya di Dolibarr lalu sync ulang. RS yang hilang dari ERP otomatis dinonaktifkan, tidak dihapus.
+                    Nama tampil memakai alias di ERP (nama RS yang dikenal); badan hukum (PT/Yayasan) disimpan terpisah.
+                    Baris ERP tidak bisa diubah dari sini — perbaiki datanya di ERP lalu sync ulang. RS yang hilang dari ERP otomatis dinonaktifkan, tidak dihapus.
                 </p>
             </div>
 
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="w-[95vw] max-w-md">
                     <DialogHeader>
-                        <DialogTitle>{editing ? 'Ubah RS Manual' : 'Tambah RS Manual'}</DialogTitle>
+                        <DialogTitle>Ubah RS Manual</DialogTitle>
                     </DialogHeader>
                     <form onSubmit={submit} className="grid gap-4">
                         <div className="grid gap-2">

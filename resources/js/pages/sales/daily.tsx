@@ -263,20 +263,16 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
         setData('items', data.items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
     };
 
-    // Kode yang pernah diinput → auto-isi principal/jenis/deskripsi/harga terakhirnya.
+    // Lookup dari Kode — CLEAR dulu lalu FILL: setiap kode berganti, deskripsi/harga/principal
+    // selalu disegarkan dari katalog (harga = master produk ERP), tidak menyisakan nilai kode lama.
     const applyCatalog = (idx: number, code: string) => {
         const hit = options.catalog.find((c) => c.code.toLowerCase() === code.trim().toLowerCase());
-        if (!hit) {
-            setItem(idx, { item_code: code });
-            return;
-        }
-        const cur = data.items[idx];
         setItem(idx, {
             item_code: code,
-            principal: cur.principal || (hit.principal ?? ''),
-            product_line: cur.product_line || (hit.line ?? ''),
-            description: cur.description || (hit.description ?? ''),
-            price: Number(cur.price) > 0 ? cur.price : hit.price,
+            principal: hit?.principal ?? '',
+            product_line: hit?.line ?? '',
+            description: hit?.description ?? '',
+            price: hit && hit.price > 0 ? hit.price : '',
         });
     };
 
@@ -643,12 +639,12 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
             </div>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-h-[92vh] w-[97vw] !max-w-5xl overflow-y-auto">
+                <DialogContent className="max-h-[95vh] w-[98vw] !max-w-[88rem] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{editingId ? 'Ubah Input Sales' : 'Input Sales Harian'}</DialogTitle>
                     </DialogHeader>
                     <form onSubmit={submit} className="grid gap-4">
-                        <div className="grid gap-4 sm:grid-cols-3">
+                        <div className="grid gap-4 sm:grid-cols-3 xl:grid-cols-4">
                             <div className="grid gap-2">
                                 <Label htmlFor="sd_date">Tanggal *</Label>
                                 <Input id="sd_date" type="date" value={data.entry_date} onChange={(e) => setData('entry_date', e.target.value)} required />
@@ -690,25 +686,25 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                                 <Input id="sd_sales" list="sd-sales" value={data.sales_name} onChange={(e) => setData('sales_name', e.target.value)} />
                                 <InputError message={errors.sales_name} />
                             </div>
-                            <div className={cn('grid gap-2', data.sales_type === 'tindakan' ? 'sm:col-span-3' : 'sm:col-span-2')}>
+                            <div className={cn('grid gap-2', data.sales_type === 'tindakan' ? 'sm:col-span-3 xl:col-span-2' : 'sm:col-span-2 xl:col-span-3')}>
                                 <Label htmlFor="sd_notes">Catatan</Label>
                                 <Input id="sd_notes" value={data.notes} onChange={(e) => setData('notes', e.target.value)} placeholder="opsional — mis. sewa paket tindakan RF + Ablator" />
                             </div>
                         </div>
 
+                        {/* Principal & Jenis tidak ditampilkan — terisi otomatis dari lookup Kode. */}
                         <div className="rounded-md border">
-                            <div className="overflow-x-auto">
+                            {/* Desktop: tabel */}
+                            <div className="hidden overflow-x-auto md:block">
                                 <table className="w-full text-sm">
                                     <thead className="bg-muted/50 text-xs text-muted-foreground">
                                         <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:font-medium">
-                                            <th className="w-28">Principal</th>
-                                            <th className="w-32">Kode</th>
-                                            <th className="w-28">Jenis</th>
+                                            <th className="w-44">Kode</th>
                                             <th>Deskripsi</th>
-                                            <th className="w-28 !text-right">Harga</th>
-                                            <th className="w-16 !text-right">Qty</th>
-                                            <th className="w-16 !text-right">Disc %</th>
-                                            <th className="w-28 !text-right">Total</th>
+                                            <th className="w-32 !text-right">Harga</th>
+                                            <th className="w-20 !text-right">Qty</th>
+                                            <th className="w-20 !text-right">Disc %</th>
+                                            <th className="w-32 !text-right">Total</th>
                                             <th className="w-8" />
                                         </tr>
                                     </thead>
@@ -716,13 +712,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                                         {data.items.map((it, i) => (
                                             <tr key={i} className="border-t align-top [&>td]:px-2 [&>td]:py-1.5">
                                                 <td>
-                                                    <Input list="sd-principals" className="h-8" value={it.principal} onChange={(e) => setItem(i, { principal: e.target.value })} />
-                                                </td>
-                                                <td>
                                                     <Input list="sd-codes" className="h-8 font-mono" value={it.item_code} onChange={(e) => applyCatalog(i, e.target.value)} />
-                                                </td>
-                                                <td>
-                                                    <Input list="sd-lines" className="h-8" value={it.product_line} onChange={(e) => setItem(i, { product_line: e.target.value })} />
                                                 </td>
                                                 <td>
                                                     <Input className="h-8" value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} />
@@ -736,7 +726,10 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                                                 <td>
                                                     <Input type="number" min={0} max={100} step="any" className="h-8 text-right" value={it.disc_pct} onChange={(e) => setItem(i, { disc_pct: e.target.value })} />
                                                 </td>
-                                                <td className="pt-3 text-right text-xs whitespace-nowrap">{rupiah(lineTotal(it))}</td>
+                                                <td className="pt-3 text-right text-xs whitespace-nowrap">
+                                                    {rupiah(lineTotal(it))}
+                                                    {it.principal && <div className="text-[10px] font-normal text-muted-foreground">{it.principal}</div>}
+                                                </td>
                                                 <td className="pt-1.5">
                                                     <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" disabled={data.items.length <= 1} onClick={() => removeRow(i)}>
                                                         <X className="size-4" />
@@ -747,6 +740,47 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Mobile: bertumpuk seperti field header */}
+                            <div className="divide-y md:hidden">
+                                {data.items.map((it, i) => (
+                                    <div key={i} className="grid grid-cols-3 gap-3 p-3">
+                                        <div className="col-span-3 flex items-center justify-between">
+                                            <span className="text-xs font-medium text-muted-foreground">
+                                                Item {i + 1}
+                                                {it.principal ? ` · ${it.principal}` : ''}
+                                            </span>
+                                            <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" disabled={data.items.length <= 1} onClick={() => removeRow(i)}>
+                                                <X className="size-4" />
+                                            </Button>
+                                        </div>
+                                        <div className="col-span-3 grid gap-1.5">
+                                            <Label className="text-xs">Kode</Label>
+                                            <Input list="sd-codes" className="h-9 font-mono" value={it.item_code} onChange={(e) => applyCatalog(i, e.target.value)} />
+                                        </div>
+                                        <div className="col-span-3 grid gap-1.5">
+                                            <Label className="text-xs">Deskripsi</Label>
+                                            <Input className="h-9" value={it.description} onChange={(e) => setItem(i, { description: e.target.value })} />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Harga</Label>
+                                            <Input type="number" min={0} step="any" className="h-9 text-right" value={it.price} onChange={(e) => setItem(i, { price: e.target.value })} />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Qty</Label>
+                                            <Input type="number" min={0} step="any" className="h-9 text-right" value={it.qty} onChange={(e) => setItem(i, { qty: e.target.value })} />
+                                        </div>
+                                        <div className="grid gap-1.5">
+                                            <Label className="text-xs">Disc %</Label>
+                                            <Input type="number" min={0} max={100} step="any" className="h-9 text-right" value={it.disc_pct} onChange={(e) => setItem(i, { disc_pct: e.target.value })} />
+                                        </div>
+                                        <div className="col-span-3 text-right text-sm">
+                                            Total: <b>{rupiah(lineTotal(it))}</b>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
                             <div className="flex flex-wrap items-center justify-between gap-3 border-t px-3 py-2">
                                 <Button type="button" variant="outline" size="sm" onClick={addRow}>
                                     <Plus className="size-4" /> Tambah Baris
@@ -792,16 +826,6 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
                     <datalist id="sd-sales">
                         {options.salesNames.map((s) => (
                             <option key={s} value={s} />
-                        ))}
-                    </datalist>
-                    <datalist id="sd-principals">
-                        {options.principals.map((p) => (
-                            <option key={p} value={p} />
-                        ))}
-                    </datalist>
-                    <datalist id="sd-lines">
-                        {options.lines.map((l) => (
-                            <option key={l} value={l} />
                         ))}
                     </datalist>
                     <datalist id="sd-codes">

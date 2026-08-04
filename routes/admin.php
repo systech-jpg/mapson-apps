@@ -38,6 +38,7 @@ use App\Http\Controllers\Admin\PricingEngineController;
 use App\Http\Controllers\Admin\PricingSettingController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\SalesDailyController;
+use App\Http\Controllers\Admin\SalesDoctorController;
 use App\Http\Controllers\Admin\SalesHospitalController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
@@ -62,8 +63,12 @@ Route::middleware(['auth'])->group(function () {
     // Sales — Database Rumah Sakit (master pricing_hospitals, sync dari Dolibarr societe).
     Route::get('sales-hospitals', [SalesHospitalController::class, 'index'])->middleware('menu.access:sales-hospitals,view')->name('sales-hospitals.index');
     Route::post('sales-hospitals/sync', [SalesHospitalController::class, 'sync'])->middleware('menu.access:sales-hospitals,edit')->name('sales-hospitals.sync');
-    Route::post('sales-hospitals', [SalesHospitalController::class, 'store'])->middleware('menu.access:sales-hospitals,create')->name('sales-hospitals.store');
     Route::put('sales-hospitals/{hospital}', [SalesHospitalController::class, 'update'])->middleware('menu.access:sales-hospitals,edit')->name('sales-hospitals.update');
+
+    // Sales — Database Dokter (read–write langsung ke tabel dokter ERP, tanpa tabel lokal).
+    Route::get('sales-doctors', [SalesDoctorController::class, 'index'])->middleware('menu.access:sales-doctors,view')->name('sales-doctors.index');
+    Route::post('sales-doctors', [SalesDoctorController::class, 'store'])->middleware('menu.access:sales-doctors,create')->name('sales-doctors.store');
+    Route::put('sales-doctors/{rowid}', [SalesDoctorController::class, 'update'])->whereNumber('rowid')->middleware('menu.access:sales-doctors,edit')->name('sales-doctors.update');
 
     // Analytics (reporting)
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('menu.access:analytics,view')->name('analytics.index');

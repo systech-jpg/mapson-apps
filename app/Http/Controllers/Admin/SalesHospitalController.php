@@ -85,22 +85,14 @@ class SalesHospitalController extends Controller
             $extra[] = "{$r['deactivated']} dinonaktifkan (hilang dari ERP)";
         }
 
-        return back()->with('success', "Sync RS selesai — {$r['pulled']} societe tertarik.".($extra ? ' '.implode(', ', $extra).'.' : ''));
+        return back()->with('success', "Sync RS selesai — {$r['pulled']} rumah sakit tertarik dari ERP.".($extra ? ' '.implode(', ', $extra).'.' : ''));
     }
 
-    /** Tambah RS manual (belum ada di ERP; nanti otomatis tertaut saat namanya muncul di sync). */
-    public function store(Request $request): RedirectResponse
-    {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:pricing_hospitals,name'],
-            'city' => ['nullable', 'string', 'max:100'],
-        ]);
-
-        PricingHospital::create($data + ['is_active' => true]);
-
-        return back()->with('success', 'Rumah sakit ditambahkan (manual).');
-    }
-
+    /**
+     * Penambahan RS baru sengaja TIDAK difasilitasi di sini — societe dibuat di ERP
+     * (Dolibarr) oleh admin sales, lalu Sync. Baris manual lama (dari pricing engine)
+     * masih boleh dirapikan: nama/kota bisa diubah sampai tertaut ke ERP.
+     */
     public function update(Request $request, PricingHospital $hospital): RedirectResponse
     {
         // Identitas baris ERP dikelola dari Dolibarr — di sini hanya boleh toggle aktif.
