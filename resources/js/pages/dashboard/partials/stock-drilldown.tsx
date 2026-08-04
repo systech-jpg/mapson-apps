@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 
 /** kind menentukan isi & urutan: persediaan (sku/low/dead/habis), gudang per item (sent/used/kembali/hit), atau detail tindakan. */
 export interface StockDrill {
-    kind: 'sku' | 'low' | 'dead' | 'habis' | 'sent' | 'used' | 'kembali' | 'hit' | 'detail' | 'rit_do' | 'rit_tindakan' | 'rit_menunggu' | 'ship' | 'ship_nolapor' | 'ship_nosj' | 'mov';
+    kind: 'sku' | 'low' | 'dead' | 'habis' | 'sent' | 'used' | 'kembali' | 'hit' | 'detail' | 'rit_do' | 'rit_tindakan' | 'rit_menunggu' | 'ship' | 'ship_nolapor' | 'ship_nosj' | 'mov' | 'cost_sku' | 'cost_dead' | 'cost_unvalued';
     dead?: number;
     from?: string;
     to?: string;
@@ -15,6 +15,7 @@ export interface StockDrill {
     rs?: string;
     principal?: string;
     period?: string;
+    basis?: string; // 'beli' | 'jual' — hanya untuk kind cost_*
 }
 
 interface StokRow { ref: string; label: string | null; principal: string | null; category: string | null; qty: number; buffer: number; kurang: number; lastSold: string | null; umur: number | null }
@@ -24,19 +25,21 @@ interface RitaseRow { jenis: string; ref: string; tanggal: string | null; tangga
 interface ShipRow { ref: string; tanggal: string | null; tanggalTindakan: string | null; sj: string; rs: string; status: number; belumLapor: boolean }
 interface MovRow { ref: string; label: string; masuk: number; keluar: number; net: number; baris: number }
 interface MovType { type: number; label: string; baris: number; masuk: number; keluar: number }
+interface CostRow { ref: string; label: string | null; principal: string | null; qty: number; hpp: number; nilai: number; lastSold: string | null; umur: number | null }
 
 interface Payload {
-    mode: 'stok' | 'gudang' | 'detail' | 'ritase' | 'ship' | 'mov';
+    mode: 'stok' | 'gudang' | 'detail' | 'ritase' | 'ship' | 'mov' | 'cost';
     title: string;
     period?: string;
     sensitive?: boolean;
     truncated?: boolean;
     byType?: MovType[];
-    summary: { rows: number; total?: number; truncated?: boolean; qty?: number; sent?: number; used?: number; kembali?: number; kasus?: number; trip?: number; menunggu?: number; items?: number; baris?: number; masuk?: number; keluar?: number };
-    rows: (StokRow | GudangRow | DetailRow | RitaseRow | ShipRow | MovRow)[];
+    summary: { rows: number; total?: number; truncated?: boolean; qty?: number; nilai?: number; sent?: number; used?: number; kembali?: number; kasus?: number; trip?: number; menunggu?: number; items?: number; baris?: number; masuk?: number; keluar?: number };
+    rows: (StokRow | GudangRow | DetailRow | RitaseRow | ShipRow | MovRow | CostRow)[];
 }
 
 const num = (n: number) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+const rp = (n: number) => 'Rp ' + Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : null);
 
 export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | null; onClose: () => void }) {
@@ -47,7 +50,7 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
 
     useEffect(() => setView(drill), [drill]);
 
-    const key = view ? `${view.kind}|${view.dead ?? ''}|${view.from ?? ''}|${view.to ?? ''}|${view.ref ?? ''}|${view.rs ?? ''}` : '';
+    const key = view ? `${view.kind}|${view.dead ?? ''}|${view.from ?? ''}|${view.to ?? ''}|${view.ref ?? ''}|${view.rs ?? ''}|${view.principal ?? ''}|${view.period ?? ''}|${view.basis ?? ''}` : '';
 
     useEffect(() => {
         if (!view) return;
@@ -63,6 +66,7 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
         if (drill.rs) p.set('rs', drill.rs);
         if (drill.principal) p.set('principal', drill.principal);
         if (drill.period) p.set('period', drill.period);
+        if (drill.basis) p.set('basis', drill.basis);
         fetch(`${route('dashboard.stock.drilldown')}?${p}`, {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
@@ -81,6 +85,7 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
     const ritase = data?.mode === 'ritase';
     const ship = data?.mode === 'ship';
     const mov = data?.mode === 'mov';
+    const costMode = data?.mode === 'cost';
     // Bisa kembali hanya bila kita turun dari daftar item ke detail tindakan.
     const bisaKembali = !!(drill && drill.kind !== 'detail' && view?.kind === 'detail');
     const openDetail = (ref?: string, rs?: string) =>
@@ -125,6 +130,14 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
                                 {num(data.summary.kasus ?? 0)} tindakan · diangkut {num(data.summary.sent ?? 0)} · terpakai {num(data.summary.used ?? 0)} ·{' '}
                                 <b className="text-foreground">kembali {num(data.summary.kembali ?? 0)}</b>
                                 {data.sensitive === false && <span className="text-muted-foreground"> · nama pasien &amp; dokter disembunyikan sesuai izin Anda</span>}
+                            </>
+                        ) : costMode ? (
+                            <>
+                                {num(data.summary.total ?? data.summary.rows)} item · total {num(data.summary.qty ?? 0)} unit ·{' '}
+                                <b className="text-foreground">nilai {rp(data.summary.nilai ?? 0)}</b>
+                                {data.summary.truncated && (
+                                    <span className="text-amber-600 dark:text-amber-400"> · menampilkan {num(data.summary.rows)} teratas</span>
+                                )}
                             </>
                         ) : stok ? (
                             <>
@@ -304,6 +317,43 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
                                     )}
                                 </TableBody>
                             </Table>
+                        ) : costMode ? (
+                            <Table className="text-xs [&_td]:px-3 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-3">
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-8 text-right">#</TableHead>
+                                        <TableHead>Kode</TableHead>
+                                        <TableHead>Item</TableHead>
+                                        <TableHead>Principal</TableHead>
+                                        <TableHead className="text-right">Stok</TableHead>
+                                        <TableHead className="text-right">Harga/unit</TableHead>
+                                        <TableHead className="text-right">Nilai</TableHead>
+                                        <TableHead>Terakhir Terjual</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {(data?.rows as CostRow[] | undefined)?.length === 0 ? (
+                                        <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Tidak ada item.</TableCell></TableRow>
+                                    ) : (
+                                        (data?.rows as CostRow[] | undefined)?.map((r, i) => (
+                                            <TableRow key={r.ref}>
+                                                <TableCell className="text-right text-muted-foreground">{i + 1}</TableCell>
+                                                <TableCell className="font-mono whitespace-nowrap">{r.ref}</TableCell>
+                                                <TableCell className="max-w-[240px] truncate" title={r.label ?? ''}>{r.label}</TableCell>
+                                                <TableCell className="max-w-[130px] truncate text-muted-foreground" title={r.principal ?? ''}>{r.principal}</TableCell>
+                                                <TableCell className="text-right tabular-nums">{num(r.qty)}</TableCell>
+                                                <TableCell className="text-right tabular-nums whitespace-nowrap">
+                                                    {r.hpp > 0 ? rp(r.hpp) : <span className="text-amber-600 dark:text-amber-400">tak ternilai</span>}
+                                                </TableCell>
+                                                <TableCell className="text-right font-semibold tabular-nums whitespace-nowrap">{r.nilai > 0 ? rp(r.nilai) : '–'}</TableCell>
+                                                <TableCell className="whitespace-nowrap text-muted-foreground">
+                                                    {r.lastSold ? <>{fmtDate(r.lastSold)} <span className="text-[10px]">({num(r.umur ?? 0)} hr)</span></> : <span className="italic">tak pernah</span>}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
                         ) : stok ? (
                             <Table className="text-xs [&_td]:px-3 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-3">
                                 <TableHeader>
@@ -380,7 +430,9 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
                         )}
                     </div>
                     <p className="mt-2 text-[11px] text-muted-foreground">
-                        {stok
+                        {costMode
+                            ? 'Nilai = qty snapshot ERP × harga basis terpilih (HPP: Accurate → faktur pembelian → PMP ERP; harga jual: master ERP → rata-rata faktur penjualan). Urut nilai terbesar. Maks 500 baris.'
+                            : stok
                             ? 'Sumber: snapshot stok ERP terakhir, digabung dengan riwayat penjualan penuh (sales_facts). Maks 500 baris.'
                             : mov
                               ? 'Sumber: pergerakan stok ERP (stock_mouvement Dolibarr) bulan ini. Net = masuk − keluar. Maks 500 item.'

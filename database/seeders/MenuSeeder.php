@@ -38,6 +38,19 @@ class MenuSeeder extends Seeder
             'sort_order' => 3,
         ]);
 
+        // Pegangan permission utk TAB "Nilai Persediaan" di dashboard Warehouse — bukan menu
+        // navigasi (is_active false), hanya tampil di matriks hak akses role. Role yang
+        // diberi "view" akan melihat tab-nya; server juga menolak tanpa izin ini.
+        $this->menu([
+            'key' => 'dashboard-stock-cost',
+            'title' => 'Warehouse — Tab Nilai Persediaan',
+            'route' => 'dashboard.stock',
+            'icon' => 'Boxes',
+            'area' => 'reporting',
+            'sort_order' => 3,
+            'is_active' => false,
+        ]);
+
         // Disembunyikan sementara (permintaan BOD 2026-07-26) — route tetap hidup, menu saja
         // yang nonaktif; aktifkan lagi dengan is_active => true.
         $cost = $this->menu([
@@ -96,6 +109,18 @@ class MenuSeeder extends Seeder
             'area' => 'backend',
             'sort_order' => 1,
         ]);
+
+        // Module: Sales (backend) — input & data penjualan oleh tim sales.
+        // Menyusul: Database Rumah Sakit & Database Dokter (sync Dolibarr).
+        $sales = $this->menu([
+            'key' => 'sales',
+            'title' => 'Sales',
+            'route' => null,
+            'icon' => 'HandCoins',
+            'sort_order' => 2,
+        ]);
+        $this->menu(['key' => 'sales-daily', 'title' => 'Sales Daily', 'route' => 'sales-daily.index', 'icon' => 'ClipboardList', 'sort_order' => 1], $sales->id);
+        $this->menu(['key' => 'sales-hospitals', 'title' => 'Database Rumah Sakit', 'route' => 'sales-hospitals.index', 'icon' => 'Building2', 'sort_order' => 2], $sales->id);
 
         // Module: User Management.
         $userManagement = $this->menu([

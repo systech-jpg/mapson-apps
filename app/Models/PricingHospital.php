@@ -13,6 +13,7 @@ class PricingHospital extends Model
         return [
             'erp_societe_id' => 'integer',
             'is_active' => 'boolean',
+            'synced_at' => 'datetime',
         ];
     }
 }

@@ -326,6 +326,7 @@ class WarehouseActivityService
                FROM {$p}tindakan t
                LEFT JOIN {$p}usage_report u ON u.fk_tindakan = t.id
               WHERE t.entity IN ({$this->entities()})
+                AND t.status IN (2, 3) -- sudah deliver — HARUS sama dgn shipmentList, kalau tidak angka tabel ≠ drill
                 AND t.date_delivery IS NOT NULL
                 AND DATE(t.date_delivery) BETWEEN ? AND ?
               GROUP BY bln ORDER BY bln",
@@ -350,6 +351,7 @@ class WarehouseActivityService
                FROM {$p}tindakan t
                LEFT JOIN {$p}usage_report u ON u.fk_tindakan = t.id
               WHERE t.entity IN ({$this->entities()})
+                AND t.status IN (2, 3) -- sudah deliver — HARUS sama dgn shipmentList, kalau tidak angka kartu ≠ drill
                 AND t.date_delivery IS NOT NULL
                 AND DATE(t.date_delivery) BETWEEN ? AND ?",
             [$from, $to]

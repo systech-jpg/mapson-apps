@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { usePermissions } from '@/hooks/use-permissions';
 import DashboardLayout from '@/layouts/dashboard-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, router } from '@inertiajs/react';
@@ -18,9 +19,11 @@ interface StockListRow { ref: string; label: string | null; principal: string | 
 interface Mov { period: string; masuk: number; keluar: number; baris: number }
 interface Hosp { rs: string; kasus: number; sent: number; used: number; hitRate: number | null }
 interface ItemRow { ref: string; label: string; sent: number; used: number; kasus: number; hitRate?: number | null }
+interface CostPrincipalRow { principal: string; items: number; qty: number; nilai: number; unvalued: number; deadNilai: number; cogs12: number; turnover: number | null; doi: number | null }
+interface CostDeadRow { ref: string; label: string | null; principal: string | null; qty: number; hpp: number; nilai: number; lastSold: string | null; umur: number | null }
 
 interface Props {
-    view: 'persediaan' | 'gudang';
+    view: 'persediaan' | 'gudang' | 'cost';
     dead: number;
     hasStock: boolean;
     stok: {
@@ -45,9 +48,25 @@ interface Props {
         deadWeight: ItemRow[];
         topUsed: ItemRow[];
     } | null;
+    cost?: {
+        snapshotDate: string;
+        cogsFrom: string;
+        basis: 'beli' | 'jual';
+        kpi: { items: number; valued: number; unvalued: number; nilai: number; deadItems: number; deadNilai: number; cogs12: number; turnover: number | null; doi: number | null };
+        byPrincipal: CostPrincipalRow[];
+        deadTop: CostDeadRow[];
+    } | null;
 }
 
 const num = (n: number) => Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+const rp = (n: number) => 'Rp ' + Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 0 });
+// Ringkas untuk kartu KPI: Rp 4,43 M / Rp 137 jt — angka penuh tetap di tabel & drill.
+const rpShort = (n: number) => {
+    const a = Math.abs(n);
+    if (a >= 1e9) return 'Rp ' + (n / 1e9).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + ' M';
+    if (a >= 1e6) return 'Rp ' + (n / 1e6).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + ' jt';
+    return rp(n);
+};
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 const fmtP = (p: string) => `${MONTHS[Number(p.split('-')[1]) - 1]} ${p.split('-')[0].slice(2)}`;
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : null);
@@ -55,6 +74,7 @@ const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString('id-ID
 const VIEWS = [
     { key: 'persediaan', label: 'Persediaan' },
     { key: 'gudang', label: 'Pengiriman Gudang' },
+    { key: 'cost', label: 'Nilai Persediaan' },
 ] as const;
 
 function Kpi({ label, value, sub, tone, onClick }: { label: string; value: string; sub?: string; tone?: 'warn' | 'bad'; onClick?: () => void }) {
@@ -217,11 +237,15 @@ function StockNow({ list }: { list: StockListRow[] }) {
     );
 }
 
-export default function Stock({ view, dead, hasStock, stok, gudang }: Props) {
+export default function Stock({ view, dead, hasStock, stok, gudang, cost }: Props) {
     const [drill, setDrill] = useState<StockDrill | null>(null);
+    const { can } = usePermissions();
+    // Tab Analisa Cost digate permission tersendiri (menu tersembunyi dashboard-stock-cost).
+    const views = VIEWS.filter((v) => v.key !== 'cost' || can('dashboard-stock-cost'));
     const go = (params: Record<string, string>) => router.get(route('dashboard.stock'), params, { preserveState: true, preserveScroll: true, replace: true });
     const drillStok = (kind: StockDrill['kind']) => setDrill({ kind, dead });
     const drillGudang = (kind: StockDrill['kind']) => gudang && setDrill({ kind, from: gudang.from, to: gudang.to });
+    const drillCost = (kind: StockDrill['kind'], principal?: string) => setDrill({ kind, dead, principal, basis: cost?.basis });
     // Drill sebuah sel di tabel bulanan: batasi rentangnya ke bulan itu saja.
     const drillBulan = (kind: StockDrill['kind'], period: string) => {
         const [y, m] = period.split('-').map(Number);
@@ -241,7 +265,7 @@ export default function Stock({ view, dead, hasStock, stok, gudang }: Props) {
                         </p>
                     </div>
                     <div className="flex rounded-md border p-0.5">
-                        {VIEWS.map((v) => (
+                        {views.map((v) => (
                             <Button key={v.key} size="sm" variant={view === v.key ? 'default' : 'ghost'} className="h-7 px-2.5" onClick={() => go({ view: v.key })}>
                                 {v.label}
                             </Button>
@@ -551,6 +575,143 @@ export default function Stock({ view, dead, hasStock, stok, gudang }: Props) {
                                 </div>
                             </CardContent>
                         </Card>
+                    </>
+                ) : view === 'cost' && cost ? (
+                    <>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs text-muted-foreground">Basis nilai:</span>
+                            <Select value={cost.basis} onValueChange={(v) => go({ view: 'cost', dead: String(dead), basis: v })}>
+                                <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="beli">HPP</SelectItem>
+                                    <SelectItem value="jual">Harga Jual</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <span className="text-xs text-muted-foreground">Ambang stok mati:</span>
+                            <Select value={String(dead)} onValueChange={(v) => go({ view: 'cost', dead: v, basis: cost.basis })}>
+                                <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {[90, 180, 365].map((d) => <SelectItem key={d} value={String(d)}>{d} hari</SelectItem>)}
+                                </SelectContent>
+                            </Select>
+                            <span className="text-xs text-muted-foreground">
+                                Snapshot {fmtDate(cost.snapshotDate)} ·{' '}
+                                {cost.basis === 'jual'
+                                    ? 'harga jual = harga master produk ERP (fallback: rata-rata faktur penjualan)'
+                                    : 'HPP = biaya rata-rata resmi Accurate (fallback: HPP faktur pembelian → PMP ERP)'}
+                            </span>
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                            <Kpi label={`Nilai Persediaan (${cost.basis === 'jual' ? 'Harga Jual' : 'HPP'})`} value={rpShort(cost.kpi.nilai)}
+                                sub={`${num(cost.kpi.valued)} dari ${num(cost.kpi.items)} item bersaldo ternilai`}
+                                onClick={() => drillCost('cost_sku')} />
+                            <Kpi label={`Uang Nganggur di Stok Mati (>${dead} hr)`} value={rpShort(cost.kpi.deadNilai)} tone="bad"
+                                sub={`${num(cost.kpi.deadItems)} item · ${cost.kpi.nilai > 0 ? Math.round((cost.kpi.deadNilai / cost.kpi.nilai) * 100) : 0}% dari nilai persediaan`}
+                                onClick={() => drillCost('cost_dead')} />
+                            <Kpi label="Perputaran Stok" value={cost.kpi.turnover != null ? `${cost.kpi.turnover.toLocaleString('id-ID')}× / thn` : '–'}
+                                sub={`COGS 12 bln ${rpShort(cost.kpi.cogs12)}${cost.kpi.doi ? ` · stok cukup utk ${num(cost.kpi.doi)} hari penjualan` : ''} · selalu basis HPP`} />
+                            <Kpi label="Belum Ternilai" value={num(cost.kpi.unvalued)} tone={cost.kpi.unvalued > 0 ? 'warn' : undefined}
+                                sub={cost.basis === 'jual' ? 'tanpa harga master ERP & belum pernah terjual' : 'tanpa HPP di Accurate, faktur, maupun PMP ERP'}
+                                onClick={() => drillCost('cost_unvalued')} />
+                        </div>
+
+                        <div className="grid gap-4 lg:grid-cols-2">
+                            <Card>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="text-base">Nilai Persediaan per Principal</CardTitle>
+                                    <p className="text-xs text-muted-foreground">Pada {cost.basis === 'jual' ? 'harga jual' : 'HPP'}. Klik baris untuk lihat itemnya. Hari Persediaan = stok cukup untuk berapa hari penjualan (dari COGS 12 bulan, selalu basis HPP) — makin besar makin lama modal mengendap.</p>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-x-auto">
+                                        <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Principal</TableHead>
+                                                    <TableHead className="text-right">Item</TableHead>
+                                                    <TableHead className="min-w-[220px] text-right">Nilai ({cost.basis === 'jual' ? 'Jual' : 'HPP'})</TableHead>
+                                                    <TableHead className="text-right">Nilai Mati</TableHead>
+                                                    <TableHead className="text-right whitespace-nowrap" title="Stok cukup untuk berapa hari penjualan (COGS 12 bulan)">Hari Persediaan</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {cost.byPrincipal.map((p) => {
+                                                    const maxNilai = cost.byPrincipal[0]?.nilai || 1;
+                                                    return (
+                                                        <TableRow key={p.principal} className="cursor-pointer hover:bg-accent/50" onClick={() => drillCost('cost_sku', p.principal)} title="Klik untuk lihat itemnya">
+                                                            <TableCell className="max-w-[180px] truncate font-medium" title={p.principal}>
+                                                                {p.principal}
+                                                                {p.unvalued > 0 && <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400">({p.unvalued} tanpa HPP)</span>}
+                                                            </TableCell>
+                                                            <TableCell className="text-right tabular-nums">{num(p.items)}</TableCell>
+                                                            <TableCell className="text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <div className="h-2 rounded-sm bg-sky-500/70" style={{ width: `${Math.max(2, (p.nilai / maxNilai) * 110)}px` }} />
+                                                                    <span className="tabular-nums whitespace-nowrap">{rpShort(p.nilai)}</span>
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className={`text-right tabular-nums whitespace-nowrap ${p.deadNilai > 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>{p.deadNilai > 0 ? rpShort(p.deadNilai) : '–'}</TableCell>
+                                                            <TableCell className={`text-right font-semibold tabular-nums ${(p.doi ?? 0) > 365 ? 'text-red-600 dark:text-red-400' : ''}`}>{p.doi != null ? `${num(p.doi)} hr` : '–'}</TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <Card className="border-red-200 dark:border-red-950">
+                                <CardHeader className="pb-2">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                        <PackageX className="size-4 text-red-600 dark:text-red-400" /> Top Uang Nganggur — Stok Mati
+                                    </CardTitle>
+                                    <p className="text-xs text-muted-foreground">
+                                        20 item bersaldo yang tak terjual &gt;{dead} hari, urut dari nilai {cost.basis === 'jual' ? 'harga jual' : 'HPP'} terkunci terbesar. Kandidat aksi: diskon, retur, atau stop beli.{' '}
+                                        <button className="underline" onClick={() => drillCost('cost_dead')}>Lihat semua</button>
+                                    </p>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="overflow-x-auto">
+                                        <Table className="text-xs [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-2.5">
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Kode</TableHead>
+                                                    <TableHead>Item</TableHead>
+                                                    <TableHead className="text-right">Stok</TableHead>
+                                                    <TableHead className="text-right">{cost.basis === 'jual' ? 'Hrg Jual' : 'HPP'}</TableHead>
+                                                    <TableHead className="text-right">Nilai</TableHead>
+                                                    <TableHead className="text-right">Umur</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {cost.deadTop.length === 0 ? (
+                                                    <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">Tidak ada stok mati. 🎉</TableCell></TableRow>
+                                                ) : cost.deadTop.map((r) => (
+                                                    <TableRow key={r.ref}>
+                                                        <TableCell className="font-mono whitespace-nowrap">{r.ref}</TableCell>
+                                                        <TableCell className="max-w-[200px] truncate" title={`${r.label ?? ''}${r.principal ? ` — ${r.principal}` : ''}`}>{r.label}</TableCell>
+                                                        <TableCell className="text-right tabular-nums">{num(r.qty)}</TableCell>
+                                                        <TableCell className="text-right tabular-nums whitespace-nowrap">{r.hpp > 0 ? rpShort(r.hpp) : <span className="text-amber-600 dark:text-amber-400">{cost.basis === 'jual' ? 'tak pernah terjual' : 'tanpa HPP'}</span>}</TableCell>
+                                                        <TableCell className="text-right font-semibold tabular-nums whitespace-nowrap text-red-600 dark:text-red-400">{r.nilai > 0 ? rpShort(r.nilai) : '–'}</TableCell>
+                                                        <TableCell className="text-right tabular-nums whitespace-nowrap text-muted-foreground">{r.umur != null ? `${num(r.umur)} hr` : <span className="italic">tak pernah terjual</span>}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+
+                        <p className="text-[11px] text-muted-foreground">
+                            Metodologi: nilai = qty snapshot ERP terakhir × harga basis terpilih. Basis <b>HPP</b> = biaya rata-rata resmi Accurate (balance cost)
+                            → fallback HPP rata-rata faktur pembelian (valas dikonversi kurs bulan transaksi) → fallback PMP master ERP (hanya yang nilainya wajar;
+                            PMP bekas input USD tanpa konversi diabaikan). Basis <b>Harga Jual</b> = harga jual master produk ERP → fallback rata-rata tertimbang
+                            DPP÷qty riwayat faktur penjualan. Item tanpa harga pada basis terpilih dihitung
+                            nilai 0 dan dilaporkan di kartu &quot;Belum Ternilai&quot; — bukan disembunyikan. Turnover = COGS 12 bulan (qty terjual × HPP) ÷ nilai
+                            persediaan pada HPP, apapun basis tampilannya.
+                        </p>
                     </>
                 ) : stok ? (
                     <>

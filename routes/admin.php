@@ -37,6 +37,8 @@ use App\Http\Controllers\Admin\PricingApprovalController;
 use App\Http\Controllers\Admin\PricingEngineController;
 use App\Http\Controllers\Admin\PricingSettingController;
 use App\Http\Controllers\Admin\RoleAccessController;
+use App\Http\Controllers\Admin\SalesDailyController;
+use App\Http\Controllers\Admin\SalesHospitalController;
 use App\Http\Controllers\Admin\RoleController;
 use App\Http\Controllers\Admin\UserController;
 use Illuminate\Support\Facades\Route;
@@ -49,6 +51,19 @@ Route::middleware(['auth'])->group(function () {
     // In-app notifications (no menu gate — available to all authenticated users).
     Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
     Route::post('notifications/{id}/read', [NotificationController::class, 'read'])->name('notifications.read');
+
+    // Sales — input data penjualan harian manual oleh tim sales.
+    Route::get('sales-daily', [SalesDailyController::class, 'index'])->middleware('menu.access:sales-daily,view')->name('sales-daily.index');
+    Route::post('sales-daily', [SalesDailyController::class, 'store'])->middleware('menu.access:sales-daily,create')->name('sales-daily.store');
+    Route::post('sales-daily/import', [SalesDailyController::class, 'import'])->middleware('menu.access:sales-daily,create')->name('sales-daily.import');
+    Route::put('sales-daily/{entry}', [SalesDailyController::class, 'update'])->middleware('menu.access:sales-daily,edit')->name('sales-daily.update');
+    Route::delete('sales-daily/{entry}', [SalesDailyController::class, 'destroy'])->middleware('menu.access:sales-daily,delete')->name('sales-daily.destroy');
+
+    // Sales — Database Rumah Sakit (master pricing_hospitals, sync dari Dolibarr societe).
+    Route::get('sales-hospitals', [SalesHospitalController::class, 'index'])->middleware('menu.access:sales-hospitals,view')->name('sales-hospitals.index');
+    Route::post('sales-hospitals/sync', [SalesHospitalController::class, 'sync'])->middleware('menu.access:sales-hospitals,edit')->name('sales-hospitals.sync');
+    Route::post('sales-hospitals', [SalesHospitalController::class, 'store'])->middleware('menu.access:sales-hospitals,create')->name('sales-hospitals.store');
+    Route::put('sales-hospitals/{hospital}', [SalesHospitalController::class, 'update'])->middleware('menu.access:sales-hospitals,edit')->name('sales-hospitals.update');
 
     // Analytics (reporting)
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('menu.access:analytics,view')->name('analytics.index');

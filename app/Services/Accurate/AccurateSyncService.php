@@ -348,7 +348,7 @@ class AccurateSyncService
             $list = $this->acc->apiGet($s, 'item/list.do', [
                 'sp.page' => $page,
                 'sp.pageSize' => 100,
-                'fields' => 'id,no,name,itemType,unitPrice,quantity,availableToSell',
+                'fields' => 'id,no,name,itemType,unitPrice,quantity,availableToSell,balanceUnitCost',
             ]);
 
             if (($list['s'] ?? false) !== true) {
@@ -373,6 +373,8 @@ class AccurateSyncService
                     'acc_item_id' => $r['id'],
                     'item_type' => $r['itemType'] ?? null,
                     'unit_price' => $r['unitPrice'] ?? 0,
+                    // HPP resmi Accurate (biaya rata-rata pembukuan) — sumber utama tab Analisa Cost.
+                    'unit_cost' => $r['balanceUnitCost'] ?? null,
                     'available_to_sell' => $r['availableToSell'] ?? 0,
                     'synced_at' => $now,
                 ];
@@ -381,7 +383,7 @@ class AccurateSyncService
                 DB::table(InventorySnapshot::TABLE)->upsert(
                     $batch,
                     ['source', 'ref', 'snapshot_date'],
-                    ['label', 'qty', 'acc_item_id', 'item_type', 'unit_price', 'available_to_sell', 'synced_at'],
+                    ['label', 'qty', 'acc_item_id', 'item_type', 'unit_price', 'unit_cost', 'available_to_sell', 'synced_at'],
                 );
                 $count += count($batch);
             }
@@ -940,8 +942,12 @@ class AccurateSyncService
 
     /**
      * Turunkan HPP per item dari dwh_stg_acc_purchase_invoice_item → dwh_map_product_cost.
-     * avg_cost = SUM(total)/SUM(qty) (rata-rata tertimbang), plus harga & tanggal beli terakhir.
-     * Baris qty<=0 diabaikan agar tak membagi nol / mengotori rata-rata (retur/koreksi).
+     * avg_cost = SUM(total IDR)/SUM(qty) (rata-rata tertimbang), plus harga & tanggal beli
+     * terakhir. Baris qty<=0 diabaikan agar tak membagi nol / mengotori rata-rata (retur).
+     *
+     * Baris ber-mata-uang asing (currency_code dari vendor map) DIKONVERSI ke IDR pakai
+     * dwh_fx_rate bulan transaksi; fallback kurs terakhir mata uang itu, lalu 16000.
+     * Tanpa ini HPP item impor (±726 item USD) terbaca seolah angka USD = rupiah ≈ nol.
      *
      * @return array<string, int>
      */
@@ -949,16 +955,34 @@ class AccurateSyncService
     {
         $now = now()->toDateTimeString();
 
-        $agg = DB::table('dwh_stg_acc_purchase_invoice_item')
-            ->where('qty', '>', 0)
-            ->groupBy('item_no')
-            ->selectRaw('item_no,
-                SUM(total) sum_total, SUM(qty) sum_qty, COUNT(*) doc_count,
-                MAX(trans_date) last_date, MIN(trans_date) first_date')
+        // Kurs terakhir per mata uang — fallback bila bulan transaksi tak punya kurs.
+        $fxLatest = DB::table('dwh_fx_rate as f')
+            ->joinSub(
+                DB::table('dwh_fx_rate')->selectRaw('currency c, MAX(period) mp')->groupBy('currency'),
+                'm',
+                fn ($j) => $j->on('m.c', '=', 'f.currency')->on('m.mp', '=', 'f.period')
+            )
+            ->select('f.currency', 'f.rate_to_idr');
+
+        $fxJoins = function ($q) use ($fxLatest) {
+            return $q
+                ->leftJoin('dwh_fx_rate as fx', fn ($j) => $j->on('fx.currency', '=', 'p.currency_code')
+                    ->whereRaw("fx.period = DATE_FORMAT(p.trans_date, '%Y-%m')"))
+                ->leftJoinSub($fxLatest, 'fxl', 'fxl.currency', '=', 'p.currency_code');
+        };
+        $rateExpr = "CASE WHEN COALESCE(p.currency_code, 'IDR') = 'IDR' THEN 1
+            ELSE COALESCE(fx.rate_to_idr, fxl.rate_to_idr, 16000) END";
+
+        $agg = $fxJoins(DB::table('dwh_stg_acc_purchase_invoice_item as p'))
+            ->where('p.qty', '>', 0)
+            ->groupBy('p.item_no')
+            ->selectRaw("p.item_no,
+                SUM(p.total * ({$rateExpr})) sum_total, SUM(p.qty) sum_qty, COUNT(*) doc_count,
+                MAX(p.trans_date) last_date, MIN(p.trans_date) first_date")
             ->get();
 
         // Harga & nama pada pembelian TERAKHIR per item (untuk last_cost & label terkini).
-        $last = DB::table('dwh_stg_acc_purchase_invoice_item as p')
+        $last = $fxJoins(DB::table('dwh_stg_acc_purchase_invoice_item as p'))
             ->joinSub(
                 DB::table('dwh_stg_acc_purchase_invoice_item')
                     ->where('qty', '>', 0)
@@ -968,7 +992,8 @@ class AccurateSyncService
                 fn ($j) => $j->on('p.item_no', '=', 'm.item_no')
                     ->whereRaw('CONCAT(COALESCE(p.trans_date,"0000-00-00"), "#", LPAD(p.erp_id,12,"0")) = m.mk')
             )
-            ->pluck('p.unit_price', 'p.item_no'); // item_no => unit_price terakhir
+            ->selectRaw("p.item_no, (p.unit_price * ({$rateExpr})) up")
+            ->pluck('up', 'p.item_no'); // item_no => unit_price terakhir (IDR)
         $lastName = DB::table('dwh_stg_acc_purchase_invoice_item as p')
             ->whereIn('p.item_no', $agg->pluck('item_no'))
             ->orderBy('trans_date')->orderBy('erp_id')

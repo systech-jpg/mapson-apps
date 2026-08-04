@@ -290,9 +290,13 @@ class DashboardController extends Controller
      */
     public function stock(Request $request, WarehouseActivityService $wa): Response
     {
-        $view = $request->input('view') === 'gudang' ? 'gudang' : 'persediaan';
+        $view = in_array($request->input('view'), ['gudang', 'cost'], true) ? $request->input('view') : 'persediaan';
         $dead = (int) ($request->input('dead') ?: 180);
         $dead = in_array($dead, [90, 180, 365], true) ? $dead : 180;
+
+        if ($view === 'cost') {
+            return $this->stockCost($request, $dead);
+        }
 
         if ($view === 'gudang') {
             $range = $wa->range();
@@ -302,6 +306,7 @@ class DashboardController extends Controller
             return Inertia::render('dashboard/stock', [
                 'view' => $view, 'dead' => $dead,
                 'hasStock' => InventorySnapshot::latestDate(InventorySnapshot::ERP) !== null,
+                'cost' => null,
                 'gudang' => [
                     'from' => $from, 'to' => $to, 'range' => $range,
                     'summary' => $wa->summary($from, $to),
@@ -325,7 +330,7 @@ class DashboardController extends Controller
         $snapDate = InventorySnapshot::latestDate(InventorySnapshot::ERP);
         if ($snapDate === null) {
             return Inertia::render('dashboard/stock', [
-                'view' => $view, 'dead' => $dead, 'hasStock' => false, 'stok' => null, 'gudang' => null,
+                'view' => $view, 'dead' => $dead, 'hasStock' => false, 'stok' => null, 'gudang' => null, 'cost' => null,
             ]);
         }
 
@@ -402,6 +407,7 @@ class DashboardController extends Controller
             'view' => $view,
             'dead' => $dead,
             'hasStock' => true,
+            'cost' => null,
             'stok' => [
                 'snapshotDate' => $snapDate,
                 'snapshotDates' => count(InventorySnapshot::dates(InventorySnapshot::ERP)),
@@ -596,6 +602,188 @@ class DashboardController extends Controller
      * Tanpa ini beberapa KPI tak bisa ditelusuri sama sekali — mis. "Stok Habis" yang
      * tidak punya tabel di halaman.
      */
+    /**
+     * Tab "Analisa Cost" dashboard Warehouse — nilai persediaan pada HPP.
+     * HPP = rata-rata tertimbang faktur pembelian Accurate (dwh_map_product_cost,
+     * di-refresh sync:daily). Digate permission tersendiri (menu tersembunyi
+     * `dashboard-stock-cost`) — hanya role yang diberi view yang bisa membuka.
+     */
+    protected function stockCost(Request $request, int $dead): Response
+    {
+        abort_unless($request->user()->hasMenuAccess('dashboard-stock-cost'), 403);
+
+        $snapDate = InventorySnapshot::latestDate(InventorySnapshot::ERP);
+        if ($snapDate === null) {
+            return Inertia::render('dashboard/stock', [
+                'view' => 'cost', 'dead' => $dead, 'hasStock' => false, 'stok' => null, 'gudang' => null, 'cost' => null,
+            ]);
+        }
+
+        $batas = now()->subDays($dead)->toDateString();
+        // Basis nilai: 'beli' = HPP (biaya rata-rata Accurate, fallback HPP faktur pembelian);
+        // 'jual' = harga jual riil (rata-rata tertimbang dpp/qty dari faktur penjualan).
+        $basis = $request->input('basis') === 'jual' ? 'jual' : 'beli';
+
+        $lastSold = DB::table('sales_facts')
+            ->selectRaw('part_number, MAX(invoice_date) last_sold')
+            ->whereNotNull('part_number')->where('part_number', '!=', '')
+            ->groupBy('part_number');
+
+        [$b, $px] = $this->stockCostBase($basis, $lastSold);
+
+        // Item tanpa harga pada basis terpilih dihitung nilai 0 TAPI dilaporkan sebagai
+        // "belum ternilai" — jangan pernah menyembunyikan cakupan.
+        $kpi = $b()->selectRaw("
+            COUNT(*) items,
+            SUM(({$px}) > 0) valued,
+            SUM(({$px}) = 0) unvalued,
+            COALESCE(SUM(e.qty * ({$px})), 0) nilai,
+            SUM(s.last_sold IS NULL OR s.last_sold < ?) dead_items,
+            COALESCE(SUM(CASE WHEN s.last_sold IS NULL OR s.last_sold < ? THEN e.qty * ({$px}) END), 0) dead_nilai
+        ", [$batas, $batas])->first();
+
+        // COGS 12 bulan terakhir = qty terjual × HPP — basis turnover (selalu harga beli).
+        $accCost = $this->accurateCostSub();
+        $cogsFrom = now()->subMonths(12)->toDateString();
+        $hppExpr = 'COALESCE(NULLIF(ac.unit_cost, 0), c.avg_cost, 0)';
+        $cogs = (float) DB::table('sales_facts as sf')
+            ->leftJoinSub($accCost, 'ac', 'ac.ref', '=', 'sf.part_number')
+            ->leftJoin('dwh_map_product_cost as c', 'c.item_no', '=', 'sf.part_number')
+            ->where('sf.invoice_date', '>=', $cogsFrom)
+            ->selectRaw("COALESCE(SUM(sf.quantity * {$hppExpr}), 0) v")->value('v');
+
+        $nilai = (float) $kpi->nilai;
+        // Turnover dibanding nilai persediaan pada HPP (bukan basis jual) agar apples-to-apples.
+        [$bHpp, $pxHpp] = $this->stockCostBase('beli', $lastSold);
+        $nilaiHpp = $basis === 'beli' ? $nilai : (float) $bHpp()
+            ->selectRaw("COALESCE(SUM(e.qty * ({$pxHpp})), 0) v")->value('v');
+        $turnover = $nilaiHpp > 0 ? $cogs / $nilaiHpp : null;
+
+        // COGS per principal (scope: item yang ada di snapshot) → turnover/DOI per principal.
+        $cogsByP = DB::query()->fromSub(InventorySnapshot::erp(), 'e')
+            ->join('sales_facts as sf', 'sf.part_number', '=', 'e.ref')
+            ->leftJoinSub($accCost, 'ac', 'ac.ref', '=', 'e.ref')
+            ->leftJoin('dwh_map_product_cost as c', 'c.item_no', '=', 'e.ref')
+            ->where('sf.invoice_date', '>=', $cogsFrom)
+            ->selectRaw("COALESCE(NULLIF(e.principal, ''), '(tanpa principal)') principal, SUM(sf.quantity * {$hppExpr}) v")
+            ->groupBy('principal')->pluck('v', 'principal');
+
+        $byPrincipal = $b()->selectRaw("
+                COALESCE(NULLIF(e.principal, ''), '(tanpa principal)') principal,
+                COUNT(*) items, SUM(e.qty) qty,
+                COALESCE(SUM(e.qty * ({$px})), 0) nilai,
+                SUM(({$px}) = 0) unvalued,
+                COALESCE(SUM(CASE WHEN s.last_sold IS NULL OR s.last_sold < ? THEN e.qty * ({$px}) END), 0) dead_nilai
+            ", [$batas])
+            ->groupBy('principal')->orderByDesc('nilai')->get();
+
+        // DOI per principal selalu dibanding nilai HPP (bukan basis jual) agar apples-to-apples.
+        $nilaiHppByP = $basis === 'beli'
+            ? $byPrincipal->pluck('nilai', 'principal')
+            : $bHpp()
+                ->selectRaw("COALESCE(NULLIF(e.principal, ''), '(tanpa principal)') principal,
+                    COALESCE(SUM(e.qty * ({$pxHpp})), 0) v")
+                ->groupBy('principal')->pluck('v', 'principal');
+
+        $byPrincipal = $byPrincipal
+            ->map(function ($r) use ($cogsByP, $nilaiHppByP) {
+                $nHpp = (float) ($nilaiHppByP[$r->principal] ?? 0);
+                $c = (float) ($cogsByP[$r->principal] ?? 0);
+                $t = $nHpp > 0 ? $c / $nHpp : null;
+
+                return [
+                    'principal' => $r->principal, 'items' => (int) $r->items, 'qty' => (float) $r->qty,
+                    'nilai' => (float) $r->nilai, 'unvalued' => (int) $r->unvalued, 'deadNilai' => (float) $r->dead_nilai,
+                    'cogs12' => $c,
+                    'turnover' => $t !== null ? round($t, 2) : null,
+                    'doi' => $t > 0 ? (int) round(365 / $t) : null,
+                ];
+            })->values();
+
+        $deadTop = $b()->whereRaw('(s.last_sold IS NULL OR s.last_sold < ?)', [$batas])
+            ->selectRaw("e.ref, e.label, e.principal, e.qty, ({$px}) hpp,
+                e.qty * ({$px}) nilai, s.last_sold, DATEDIFF(CURDATE(), s.last_sold) umur")
+            ->orderByRaw("e.qty * ({$px}) DESC")->limit(20)->get()
+            ->map(fn ($r) => [
+                'ref' => $r->ref, 'label' => $r->label, 'principal' => $r->principal,
+                'qty' => (float) $r->qty, 'hpp' => (float) $r->hpp, 'nilai' => (float) $r->nilai,
+                'lastSold' => $r->last_sold, 'umur' => $r->umur === null ? null : (int) $r->umur,
+            ])->values();
+
+        return Inertia::render('dashboard/stock', [
+            'view' => 'cost', 'dead' => $dead, 'hasStock' => true, 'stok' => null, 'gudang' => null,
+            'cost' => [
+                'snapshotDate' => $snapDate,
+                'cogsFrom' => $cogsFrom,
+                'basis' => $basis,
+                'kpi' => [
+                    'items' => (int) $kpi->items, 'valued' => (int) $kpi->valued, 'unvalued' => (int) $kpi->unvalued,
+                    'nilai' => $nilai,
+                    'deadItems' => (int) $kpi->dead_items, 'deadNilai' => (float) $kpi->dead_nilai,
+                    'cogs12' => $cogs,
+                    'turnover' => $turnover !== null ? round($turnover, 2) : null,
+                    'doi' => $turnover > 0 ? (int) round(365 / $turnover) : null,
+                ],
+                'byPrincipal' => $byPrincipal,
+                'deadTop' => $deadTop,
+            ],
+        ]);
+    }
+
+    /** Sub-query HPP resmi Accurate: unit_cost snapshot Accurate tanggal terakhir, per ref. */
+    protected function accurateCostSub()
+    {
+        return DB::table(InventorySnapshot::TABLE)
+            ->where('source', InventorySnapshot::ACCURATE)
+            ->where('snapshot_date', InventorySnapshot::latestDate(InventorySnapshot::ACCURATE))
+            ->selectRaw('ref, MAX(unit_cost) unit_cost')->groupBy('ref');
+    }
+
+    /**
+     * Base query tab Analisa Cost (snapshot ERP bersaldo ⨝ HPP Accurate ⨝ HPP faktur ⨝
+     * harga jual riil ⨝ terakhir terjual) + ekspresi harga sesuai basis:
+     * 'beli' = biaya rata-rata Accurate (fallback HPP faktur pembelian, konversi valas);
+     * 'jual' = rata-rata tertimbang dpp/qty seluruh riwayat faktur penjualan.
+     *
+     * @return array{0: \Closure, 1: string} [builder factory, ekspresi harga per unit]
+     */
+    protected function stockCostBase(string $basis, \Illuminate\Database\Query\Builder $lastSold): array
+    {
+        $accCost = $this->accurateCostSub();
+        $sell = DB::table('sales_facts')
+            ->whereNotNull('part_number')->where('part_number', '!=', '')
+            ->where('quantity', '>', 0)->where('dpp', '>', 0)
+            ->groupBy('part_number')
+            ->selectRaw('part_number, SUM(dpp) / SUM(quantity) sell_price');
+
+        // Master produk Dolibarr (join lintas-DB — DB ERP satu server MySQL, preseden sama
+        // dengan lead time dashboard Purchasing): `price` = harga jual resmi (bersih, 210 item);
+        // `pmp` = rata-rata beli Dolibarr TAPI 158/257 tercemar input USD tanpa konversi
+        // (nilai < 10rb) → hanya fallback terakhir dan hanya bila nilainya wajar (>= 10rb).
+        $erpDb = config('database.connections.'.config('erp.connection').'.database');
+        $erpPrefix = config('erp.prefix');
+        $dolProduct = DB::raw("`{$erpDb}`.`{$erpPrefix}product` as dp");
+
+        $b = fn () => DB::query()
+            ->fromSub(InventorySnapshot::erp(), 'e')
+            ->leftJoinSub($accCost, 'ac', 'ac.ref', '=', 'e.ref')
+            ->leftJoin('dwh_map_product_cost as c', 'c.item_no', '=', 'e.ref')
+            ->leftJoinSub($sell, 'sp', 'sp.part_number', '=', 'e.ref')
+            ->leftJoin($dolProduct, 'dp.ref', '=', 'e.ref')
+            ->leftJoinSub($lastSold, 's', 's.part_number', '=', 'e.ref')
+            ->whereRaw('e.qty > 0');
+
+        $px = $basis === 'jual'
+            // Harga jual: master Dolibarr dulu (harga resmi kini), fallback realisasi
+            // rata-rata tertimbang faktur penjualan.
+            ? 'COALESCE(NULLIF(dp.price, 0), sp.sell_price, 0)'
+            // HPP: biaya rata-rata Accurate → HPP faktur (konversi valas) → PMP Dolibarr
+            // (hanya bila wajar; PMP < 10rb = artefak input USD).
+            : 'COALESCE(NULLIF(ac.unit_cost, 0), NULLIF(c.avg_cost, 0), CASE WHEN dp.pmp >= 10000 THEN dp.pmp END, 0)';
+
+        return [$b, $px];
+    }
+
     public function stockDrilldown(Request $request, WarehouseActivityService $wa): JsonResponse
     {
         $kind = (string) $request->input('kind');
@@ -618,6 +806,71 @@ class DashboardController extends Controller
                 'byType' => $d['byType'],
                 'rows' => $d['rows'],
                 'truncated' => $d['truncated'],
+            ]);
+        }
+
+        // ── Analisa Cost (snapshot ERP ⨝ HPP Accurate/faktur ⨝ harga jual riil) — gate tab ──
+        if (in_array($kind, ['cost_sku', 'cost_dead', 'cost_unvalued'], true)) {
+            abort_unless($request->user()->hasMenuAccess('dashboard-stock-cost'), 403);
+
+            $principal = trim((string) $request->input('principal'));
+            $basis = $request->input('basis') === 'jual' ? 'jual' : 'beli';
+
+            $lastSold = DB::table('sales_facts')
+                ->selectRaw('part_number, MAX(invoice_date) last_sold')
+                ->whereNotNull('part_number')->where('part_number', '!=', '')
+                ->groupBy('part_number');
+
+            [$bq, $px] = $this->stockCostBase($basis, $lastSold);
+            $q = $bq();
+
+            if ($principal !== '') {
+                $principal === '(tanpa principal)'
+                    ? $q->whereRaw("COALESCE(e.principal, '') = ''")
+                    : $q->where('e.principal', $principal);
+            }
+
+            $basisLabel = $basis === 'jual' ? 'harga jual' : 'HPP';
+            $title = match ($kind) {
+                'cost_dead' => "Uang nganggur — stok mati > {$dead} hari, dinilai pada {$basisLabel}",
+                'cost_unvalued' => $basis === 'jual'
+                    ? 'Item bersaldo TANPA harga jual — belum pernah terjual'
+                    : 'Item bersaldo TANPA HPP — tak ada di Accurate maupun faktur pembelian',
+                default => "Nilai persediaan per item ({$basisLabel})",
+            };
+            if ($principal !== '') {
+                $title .= " — {$principal}";
+            }
+
+            match ($kind) {
+                'cost_dead' => $q->whereRaw('(s.last_sold IS NULL OR s.last_sold < ?)', [$batas]),
+                'cost_unvalued' => $q->whereRaw("({$px}) = 0"),
+                default => null,
+            };
+
+            $agg = (clone $q)->selectRaw("COUNT(*) c, COALESCE(SUM(e.qty), 0) q, COALESCE(SUM(e.qty * ({$px})), 0) v")->first();
+            $cap = 500;
+
+            $rows = $q->selectRaw("e.ref, e.label, e.principal, e.qty, ({$px}) hpp,
+                    e.qty * ({$px}) nilai, s.last_sold, DATEDIFF(CURDATE(), s.last_sold) umur")
+                ->orderByRaw("e.qty * ({$px}) DESC")->limit($cap)->get()
+                ->map(fn ($r) => [
+                    'ref' => $r->ref, 'label' => $r->label, 'principal' => $r->principal,
+                    'qty' => (float) $r->qty, 'hpp' => (float) $r->hpp, 'nilai' => (float) $r->nilai,
+                    'lastSold' => $r->last_sold, 'umur' => $r->umur === null ? null : (int) $r->umur,
+                ])->values();
+
+            return response()->json([
+                'mode' => 'cost',
+                'title' => $title,
+                'summary' => [
+                    'rows' => $rows->count(),
+                    'total' => (int) ($agg->c ?? 0),
+                    'qty' => (float) ($agg->q ?? 0),
+                    'nilai' => (float) ($agg->v ?? 0),
+                    'truncated' => (int) ($agg->c ?? 0) > $cap,
+                ],
+                'rows' => $rows,
             ]);
         }
 
