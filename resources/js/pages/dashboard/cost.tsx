@@ -112,7 +112,7 @@ export default function Cost({ hasData, periods, period, kpi, sections, topExpen
                     <div>
                         <h1 className="text-2xl font-semibold">Cost / Laba Rugi</h1>
                         <p className="text-sm text-muted-foreground">
-                            Disusun dari Buku Besar Accurate yang diunggah, memakai struktur akun (COA) — bukan angka yang diketik ulang.
+                            Disusun dari Buku Besar Manual Import yang diunggah, memakai struktur akun (COA) — bukan angka yang diketik ulang.
                         </p>
                     </div>
                     {hasData && periods.length > 0 && (
@@ -147,7 +147,7 @@ export default function Cost({ hasData, periods, period, kpi, sections, topExpen
                         <CardContent className="flex h-64 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
                             <p>Belum ada Buku Besar yang diunggah.</p>
                             <p className="max-w-lg text-sm">
-                                Endpoint jurnal Accurate diblokir hak akses, jadi data biaya masuk lewat unggahan laporan
+                                Endpoint jurnal Manual Import diblokir hak akses, jadi data biaya masuk lewat unggahan laporan
                                 <b> Histori Buku Besar</b> (tanpa filter akun, satu bulan per file).
                             </p>
                             <Link href={route('dwh.pipeline')} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
@@ -316,7 +316,7 @@ export default function Cost({ hasData, periods, period, kpi, sections, topExpen
                         )}
 
                         <p className="text-[11px] text-muted-foreground">
-                            Sumber: laporan Histori Buku Besar Accurate yang diunggah, digabung dengan struktur akun (COA) yang ditarik otomatis. Mengunggah
+                            Sumber: laporan Histori Buku Besar Manual Import yang diunggah, digabung dengan struktur akun (COA) yang ditarik otomatis. Mengunggah
                             ulang periode yang sama akan memperbarui angka di sini — perlu, karena buku yang sudah tutup masih bisa berubah.
                         </p>
                     </>

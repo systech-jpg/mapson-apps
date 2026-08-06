@@ -468,7 +468,7 @@ class PurchaseMonitorController extends Controller
                     ];
                 }
             } catch (\Throwable $e) {
-                $accError = 'Gagal ambil detail dari Accurate: '.mb_substr($e->getMessage(), 0, 150);
+                $accError = 'Gagal ambil detail dari Manual Import: '.mb_substr($e->getMessage(), 0, 150);
             }
         }
 
@@ -539,7 +539,7 @@ class PurchaseMonitorController extends Controller
             $svc = app(\App\Services\Accurate\AccurateSyncService::class);
             $po = $svc->syncPurchaseOrders($from->format('d/m/Y'), now()->format('d/m/Y'));
             $pay = $svc->syncPurchasePayments($from->format('d/m/Y'), now()->format('d/m/Y'));
-            $payMsg = " {$po['po_docs']} PO & {$pay['payment_docs']} payment Accurate tersinkron.";
+            $payMsg = " {$po['po_docs']} PO & {$pay['payment_docs']} payment Manual Import tersinkron.";
             $this->syncVendorMap(); // ulangi: mata uang vendor kini bisa dari dokumen PO
         } catch (\Throwable $e) {
             $payMsg = ' (Sync PO/payment gagal: '.mb_substr($e->getMessage(), 0, 120).')';

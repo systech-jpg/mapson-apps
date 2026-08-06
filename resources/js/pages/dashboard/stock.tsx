@@ -598,7 +598,7 @@ export default function Stock({ view, dead, hasStock, stok, gudang, cost }: Prop
                                 Snapshot {fmtDate(cost.snapshotDate)} ·{' '}
                                 {cost.basis === 'jual'
                                     ? 'harga jual = harga master produk ERP (fallback: rata-rata faktur penjualan)'
-                                    : 'HPP = biaya rata-rata resmi Accurate (fallback: HPP faktur pembelian → PMP ERP)'}
+                                    : 'HPP = biaya rata-rata resmi Manual Import (fallback: HPP faktur pembelian → PMP ERP)'}
                             </span>
                         </div>
 
@@ -612,7 +612,7 @@ export default function Stock({ view, dead, hasStock, stok, gudang, cost }: Prop
                             <Kpi label="Perputaran Stok" value={cost.kpi.turnover != null ? `${cost.kpi.turnover.toLocaleString('id-ID')}× / thn` : '–'}
                                 sub={`COGS 12 bln ${rpShort(cost.kpi.cogs12)}${cost.kpi.doi ? ` · stok cukup utk ${num(cost.kpi.doi)} hari penjualan` : ''} · selalu basis HPP`} />
                             <Kpi label="Belum Ternilai" value={num(cost.kpi.unvalued)} tone={cost.kpi.unvalued > 0 ? 'warn' : undefined}
-                                sub={cost.basis === 'jual' ? 'tanpa harga master ERP & belum pernah terjual' : 'tanpa HPP di Accurate, faktur, maupun PMP ERP'}
+                                sub={cost.basis === 'jual' ? 'tanpa harga master ERP & belum pernah terjual' : 'tanpa HPP di Manual Import, faktur, maupun PMP ERP'}
                                 onClick={() => drillCost('cost_unvalued')} />
                         </div>
 
@@ -705,7 +705,7 @@ export default function Stock({ view, dead, hasStock, stok, gudang, cost }: Prop
                         </div>
 
                         <p className="text-[11px] text-muted-foreground">
-                            Metodologi: nilai = qty snapshot ERP terakhir × harga basis terpilih. Basis <b>HPP</b> = biaya rata-rata resmi Accurate (balance cost)
+                            Metodologi: nilai = qty snapshot ERP terakhir × harga basis terpilih. Basis <b>HPP</b> = biaya rata-rata resmi Manual Import (balance cost)
                             → fallback HPP rata-rata faktur pembelian (valas dikonversi kurs bulan transaksi) → fallback PMP master ERP (hanya yang nilainya wajar;
                             PMP bekas input USD tanpa konversi diabaikan). Basis <b>Harga Jual</b> = harga jual master produk ERP → fallback rata-rata tertimbang
                             DPP÷qty riwayat faktur penjualan. Item tanpa harga pada basis terpilih dihitung
@@ -845,7 +845,7 @@ export default function Stock({ view, dead, hasStock, stok, gudang, cost }: Prop
                         </Card>
 
                         <p className="text-[11px] text-muted-foreground">
-                            Nilai persediaan dalam rupiah <b>belum ditampilkan</b>: harga di Accurate adalah harga jual, bukan harga pokok. HPP dari faktur pembelian
+                            Nilai persediaan dalam rupiah <b>belum ditampilkan</b>: harga di Manual Import adalah harga jual, bukan harga pokok. HPP dari faktur pembelian
                             belum dibangun — lebih baik tidak menampilkan angka daripada menampilkan yang salah.
                         </p>
                     </>

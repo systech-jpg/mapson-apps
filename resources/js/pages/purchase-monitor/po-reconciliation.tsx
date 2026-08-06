@@ -40,7 +40,7 @@ const STATUS: Record<Status, { label: string; cls: string }> = {
     match: { label: 'Cocok', cls: 'border-emerald-400 text-emerald-600 dark:text-emerald-400' },
     diff: { label: 'Selisih', cls: 'border-amber-400 text-amber-600 dark:text-amber-400' },
     erp_only: { label: 'Hanya ERP', cls: 'border-violet-400 text-violet-600 dark:text-violet-400' },
-    acc_only: { label: 'Hanya Accurate', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
+    acc_only: { label: 'Hanya Manual Import', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
 };
 
 const DOL_STATUS: Record<number, string> = { 2: 'Approved', 3: 'Ordered', 4: 'Diterima sebagian', 5: 'Diterima penuh' };
@@ -65,7 +65,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-semibold">Rekonsiliasi PO — ERP vs Accurate</h1>
+                        <h1 className="text-2xl font-semibold">Rekonsiliasi PO — ERP vs Manual Import</h1>
                         <p className="text-sm text-muted-foreground">
                             Satu baris per <b>nomor PO</b> (nomornya sama di kedua sistem), membandingkan <b>nilai total dokumen</b> dalam mata uang aslinya.
                         </p>
@@ -84,7 +84,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
                     <StatCard label="Cocok" value={summary.match} active={status === 'match'} onClick={() => setStatus(status === 'match' ? null : 'match')} tone="match" />
                     <StatCard label="Selisih Nilai" value={summary.diff} active={status === 'diff'} onClick={() => setStatus(status === 'diff' ? null : 'diff')} tone="diff" />
                     <StatCard label="Hanya di ERP" value={summary.erp_only} active={status === 'erp_only'} onClick={() => setStatus(status === 'erp_only' ? null : 'erp_only')} tone="erp_only" />
-                    <StatCard label="Hanya di Accurate" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
+                    <StatCard label="Hanya di Manual Import" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
                 </div>
 
                 <Card>
@@ -113,7 +113,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
                                         <TableHead>Tanggal</TableHead>
                                         <TableHead>Mata Uang</TableHead>
                                         <TableHead className="text-right">ERP</TableHead>
-                                        <TableHead className="text-right">Accurate</TableHead>
+                                        <TableHead className="text-right">Manual Import</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
                                         <TableHead>Proses</TableHead>
                                         <TableHead className="text-center">Status</TableHead>
@@ -163,7 +163,7 @@ export default function PoReconciliation({ rows, years, summary }: Props) {
     );
 }
 
-/** Perbandingan baris item satu PO: ERP vs Accurate berdampingan (Accurate diambil live). */
+/** Perbandingan baris item satu PO: ERP vs Manual Import berdampingan (Manual Import diambil live). */
 function PoDetailDialog({ row, onClose }: { row: Row | null; onClose: () => void }) {
     const [detail, setDetail] = useState<PoDetail | null>(null);
 
@@ -181,7 +181,7 @@ function PoDetailDialog({ row, onClose }: { row: Row | null; onClose: () => void
                 <DialogHeader>
                     <DialogTitle>Baris Item {row?.number} — {row?.vendor}</DialogTitle>
                     <DialogDescription>
-                        Perbandingan item per baris: ERP vs Accurate (diambil langsung dari Accurate) — untuk melihat sumber selisih: beda qty, harga satuan, atau baris yang hanya ada di satu sisi.
+                        Perbandingan item per baris: ERP vs Manual Import (diambil langsung dari Manual Import) — untuk melihat sumber selisih: beda qty, harga satuan, atau baris yang hanya ada di satu sisi.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -191,14 +191,14 @@ function PoDetailDialog({ row, onClose }: { row: Row | null; onClose: () => void
                     <>
                     {detail.erp.total_ht !== null && detail.acc.total !== null && Math.abs(detail.acc.total - detail.erp.total_ht * 1.11) < 2 && Math.abs(detail.acc.total - detail.erp.total_ht) >= 1 && (
                         <p className="rounded-md border border-sky-400/50 bg-sky-500/10 p-2.5 text-xs text-sky-700 dark:text-sky-400">
-                            Selisih total = <b>persis PPN 11%</b> — nilai Accurate termasuk pajak, PO ERP di-input tanpa pajak. Baris itemnya kemungkinan sama.
+                            Selisih total = <b>persis PPN 11%</b> — nilai Manual Import termasuk pajak, PO ERP di-input tanpa pajak. Baris itemnya kemungkinan sama.
                         </p>
                     )}
                     <div className="grid gap-4 md:grid-cols-2">
                         <LinePanel title={`ERP${detail.erp.cur ? ` · ${detail.erp.cur}` : ''}`} found={detail.erp.found}
                             lines={detail.erp.lines} total={detail.erp.total_ht} totalLabel="Total non-PPN"
                             extra={detail.erp.total_ttc !== null && detail.erp.total_ttc !== detail.erp.total_ht ? `+PPN: ${num(detail.erp.total_ttc, 2)}` : null} />
-                        <LinePanel title={`Accurate${detail.acc.cur ? ` · ${detail.acc.cur}` : ''}${detail.acc.status ? ` · ${detail.acc.status}` : ''}`} found={detail.acc.found}
+                        <LinePanel title={`Manual Import${detail.acc.cur ? ` · ${detail.acc.cur}` : ''}${detail.acc.status ? ` · ${detail.acc.status}` : ''}`} found={detail.acc.found}
                             lines={detail.acc.lines} total={detail.acc.total} totalLabel="Total dokumen"
                             extra={detail.acc.error} />
                     </div>

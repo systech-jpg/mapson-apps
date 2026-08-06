@@ -835,7 +835,7 @@ class DashboardController extends Controller
                 'cost_dead' => "Uang nganggur — stok mati > {$dead} hari, dinilai pada {$basisLabel}",
                 'cost_unvalued' => $basis === 'jual'
                     ? 'Item bersaldo TANPA harga jual — belum pernah terjual'
-                    : 'Item bersaldo TANPA HPP — tak ada di Accurate maupun faktur pembelian',
+                    : 'Item bersaldo TANPA HPP — tak ada di Manual Import maupun faktur pembelian',
                 default => "Nilai persediaan per item ({$basisLabel})",
             };
             if ($principal !== '') {

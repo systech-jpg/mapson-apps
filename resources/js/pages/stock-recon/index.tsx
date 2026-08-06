@@ -26,12 +26,15 @@ interface Row {
     selisih: string | number;
     erp_ref: string | null;
     acc_no: string | null;
+    awal_selisih?: string | number;
+    periode_selisih?: string | number;
 }
 
 interface Props {
     rows: Paginated<Row>;
-    filters: { q: string; bucket: string };
-    summary: { total: number; match: number; diff: number; only_erp: number; only_acc: number };
+    filters: { q: string; bucket: string; from: string };
+    summary: { total: number; match: number; diff: number; only_erp: number; only_acc: number; p_bawaan: number | null; p_baru: number | null; p_campur: number | null };
+    period: { from: string | null; options: string[] };
     snapshots: { erp: string | null; accurate: string | null };
 }
 
@@ -42,11 +45,11 @@ const BUCKETS = [
     { key: 'diff', label: 'Beda' },
     { key: 'match', label: 'Cocok' },
     { key: 'only_erp', label: 'Hanya ERP' },
-    { key: 'only_acc', label: 'Hanya Accurate' },
+    { key: 'only_acc', label: 'Hanya Manual Import' },
 ];
 
 function status(r: Row): { label: string; cls: string } {
-    if (r.erp_ref === null) return { label: 'Hanya Accurate', cls: 'text-amber-600' };
+    if (r.erp_ref === null) return { label: 'Hanya Manual Import', cls: 'text-amber-600' };
     if (r.acc_no === null) return { label: 'Hanya ERP', cls: 'text-sky-600' };
     if (Number(r.selisih) === 0) return { label: 'Cocok', cls: 'text-emerald-600' };
     return { label: 'Beda', cls: 'text-red-600 font-semibold' };
@@ -69,7 +72,7 @@ const ymOf = (d: string | null) => (d ? String(d).substring(0, 7) : '');
 const CAT_LABEL: Record<string, string> = { DO: 'DO (keluar)', GR: 'Masuk/Beli', INV: 'Invoice (SI)', OTHER: 'Lainnya' };
 const TYPE_LABEL: Record<string, string> = { DO: 'DO (kirim)', SI: 'Faktur Jual langsung', RI: 'Terima Barang', PI: 'Faktur Beli langsung', SR: 'Retur Jual', PR: 'Retur Beli', IA: 'Penyesuaian', SO: 'Pesanan Jual', PO: 'Pesanan Beli', IT: 'Transfer' };
 
-export default function StockRecon({ rows, filters, summary, snapshots }: Props) {
+export default function StockRecon({ rows, filters, summary, period, snapshots }: Props) {
     const [q, setQ] = useState(filters.q ?? '');
     const [detail, setDetail] = useState<Detail | null>(null);
     const [loading, setLoading] = useState(false);
@@ -93,7 +96,7 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
     const erpShown = detail ? [...detail.erp.docs].filter(docFilter).sort((a, b) => (a.date < b.date ? 1 : -1)) : [];
     const accShown = detail ? [...detail.accurate.docs].filter(docFilter).sort((a, b) => (a.date < b.date ? 1 : -1)) : [];
 
-    // Align Accurate & ERP by document number: same number → one row; one-sided → blank other side.
+    // Align Manual Import & ERP by document number: same number → one row; one-sided → blank other side.
     const merged = useMemo(() => {
         const PH = '(tanpa dokumen)';
         const accMap = new Map<string, DocAgg>();
@@ -115,7 +118,12 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
     const erpOnly = merged.filter((r) => !r.acc && r.erp).length;
 
     const go = (next: Record<string, unknown> = {}) =>
-        router.get(route('stock.recon'), { q, bucket: filters.bucket || undefined, ...next }, { preserveState: true, replace: true });
+        router.get(route('stock.recon'), { q, bucket: filters.bucket || undefined, from: filters.from || undefined, ...next }, { preserveState: true, replace: true });
+
+    // Bucket tambahan hanya bermakna dalam mode periode.
+    const buckets = period.from
+        ? [...BUCKETS, { key: 'p_bawaan', label: 'Bawaan Historis' }, { key: 'p_baru', label: 'Lahir di Periode' }, { key: 'p_campur', label: 'Campuran' }]
+        : BUCKETS;
 
     const openDetail = (code: string) => {
         setLoading(true);
@@ -130,18 +138,21 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
             .finally(() => setLoading(false));
     };
 
-    const exportParams = { q: q || undefined, bucket: filters.bucket || undefined };
+    const exportParams = { q: q || undefined, bucket: filters.bucket || undefined, from: filters.from || undefined };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Rekon Data Stok ERP vs Accurate" />
+            <Head title="Rekon Data Stok ERP vs Manual Import" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold">Rekon Data Stok — ERP vs Accurate</h1>
+                    <h1 className="text-xl font-semibold">Rekon Data Stok — ERP vs Manual Import</h1>
                     <p className="text-sm text-muted-foreground">
-                        Dicocokkan via kode item (ERP <code>ref</code> = Accurate <code>item_no</code>).
+                        Dicocokkan via kode item (ERP <code>ref</code> = Manual Import <code>item_no</code>).
                         {snapshots.erp ? ` Stok ERP per ${snapshots.erp}.` : ' Stok ERP belum ditarik.'}
-                        {snapshots.accurate ? ` Stok Accurate per ${snapshots.accurate}.` : ' Stok Accurate belum ditarik.'}
+                        {snapshots.accurate ? ` Stok Manual Import per ${snapshots.accurate}.` : ' Stok Manual Import belum ditarik.'}
+                        {period.from && (
+                            <> Dibanding snapshot <b>{period.from}</b>: kolom &quot;Awal&quot; = selisih yang sudah ada saat itu (mis. sebelum penyesuaian stok), &quot;Periode&quot; = selisih yang terbentuk setelahnya.</>
+                        )}
                     </p>
                 </div>
 
@@ -152,7 +163,7 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                         { key: 'diff', label: 'Selisih (Beda)', val: summary.diff, cls: 'text-red-600' },
                         { key: 'match', label: 'Cocok', val: summary.match, cls: 'text-emerald-600' },
                         { key: 'only_erp', label: 'Hanya ERP', val: summary.only_erp, cls: 'text-sky-600' },
-                        { key: 'only_acc', label: 'Hanya Accurate', val: summary.only_acc, cls: 'text-amber-600' },
+                        { key: 'only_acc', label: 'Hanya Manual Import', val: summary.only_acc, cls: 'text-amber-600' },
                     ].map((c) => (
                         <Card
                             key={c.label}
@@ -167,10 +178,42 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                     ))}
                 </div>
 
+                {/* Mode periode: pecah item "Beda" menurut kapan selisihnya terbentuk */}
+                {period.from && (
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {[
+                            { key: 'p_bawaan', label: `Bawaan Historis (sudah beda sejak ${period.from})`, val: summary.p_bawaan ?? 0, cls: 'text-muted-foreground' },
+                            { key: 'p_baru', label: 'Lahir di Periode Berjalan', val: summary.p_baru ?? 0, cls: 'text-red-600' },
+                            { key: 'p_campur', label: 'Campuran (bawaan + bergeser lagi)', val: summary.p_campur ?? 0, cls: 'text-amber-600' },
+                        ].map((c) => (
+                            <Card
+                                key={c.key}
+                                className={`cursor-pointer transition-colors hover:bg-accent/40 ${filters.bucket === c.key ? 'border-primary' : ''}`}
+                                onClick={() => go({ bucket: c.key })}
+                            >
+                                <CardContent className="p-4">
+                                    <p className="text-xs text-muted-foreground">{c.label}</p>
+                                    <p className={`mt-1 text-2xl font-bold ${c.cls}`}>{c.val.toLocaleString('id-ID')}</p>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                )}
+
                 {/* Filter bar */}
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex gap-1 rounded-md border p-1">
-                        {BUCKETS.map((b) => (
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Bandingkan sejak:</span>
+                        <Select value={filters.from || '__none__'} onValueChange={(v) => go({ from: v === '__none__' ? undefined : v, bucket: undefined })}>
+                            <SelectTrigger className="h-9 w-44 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="__none__">— tanpa pembanding —</SelectItem>
+                                {period.options.map((d) => <SelectItem key={d} value={d}>snapshot {d}</SelectItem>)}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="flex flex-wrap gap-1 rounded-md border p-1">
+                        {buckets.map((b) => (
                             <button
                                 key={b.key}
                                 onClick={() => go({ bucket: b.key || undefined })}
@@ -198,16 +241,18 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                         <TableHead>Nama Item</TableHead>
                                         <TableHead>Principal</TableHead>
                                         <TableHead className="text-right">Qty ERP</TableHead>
-                                        <TableHead className="text-right">Qty Accurate</TableHead>
+                                        <TableHead className="text-right">Qty Manual Import</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
+                                        {period.from && <TableHead className="text-right whitespace-nowrap" title={`Selisih ERP−Manual Import pada snapshot ${period.from}`}>Awal ({period.from?.substring(5)})</TableHead>}
+                                        {period.from && <TableHead className="text-right whitespace-nowrap" title="Selisih yang terbentuk SELAMA periode = selisih sekarang − selisih awal">Periode</TableHead>}
                                         <TableHead>Status</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {rows.data.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                                                Tidak ada data. Pastikan stok ERP & Accurate sudah ditarik.
+                                            <TableCell colSpan={period.from ? 9 : 7} className="py-12 text-center text-muted-foreground">
+                                                Tidak ada data. Pastikan stok ERP & Manual Import sudah ditarik.
                                             </TableCell>
                                         </TableRow>
                                     ) : (
@@ -221,6 +266,12 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                                     <TableCell className="text-right whitespace-nowrap">{r.erp_ref === null ? '—' : num(r.erp_qty)}</TableCell>
                                                     <TableCell className="text-right whitespace-nowrap">{r.acc_no === null ? '—' : num(r.acc_qty)}</TableCell>
                                                     <TableCell className={`text-right whitespace-nowrap ${Number(r.selisih) !== 0 ? 'font-semibold text-red-600' : 'text-muted-foreground'}`}>{num(r.selisih)}</TableCell>
+                                                    {period.from && (
+                                                        <TableCell className={`text-right whitespace-nowrap ${Number(r.awal_selisih ?? 0) !== 0 ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>{num(r.awal_selisih)}</TableCell>
+                                                    )}
+                                                    {period.from && (
+                                                        <TableCell className={`text-right whitespace-nowrap ${Number(r.periode_selisih ?? 0) !== 0 ? 'font-semibold text-red-600' : 'text-muted-foreground'}`}>{num(r.periode_selisih)}</TableCell>
+                                                    )}
                                                     <TableCell className={`whitespace-nowrap text-xs ${st.cls}`}>{st.label}</TableCell>
                                                 </TableRow>
                                             );
@@ -250,29 +301,29 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                 <p className="text-sm text-muted-foreground">{detail.label}</p>
                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
                                     <span>Stok ERP: <b className="text-sky-600">{num(detail.erp.qty)}</b></span>
-                                    <span>Stok Accurate: <b className="text-amber-600">{num(detail.accurate.qty)}</b></span>
+                                    <span>Stok Manual Import: <b className="text-amber-600">{num(detail.accurate.qty)}</b></span>
                                     <span>Selisih: <b className={detail.selisih !== 0 ? 'text-red-600' : 'text-emerald-600'}>{num(detail.selisih)}</b></span>
                                 </div>
                             </div>
 
                             {/* View toggle */}
                             <div className="flex w-fit gap-1 rounded-md border p-1">
-                                <button onClick={() => setView('kartu')} className={`rounded px-3 py-1 text-xs font-medium ${view === 'kartu' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Kartu Stok Accurate</button>
-                                <button onClick={() => setView('compare')} className={`rounded px-3 py-1 text-xs font-medium ${view === 'compare' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Bandingkan ERP vs Accurate</button>
+                                <button onClick={() => setView('kartu')} className={`rounded px-3 py-1 text-xs font-medium ${view === 'kartu' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Kartu Stok Manual Import</button>
+                                <button onClick={() => setView('compare')} className={`rounded px-3 py-1 text-xs font-medium ${view === 'compare' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>Bandingkan ERP vs Manual Import</button>
                             </div>
 
                             {/* ── KARTU STOK ACCURATE ── */}
                             {view === 'kartu' && (
                                 <div className="space-y-2">
                                     <p className="text-[11px] text-muted-foreground">
-                                        Asal angka stok Accurate <b>{num(detail.accurate.qty)}</b>: <b>Saldo awal {detail.year}</b>
+                                        Asal angka stok Manual Import <b>{num(detail.accurate.qty)}</b>: <b>Saldo awal {detail.year}</b>
                                         {detail.accurate.card.period_from ? ` (per ${d10(detail.accurate.card.period_from)})` : ''} + seluruh dokumen {detail.year} (DO/retur/penyesuaian/penerimaan) → saldo akhir.
-                                        Direkonstruksi dari detail dokumen Accurate (per-item, bundle di-explode, faktur dari DO tidak dihitung ulang).
+                                        Direkonstruksi dari detail dokumen Manual Import (per-item, bundle di-explode, faktur dari DO tidak dihitung ulang).
                                         {detail.accurate.movements_synced && <> Terakhir tarik: {d10(detail.accurate.movements_synced)}.</>}
                                     </p>
                                     {!detail.accurate.has_movements && (
                                         <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                                            Mutasi {detail.year} untuk item ini <b>belum ditarik</b>. Buka <b>Integrasi Data → Accurate → Staging</b> dan jalankan <b>Tarik Mutasi Stok {detail.year}</b> dulu (atau <code>php artisan accurate:sync-movements {detail.year}-01-01 {detail.year}-12-31</code>).
+                                            Mutasi {detail.year} untuk item ini <b>belum ditarik</b>. Buka <b>Integrasi Data → Manual Import → Staging</b> dan jalankan <b>Tarik Mutasi Stok {detail.year}</b> dulu (atau <code>php artisan accurate:sync-movements {detail.year}-01-01 {detail.year}-12-31</code>).
                                         </p>
                                     )}
                                     <div className="max-h-[64vh] overflow-auto rounded border">
@@ -294,7 +345,7 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                                     <TableCell className="text-right whitespace-nowrap">{num(detail.accurate.card.opening)}</TableCell>
                                                 </TableRow>
                                                 {detail.accurate.card.rows.length === 0 ? (
-                                                    <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">{detail.accurate.exists ? 'Tidak ada mutasi.' : 'Item tidak ada di Accurate.'}</TableCell></TableRow>
+                                                    <TableRow><TableCell colSpan={6} className="py-6 text-center text-muted-foreground">{detail.accurate.exists ? 'Tidak ada mutasi.' : 'Item tidak ada di Manual Import.'}</TableCell></TableRow>
                                                 ) : detail.accurate.card.rows.map((r, i) => (
                                                     <TableRow key={i} className={docQ.trim() !== '' && r.number.toLowerCase().includes(docQ.trim().toLowerCase()) ? 'bg-yellow-100 dark:bg-yellow-900/30' : ''}>
                                                         <TableCell className="whitespace-nowrap">{d10(r.date)}</TableCell>
@@ -312,7 +363,7 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                                                     <TableCell />
                                                 </TableRow>
                                                 <TableRow className="border-t-2 bg-muted/60 font-semibold">
-                                                    <TableCell colSpan={5}>Saldo akhir (= stok Accurate)</TableCell>
+                                                    <TableCell colSpan={5}>Saldo akhir (= stok Manual Import)</TableCell>
                                                     <TableCell className="text-right whitespace-nowrap text-amber-600">{num(detail.accurate.qty)}</TableCell>
                                                 </TableRow>
                                             </TableBody>
@@ -352,8 +403,8 @@ export default function StockRecon({ rows, filters, summary, snapshots }: Props)
                             </div>
 
                             <p className="text-[11px] text-muted-foreground">
-                                Disejajarkan per <b>nomor dokumen</b>: nomor yang sama → satu baris (kiri Accurate, kanan ERP); yang hanya ada di satu sisi → sisi lain kosong. Qty negatif = keluar, positif = masuk; <b className="text-red-600">merah</b> bila qty beda. Nomor DO/SJ biasanya sama; pembelian (RI/GRPO) sering beda penomoran.{' '}
-                                <span className="text-emerald-600">{matchedCount} cocok</span> · <span className="text-amber-600">{accOnly} hanya Accurate</span> · <span className="text-sky-600">{erpOnly} hanya ERP</span>
+                                Disejajarkan per <b>nomor dokumen</b>: nomor yang sama → satu baris (kiri Manual Import, kanan ERP); yang hanya ada di satu sisi → sisi lain kosong. Qty negatif = keluar, positif = masuk; <b className="text-red-600">merah</b> bila qty beda. Nomor DO/SJ biasanya sama; pembelian (RI/GRPO) sering beda penomoran.{' '}
+                                <span className="text-emerald-600">{matchedCount} cocok</span> · <span className="text-amber-600">{accOnly} hanya Manual Import</span> · <span className="text-sky-600">{erpOnly} hanya ERP</span>
                             </p>
 
                             <div className="max-h-[62vh] overflow-auto rounded border">

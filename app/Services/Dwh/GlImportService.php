@@ -79,7 +79,7 @@ class GlImportService
                 'BAHAYA: jangan unggah file ini apa adanya. Mengunggah akan MENIMPA seluruh data periode pada judul di atas. Hapus dulu baris contoh & catatan, isi data asli.',
                 'WAJIB: baris judul "Dari <tgl> <bln> <thn> s/d <tgl> <bln> <thn>" — periode dibaca dari sini karena baris buku besar tidak punya kolom tanggal.',
                 'Satu file = SATU bulan. Laporan lintas-bulan ditolak.',
-                'Kolom dicari berdasarkan JUDULNYA, bukan posisi — kolom kosong di antaranya (seperti export asli Accurate) aman.',
+                'Kolom dicari berdasarkan JUDULNYA, bukan posisi — kolom kosong di antaranya (seperti export aslinya) aman.',
                 'Kode # wajib angka. Baris yang Kode #-nya bukan angka diabaikan (judul, footer, baris kosong).',
                 'Angka boleh "1,234,567." maupun 1234567.89 — keduanya terbaca.',
                 'Mengunggah periode yang sama akan MENIMPA data periode itu (memang disengaja: buku yang sudah tutup masih bisa berubah).',
@@ -140,7 +140,7 @@ class GlImportService
         }
 
         if (empty($batch)) {
-            throw new \RuntimeException('Tidak ada baris data yang terbaca. Pastikan file adalah laporan "Histori Buku Besar" dari Accurate.');
+            throw new \RuntimeException('Tidak ada baris data yang terbaca. Pastikan file adalah laporan "Histori Buku Besar".');
         }
 
         // Idempoten per periode: buku yang sudah "tutup" terbukti masih berubah, jadi

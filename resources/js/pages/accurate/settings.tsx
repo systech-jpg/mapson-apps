@@ -14,7 +14,7 @@ import { type FormEventHandler, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Integrasi Data', href: '#' },
-    { title: 'Accurate', href: '#' },
+    { title: 'Manual Import', href: '#' },
     { title: 'Setting', href: '/integration/accurate/settings' },
 ];
 
@@ -86,12 +86,12 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Accurate — Setting" />
+            <Head title="Manual Import — Setting" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h1 className="text-xl font-semibold">Accurate — Setting</h1>
-                        <p className="text-sm text-muted-foreground">Hubungkan aplikasi ke Accurate Online via OAuth.</p>
+                        <h1 className="text-xl font-semibold">Manual Import — Setting</h1>
+                        <p className="text-sm text-muted-foreground">Hubungkan aplikasi ke Manual Import Online via OAuth.</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {settings.connected ? (
@@ -114,7 +114,7 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                         </CardHeader>
                         <CardContent className="grid gap-4">
                             <div className="grid gap-2">
-                                <Label>Redirect URI (daftarkan persis ini di aplikasi Accurate)</Label>
+                                <Label>Redirect URI (daftarkan persis ini di aplikasi Manual Import)</Label>
                                 <Input readOnly value={settings.redirect_uri} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
                             </div>
                             <div className="grid gap-4 md:grid-cols-2">
@@ -143,13 +143,13 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                                     <Label htmlFor="scope">Scope</Label>
                                     <Input id="scope" value={data.scope} onChange={(e) => setData('scope', e.target.value)} placeholder="mis. item_view sales_invoice_view ..." />
                                     <p className="text-xs text-muted-foreground">
-                                        Hanya dipakai bila memakai alur OAuth. Integrasi ini memakai API Token + Signature, jadi hak akses ditentukan oleh user Accurate pemilik token — bukan oleh isian ini.
+                                        Hanya dipakai bila memakai alur OAuth. Integrasi ini memakai API Token + Signature, jadi hak akses ditentukan oleh user Manual Import pemilik token — bukan oleh isian ini.
                                     </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <Switch id="is_active" checked={data.is_active} onCheckedChange={(v) => setData('is_active', v)} />
-                                <Label htmlFor="is_active">Aktifkan integrasi Accurate</Label>
+                                <Label htmlFor="is_active">Aktifkan integrasi Manual Import</Label>
                             </div>
                         </CardContent>
                     </Card>
@@ -158,7 +158,7 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base">Token Manual (opsional)</CardTitle>
                             <p className="text-xs text-muted-foreground">
-                                Kalau sudah punya Access Token sendiri, tempel di sini lalu Simpan — tanpa perlu klik "Hubungkan ke Accurate".
+                                Kalau sudah punya Access Token sendiri, tempel di sini lalu Simpan — tanpa perlu klik "Hubungkan ke Manual Import".
                             </p>
                         </CardHeader>
                         <CardContent className="grid gap-4">
@@ -194,9 +194,9 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                         {!settings.connected ? (
                             <div className="flex flex-wrap items-center gap-3">
                                 <Button asChild>
-                                    <a href={route('accurate.connect')}><Plug className="size-4" /> Hubungkan ke Accurate</a>
+                                    <a href={route('accurate.connect')}><Plug className="size-4" /> Hubungkan ke Manual Import</a>
                                 </Button>
-                                <span className="text-xs text-muted-foreground">Anda akan diarahkan ke Accurate untuk login & memberi izin.</span>
+                                <span className="text-xs text-muted-foreground">Anda akan diarahkan ke Manual Import untuk login & memberi izin.</span>
                             </div>
                         ) : (
                             <>
@@ -208,7 +208,7 @@ export default function AccurateSettings({ settings }: { settings: Settings }) {
                                 </div>
 
                                 <div className="border-t pt-4">
-                                    <Label className="mb-2 block">Pilih Database Accurate</Label>
+                                    <Label className="mb-2 block">Pilih Database Manual Import</Label>
                                     <div className="flex flex-wrap items-center gap-2">
                                         <Button type="button" variant="outline" size="sm" onClick={loadDatabases} disabled={loadingDbs}>
                                             {loadingDbs && <LoaderCircle className="size-4 animate-spin" />} Muat Database

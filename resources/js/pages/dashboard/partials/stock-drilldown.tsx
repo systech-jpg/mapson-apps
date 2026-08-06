@@ -431,7 +431,7 @@ export function StockDrilldownDialog({ drill, onClose }: { drill: StockDrill | n
                     </div>
                     <p className="mt-2 text-[11px] text-muted-foreground">
                         {costMode
-                            ? 'Nilai = qty snapshot ERP × harga basis terpilih (HPP: Accurate → faktur pembelian → PMP ERP; harga jual: master ERP → rata-rata faktur penjualan). Urut nilai terbesar. Maks 500 baris.'
+                            ? 'Nilai = qty snapshot ERP × harga basis terpilih (HPP: Manual Import → faktur pembelian → PMP ERP; harga jual: master ERP → rata-rata faktur penjualan). Urut nilai terbesar. Maks 500 baris.'
                             : stok
                             ? 'Sumber: snapshot stok ERP terakhir, digabung dengan riwayat penjualan penuh (sales_facts). Maks 500 baris.'
                             : mov

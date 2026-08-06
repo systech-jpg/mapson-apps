@@ -12,7 +12,7 @@ import { Fragment, useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Integrasi Data', href: '#' },
-    { title: 'Accurate', href: '#' },
+    { title: 'Manual Import', href: '#' },
     { title: 'Staging Data', href: '/integration/accurate/staging' },
 ];
 
@@ -139,12 +139,12 @@ export default function Staging({ tab, rows, items, filters, counts, lastSync, r
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Staging Data Accurate" />
+            <Head title="Staging Data Manual Import" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold">Staging Data Accurate</h1>
+                    <h1 className="text-xl font-semibold">Staging Data Manual Import</h1>
                     <p className="text-sm text-muted-foreground">
-                        Data tarikan Accurate per periode. Klik baris untuk lihat item-nya (DO item = barang terkirim).
+                        Data tarikan Manual Import per periode. Klik baris untuk lihat item-nya (DO item = barang terkirim).
                         {lastSync ? ` Sinkron terakhir: ${lastSync}.` : ' Belum pernah ditarik.'}
                     </p>
                 </div>
@@ -172,14 +172,14 @@ export default function Staging({ tab, rows, items, filters, counts, lastSync, r
                         </div>
                         <Button onClick={pull} disabled={!ready || sync.processing || sync.data.targets.length === 0}>
                             {sync.processing ? <LoaderCircle className="size-4 animate-spin" /> : <Download className="size-4" />}
-                            {sync.processing ? 'Menarik…' : 'Tarik dari Accurate'}
+                            {sync.processing ? 'Menarik…' : 'Tarik dari Manual Import'}
                         </Button>
                         <Button variant="outline" asChild>
                             <a href={route('accurate.staging.export', params())}>
                                 <FileSpreadsheet className="size-4" /> Export Excel
                             </a>
                         </Button>
-                        {!ready && <span className="text-sm text-amber-600">Accurate belum terhubung / API Host kosong — buka menu Setting dulu.</span>}
+                        {!ready && <span className="text-sm text-amber-600">Manual Import belum terhubung / API Host kosong — buka menu Setting dulu.</span>}
                         <span className="ml-auto text-xs text-muted-foreground">Periode besar bisa lama. Mulai dari rentang kecil.</span>
                     </CardContent>
                 </Card>
@@ -259,7 +259,7 @@ export default function Staging({ tab, rows, items, filters, counts, lastSync, r
                                         <TableRow>
                                             <TableCell colSpan={cols.length + 1} className="py-12 text-center text-muted-foreground">
                                                 <Database className="mx-auto mb-2 size-6 opacity-40" />
-                                                Belum ada data untuk filter ini. Klik "Tarik dari Accurate" untuk mengisi staging.
+                                                Belum ada data untuk filter ini. Klik "Tarik dari Manual Import" untuk mengisi staging.
                                             </TableCell>
                                         </TableRow>
                                     ) : (

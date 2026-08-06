@@ -65,21 +65,21 @@ class DataWarehouseController extends Controller
                 'terakhir' => InventorySnapshot::latestDate(InventorySnapshot::ERP),
             ],
             [
-                'key' => 'acc-stock', 'nama' => 'Accurate — Snapshot Stok', 'mode' => 'otomatis',
+                'key' => 'acc-stock', 'nama' => 'Manual Import — Snapshot Stok', 'mode' => 'otomatis',
                 'baris' => (int) InventorySnapshot::latest(InventorySnapshot::ACCURATE)->count(),
                 'ket' => $accDates.' tanggal — saldo live, hanya bisa maju (tak bisa backfill).',
                 'terakhir' => InventorySnapshot::latestDate(InventorySnapshot::ACCURATE),
             ],
             [
-                'key' => 'acc-mov', 'nama' => 'Accurate — Mutasi Stok', 'mode' => 'otomatis',
+                'key' => 'acc-mov', 'nama' => 'Manual Import — Mutasi Stok', 'mode' => 'otomatis',
                 'baris' => (int) DB::table('acc_stock_movements')->count(),
                 'ket' => 'Ledger per dokumen (DO/RI/SR/PR/IA/SI/PI).',
                 'terakhir' => $last('accurate'),
             ],
             [
-                'key' => 'gl', 'nama' => 'Accurate — Buku Besar (GL)', 'mode' => 'manual',
+                'key' => 'gl', 'nama' => 'Manual Import — Buku Besar (GL)', 'mode' => 'manual',
                 'baris' => (int) DB::table('dwh_stg_gl')->count(),
-                'ket' => 'Endpoint jurnal Accurate diblokir hak akses → diunggah dari laporan Histori Buku Besar.',
+                'ket' => 'Endpoint jurnal Manual Import diblokir hak akses → diunggah dari laporan Histori Buku Besar.',
                 'terakhir' => DB::table('dwh_stg_gl')->max('imported_at'),
             ],
         ];

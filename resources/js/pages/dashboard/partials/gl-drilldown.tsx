@@ -198,7 +198,7 @@ export function GlDrilldownDialog({ drill, onClose }: { drill: GlDrill | null; o
                         )}
                     </div>
                     <p className="mt-2 text-[11px] text-muted-foreground">
-                        Sumber: laporan Histori Buku Besar Accurate yang diunggah untuk periode ini. Cocokkan No. Bukti di Accurate untuk menelusuri lebih jauh.
+                        Sumber: laporan Histori Buku Besar Manual Import yang diunggah untuk periode ini. Cocokkan No. Bukti di Manual Import untuk menelusuri lebih jauh.
                     </p>
                 </div>
             </DialogContent>

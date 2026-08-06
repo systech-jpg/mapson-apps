@@ -13,7 +13,7 @@ import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Integrasi Data', href: '#' },
-    { title: 'Accurate', href: '#' },
+    { title: 'Manual Import', href: '#' },
     { title: 'Penjualan', href: '/integration/accurate/sales' },
 ];
 
@@ -112,11 +112,11 @@ export default function AccurateSales({ ready, status }: { ready: boolean; statu
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Accurate — Penjualan" />
+            <Head title="Manual Import — Penjualan" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold">Penjualan Accurate</h1>
-                    <p className="text-sm text-muted-foreground">Tarik data faktur penjualan dari Accurate per periode.</p>
+                    <h1 className="text-xl font-semibold">Penjualan Manual Import</h1>
+                    <p className="text-sm text-muted-foreground">Tarik data faktur penjualan dari Manual Import per periode.</p>
                 </div>
 
                 {!ready && (
@@ -218,7 +218,7 @@ export default function AccurateSales({ ready, status }: { ready: boolean; statu
 
                     {detailLoading && (
                         <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
-                            <LoaderCircle className="size-4 animate-spin" /> Memuat detail dari Accurate…
+                            <LoaderCircle className="size-4 animate-spin" /> Memuat detail dari Manual Import…
                         </div>
                     )}
                     {detailError && <p className="py-4 text-sm text-red-600">{detailError}</p>}

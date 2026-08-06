@@ -80,7 +80,7 @@ class AccurateController extends Controller
 
         $s->save();
 
-        return back()->with('success', 'Pengaturan Accurate berhasil disimpan.');
+        return back()->with('success', 'Pengaturan Manual Import berhasil disimpan.');
     }
 
     /** Step 1: redirect the user to Accurate to authorize. */
@@ -99,12 +99,12 @@ class AccurateController extends Controller
     public function callback(Request $request): RedirectResponse
     {
         if ($error = $request->string('error')->toString()) {
-            return to_route('accurate.settings')->with('error', 'Accurate menolak otorisasi: '.$error);
+            return to_route('accurate.settings')->with('error', 'Manual Import menolak otorisasi: '.$error);
         }
 
         $code = $request->string('code')->toString();
         if (blank($code)) {
-            return to_route('accurate.settings')->with('error', 'Authorization code tidak diterima dari Accurate.');
+            return to_route('accurate.settings')->with('error', 'Authorization code tidak diterima dari Manual Import.');
         }
 
         $result = $this->accurate->exchangeCode(AccurateSetting::current(), $code);
@@ -139,7 +139,7 @@ class AccurateController extends Controller
             'is_active' => false,
         ]);
 
-        return back()->with('success', 'Koneksi Accurate diputuskan.');
+        return back()->with('success', 'Koneksi Manual Import diputuskan.');
     }
 
     public function test(): RedirectResponse
@@ -313,7 +313,7 @@ class AccurateController extends Controller
         } catch (Throwable $e) {
             \App\Models\SyncLog::record('accurate', 'Accurate staging', 'failed', null, $e->getMessage(), (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);
 
-            return back()->with('error', 'Gagal tarik dari Accurate: '.$e->getMessage());
+            return back()->with('error', 'Gagal tarik dari Manual Import: '.$e->getMessage());
         }
 
         \App\Models\SyncLog::record('accurate', 'Accurate staging ('.implode('+', $targets).')', 'success', implode(', ', $parts), null, (int) round((microtime(true) - $start) * 1000), 'manual', $request->user()->id);

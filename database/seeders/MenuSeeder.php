@@ -123,6 +123,16 @@ class MenuSeeder extends Seeder
         $this->menu(['key' => 'sales-hospitals', 'title' => 'Database Rumah Sakit', 'route' => 'sales-hospitals.index', 'icon' => 'Building2', 'sort_order' => 2], $sales->id);
         $this->menu(['key' => 'sales-doctors', 'title' => 'Database Dokter', 'route' => 'sales-doctors.index', 'icon' => 'Stethoscope', 'sort_order' => 3], $sales->id);
 
+        // Module: Regulatory — perizinan alat kesehatan (izin edar AKL).
+        $regulatory = $this->menu([
+            'key' => 'regulatory',
+            'title' => 'Regulatory',
+            'route' => null,
+            'icon' => 'FileBadge',
+            'sort_order' => 3,
+        ]);
+        $this->menu(['key' => 'regulatory-products', 'title' => 'Registrasi Produk', 'route' => 'regulatory-products.index', 'icon' => 'BadgeCheck', 'sort_order' => 1], $regulatory->id);
+
         // Module: User Management.
         $userManagement = $this->menu([
             'key' => 'user-management',
@@ -223,7 +233,7 @@ class MenuSeeder extends Seeder
         $this->menu(['key' => 'erp-stock', 'title' => 'Stok', 'route' => 'integration.stock', 'icon' => 'Boxes', 'sort_order' => 3], $erp->id);
 
         // Sub-module: Accurate (menu lain menyusul).
-        $accurate = $this->menu(['key' => 'accurate', 'title' => 'Accurate', 'route' => null, 'icon' => 'Plug', 'sort_order' => 2], $integrasi->id);
+        $accurate = $this->menu(['key' => 'accurate', 'title' => 'Manual Import', 'route' => null, 'icon' => 'Plug', 'sort_order' => 2], $integrasi->id);
         $this->menu(['key' => 'accurate-setting', 'title' => 'Setting', 'route' => 'accurate.settings', 'icon' => 'Settings', 'sort_order' => 1], $accurate->id);
         $this->menu(['key' => 'accurate-sales', 'title' => 'Penjualan', 'route' => 'accurate.sales', 'icon' => 'ShoppingCart', 'sort_order' => 2], $accurate->id);
         $this->menu(['key' => 'accurate-staging', 'title' => 'Staging Data', 'route' => 'accurate.staging', 'icon' => 'Database', 'sort_order' => 3], $accurate->id);

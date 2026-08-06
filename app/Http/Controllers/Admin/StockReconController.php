@@ -29,7 +29,14 @@ class StockReconController extends Controller
      * Subquery-nya di-alias ke nama kolom lama (a.item_no/a.name/a.quantity) supaya
      * seluruh filter & agregasi di bawah tidak perlu berubah.
      */
-    private function base()
+    /** Ekspresi SQL selisih: total, pada tanggal awal periode, dan yang lahir dalam periode. */
+    private const SEL = '(COALESCE(e.qty, 0) - COALESCE(a.quantity, 0))';
+
+    private const SEL_AWAL = '(COALESCE(e0.qty, 0) - COALESCE(a0.qty, 0))';
+
+    private const SEL_PERIODE = '((COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) - (COALESCE(e0.qty, 0) - COALESCE(a0.qty, 0)))';
+
+    private function base(?string $from = null)
     {
         $erp = fn () => InventorySnapshot::erpStocked()->select('ref', 'label', 'qty', 'principal');
         // Alias ke nama kolom lama (item_no/name/quantity) supaya downstream tak berubah.
@@ -40,12 +47,33 @@ class StockReconController extends Controller
         $keys = InventorySnapshot::erpStocked()->select('ref as k')
             ->union(InventorySnapshot::accurateInventory()->select('ref as k'));
 
-        return DB::query()->fromSub($keys, 'k')
+        $q = DB::query()->fromSub($keys, 'k')
             ->leftJoinSub($erp(), 'e', 'e.ref', '=', 'k.k')
             ->leftJoinSub($acc(), 'a', 'a.item_no', '=', 'k.k');
+
+        // Mode periode: sandingkan dengan saldo pada snapshot tanggal awal ($from) untuk
+        // memisahkan selisih BAWAAN (sudah ada sejak awal periode, mis. sebelum penyesuaian
+        // stok) dari selisih yang LAHIR selama periode berjalan.
+        if ($from !== null) {
+            // Snapshot ERP lama masih menyimpan kode 01- (duplikat kit Hicren) → dilipat
+            // ke kode utamanya di sini agar sebanding dengan snapshot terkini yang sudah merge.
+            $e0 = DB::table(InventorySnapshot::TABLE)
+                ->where('source', InventorySnapshot::ERP)->where('snapshot_date', $from)
+                ->selectRaw("IF(ref LIKE '01-%', SUBSTRING(ref, 4), ref) rn, SUM(qty) qty")
+                ->groupBy('rn');
+            $a0 = DB::table(InventorySnapshot::TABLE)
+                ->where('source', InventorySnapshot::ACCURATE)->where('snapshot_date', $from)
+                ->where('item_type', 'INVENTORY')
+                ->selectRaw('ref rn, SUM(qty) qty')->groupBy('rn');
+
+            $q->leftJoinSub($e0, 'e0', 'e0.rn', '=', 'k.k')
+                ->leftJoinSub($a0, 'a0', 'a0.rn', '=', 'k.k');
+        }
+
+        return $q;
     }
 
-    private function applyFilters($q, Request $request)
+    private function applyFilters($q, Request $request, bool $withPeriod = false)
     {
         $search = trim((string) $request->input('q', ''));
         $bucket = $request->string('bucket')->toString();
@@ -60,41 +88,82 @@ class StockReconController extends Controller
             'only_acc' => $q->whereNull('e.ref'),
             'match' => $q->whereNotNull('e.ref')->whereNotNull('a.item_no')->whereColumn('e.qty', '=', 'a.quantity'),
             'diff' => $q->whereNotNull('e.ref')->whereNotNull('a.item_no')->whereColumn('e.qty', '!=', 'a.quantity'),
+            // Bucket mode periode — hanya valid bila join e0/a0 terpasang.
+            'p_bawaan' => $withPeriod ? $q->whereRaw(self::SEL.' <> 0 AND '.self::SEL_PERIODE.' = 0') : null,
+            'p_baru' => $withPeriod ? $q->whereRaw(self::SEL.' <> 0 AND '.self::SEL_AWAL.' = 0 AND '.self::SEL_PERIODE.' <> 0') : null,
+            'p_campur' => $withPeriod ? $q->whereRaw(self::SEL.' <> 0 AND '.self::SEL_AWAL.' <> 0 AND '.self::SEL_PERIODE.' <> 0') : null,
             default => null,
         };
 
         return $q;
     }
 
+    /**
+     * Tanggal awal periode yang sah = tanggal di mana KEDUA sumber punya snapshot
+     * (irisan), di luar tanggal terakhir (membandingkan terhadap dirinya sendiri tak berguna).
+     *
+     * @return string[] terbaru dulu
+     */
+    private function periodOptions(): array
+    {
+        $erpDates = InventorySnapshot::dates(InventorySnapshot::ERP);
+        $accDates = InventorySnapshot::dates(InventorySnapshot::ACCURATE);
+        $latest = [InventorySnapshot::latestDate(InventorySnapshot::ERP), InventorySnapshot::latestDate(InventorySnapshot::ACCURATE)];
+
+        return array_values(array_filter(array_intersect($erpDates, $accDates), fn ($d) => ! in_array($d, $latest, true)));
+    }
+
     public function index(Request $request): Response
     {
-        $rows = $this->applyFilters($this->base(), $request)
+        // Mode periode: bandingkan dengan snapshot tanggal awal (harus tanggal yang sah).
+        $options = $this->periodOptions();
+        $from = $request->string('from')->toString();
+        if ($from !== '' && ! in_array($from, $options, true)) {
+            $from = '';
+        }
+        $fromOrNull = $from !== '' ? $from : null;
+
+        $periodCols = $fromOrNull !== null
+            ? ', '.self::SEL_AWAL.' as awal_selisih, '.self::SEL_PERIODE.' as periode_selisih'
+            : '';
+
+        $rows = $this->applyFilters($this->base($fromOrNull), $request, $fromOrNull !== null)
             ->selectRaw('k.k as code, e.label as erp_label, a.name as acc_name, e.principal as principal,
                 COALESCE(e.qty, 0) as erp_qty, COALESCE(a.quantity, 0) as acc_qty,
                 (COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) as selisih,
-                e.ref as erp_ref, a.item_no as acc_no')
+                e.ref as erp_ref, a.item_no as acc_no'.$periodCols)
             ->orderByRaw('ABS(COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) DESC, k.k ASC')
             ->paginate(50)
             ->withQueryString();
 
-        $agg = $this->base()->selectRaw('
+        $periodAgg = $fromOrNull !== null
+            ? ', SUM('.self::SEL.' <> 0 AND '.self::SEL_PERIODE.' = 0) as p_bawaan
+               , SUM('.self::SEL.' <> 0 AND '.self::SEL_AWAL.' = 0 AND '.self::SEL_PERIODE.' <> 0) as p_baru
+               , SUM('.self::SEL.' <> 0 AND '.self::SEL_AWAL.' <> 0 AND '.self::SEL_PERIODE.' <> 0) as p_campur'
+            : '';
+
+        $agg = $this->base($fromOrNull)->selectRaw('
             COUNT(*) as total,
             SUM(a.item_no IS NULL) as only_erp,
             SUM(e.ref IS NULL) as only_acc,
             SUM(e.ref IS NOT NULL AND a.item_no IS NOT NULL AND e.qty = a.quantity) as match_eq,
             SUM(e.ref IS NOT NULL AND a.item_no IS NOT NULL AND e.qty <> a.quantity) as diff_ne
-        ')->first();
+            '.$periodAgg)->first();
 
         return Inertia::render('stock-recon/index', [
             'rows' => $rows,
-            'filters' => ['q' => trim((string) $request->input('q', '')), 'bucket' => $request->string('bucket')->toString()],
+            'filters' => ['q' => trim((string) $request->input('q', '')), 'bucket' => $request->string('bucket')->toString(), 'from' => $from],
             'summary' => [
                 'total' => (int) ($agg->total ?? 0),
                 'match' => (int) ($agg->match_eq ?? 0),
                 'diff' => (int) ($agg->diff_ne ?? 0),
                 'only_erp' => (int) ($agg->only_erp ?? 0),
                 'only_acc' => (int) ($agg->only_acc ?? 0),
+                'p_bawaan' => $fromOrNull !== null ? (int) ($agg->p_bawaan ?? 0) : null,
+                'p_baru' => $fromOrNull !== null ? (int) ($agg->p_baru ?? 0) : null,
+                'p_campur' => $fromOrNull !== null ? (int) ($agg->p_campur ?? 0) : null,
             ],
+            'period' => ['from' => $fromOrNull, 'options' => $options],
             'snapshots' => [
                 'erp' => InventorySnapshot::latestDate(InventorySnapshot::ERP),
                 'accurate' => InventorySnapshot::latestDate(InventorySnapshot::ACCURATE),
@@ -260,20 +329,34 @@ class StockReconController extends Controller
     /** Export the (filtered) reconciliation to .xls. */
     public function export(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        $rows = $this->applyFilters($this->base(), $request)
+        $options = $this->periodOptions();
+        $from = $request->string('from')->toString();
+        if ($from !== '' && ! in_array($from, $options, true)) {
+            $from = '';
+        }
+        $fromOrNull = $from !== '' ? $from : null;
+        $periodCols = $fromOrNull !== null
+            ? ', '.self::SEL_AWAL.' as awal_selisih, '.self::SEL_PERIODE.' as periode_selisih'
+            : '';
+
+        $rows = $this->applyFilters($this->base($fromOrNull), $request, $fromOrNull !== null)
             ->selectRaw('k.k as code, e.label as erp_label, a.name as acc_name, e.principal as principal,
                 COALESCE(e.qty, 0) as erp_qty, COALESCE(a.quantity, 0) as acc_qty,
-                (COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) as selisih, e.ref as erp_ref, a.item_no as acc_no')
+                (COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) as selisih, e.ref as erp_ref, a.item_no as acc_no'.$periodCols)
             ->orderByRaw('ABS(COALESCE(e.qty, 0) - COALESCE(a.quantity, 0)) DESC')
             ->limit(20000)->get();
 
         $esc = fn ($v) => htmlspecialchars((string) $v, ENT_QUOTES);
         $num = fn ($v) => number_format((float) $v, 2, ',', '.');
         $hdr = 'background:#1f2937;color:#fff;font-weight:bold;text-align:center;';
+        $periodHead = $fromOrNull !== null ? "<th>Selisih Awal ({$fromOrNull})</th><th>Selisih Periode</th>" : '';
         $html = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:12px;">';
-        $html .= '<tr style="'.$hdr.'"><th>No</th><th>Kode</th><th>Nama</th><th>Principal</th><th>Qty ERP</th><th>Qty Accurate</th><th>Selisih</th><th>Status</th></tr>';
+        $html .= '<tr style="'.$hdr.'"><th>No</th><th>Kode</th><th>Nama</th><th>Principal</th><th>Qty ERP</th><th>Qty Manual Import</th><th>Selisih</th>'.$periodHead.'<th>Status</th></tr>';
         foreach ($rows as $i => $r) {
-            $status = $r->erp_ref === null ? 'Hanya Accurate' : ($r->acc_no === null ? 'Hanya ERP' : ((float) $r->selisih === 0.0 ? 'Cocok' : 'Beda'));
+            $status = $r->erp_ref === null ? 'Hanya Manual Import' : ($r->acc_no === null ? 'Hanya ERP' : ((float) $r->selisih === 0.0 ? 'Cocok' : 'Beda'));
+            $periodCells = $fromOrNull !== null
+                ? '<td style="text-align:right;">'.$num($r->awal_selisih).'</td><td style="text-align:right;">'.$num($r->periode_selisih).'</td>'
+                : '';
             $html .= '<tr>'
                 .'<td style="text-align:center;">'.($i + 1).'</td>'
                 .'<td>'.$esc($r->code).'</td>'
@@ -282,11 +365,13 @@ class StockReconController extends Controller
                 .'<td style="text-align:right;">'.$num($r->erp_qty).'</td>'
                 .'<td style="text-align:right;">'.$num($r->acc_qty).'</td>'
                 .'<td style="text-align:right;">'.$num($r->selisih).'</td>'
+                .$periodCells
                 .'<td>'.$status.'</td>'
                 .'</tr>';
         }
         $html .= '</table>';
-        $doc = '<html><head><meta charset="UTF-8"></head><body><h3>Rekon Stok ERP vs Accurate</h3>'.$html.'</body></html>';
+        $sub = $fromOrNull !== null ? ' (dibanding snapshot '.$fromOrNull.')' : '';
+        $doc = '<html><head><meta charset="UTF-8"></head><body><h3>Rekon Stok ERP vs Manual Import'.$sub.'</h3>'.$html.'</body></html>';
 
         return response($doc, 200, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',

@@ -20,6 +20,9 @@ const CHANNEL_STYLE: Record<string, string> = {
     hadirr: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
 };
 const dur = (ms: number | null) => (ms == null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+// Istilah "Accurate" disembunyikan dari UI (kebijakan manajemen). Log lama di DB masih
+// menyimpan label aslinya, jadi dibersihkan saat render — jangan ubah datanya.
+const hide = (s: string | null) => (s == null ? s : s.replace(/accurate/gi, 'Manual Import'));
 
 export default function SyncLogsIndex({ logs, filters }: Props) {
     const apply = (extra: Record<string, string>) => router.get(route('integration.logs'), { ...filters, ...extra }, { preserveState: true, replace: true });
@@ -32,7 +35,7 @@ export default function SyncLogsIndex({ logs, filters }: Props) {
                     <select value={filters.channel} onChange={(e) => apply({ channel: e.target.value })} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
                         <option value="">Semua channel</option>
                         <option value="erp">ERP</option>
-                        <option value="accurate">Accurate</option>
+                        <option value="accurate">Manual Import</option>
                         <option value="hadirr">Hadirr</option>
                     </select>
                     <select value={filters.status} onChange={(e) => apply({ status: e.target.value })} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
@@ -40,7 +43,7 @@ export default function SyncLogsIndex({ logs, filters }: Props) {
                         <option value="success">Success</option>
                         <option value="failed">Failed</option>
                     </select>
-                    <span className="text-xs text-muted-foreground">Riwayat sinkronisasi ERP / Accurate / Hadirr (jadwal & manual)</span>
+                    <span className="text-xs text-muted-foreground">Riwayat sinkronisasi ERP / Manual Import / Hadirr (jadwal & manual)</span>
                 </div>
 
                 <div className="overflow-x-auto rounded-lg border">
@@ -54,8 +57,8 @@ export default function SyncLogsIndex({ logs, filters }: Props) {
                             {logs.data.map((l) => (
                                 <tr key={l.id} className="border-t align-top hover:bg-muted/30">
                                     <td className="whitespace-nowrap px-2 py-1.5 text-xs text-muted-foreground">{l.at}</td>
-                                    <td className="px-2 py-1.5"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CHANNEL_STYLE[l.channel] ?? 'bg-muted'}`}>{l.channel}</span></td>
-                                    <td className="px-2 py-1.5">{l.source}</td>
+                                    <td className="px-2 py-1.5"><span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${CHANNEL_STYLE[l.channel] ?? 'bg-muted'}`}>{hide(l.channel)}</span></td>
+                                    <td className="px-2 py-1.5">{hide(l.source)}</td>
                                     <td className="px-2 py-1.5 text-center">
                                         <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${l.status === 'success' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{l.status}</span>
                                     </td>
@@ -65,8 +68,8 @@ export default function SyncLogsIndex({ logs, filters }: Props) {
                                     <td className="px-2 py-1.5 text-xs text-muted-foreground">{l.user ?? '—'}</td>
                                     <td className="max-w-md px-2 py-1.5 text-xs">
                                         {l.status === 'failed'
-                                            ? <span className="text-red-600 dark:text-red-400">{l.message}</span>
-                                            : <span className="break-all text-muted-foreground">{l.summary}</span>}
+                                            ? <span className="text-red-600 dark:text-red-400">{hide(l.message)}</span>
+                                            : <span className="break-all text-muted-foreground">{hide(l.summary)}</span>}
                                     </td>
                                 </tr>
                             ))}

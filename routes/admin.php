@@ -38,6 +38,7 @@ use App\Http\Controllers\Admin\PricingEngineController;
 use App\Http\Controllers\Admin\PricingSettingController;
 use App\Http\Controllers\Admin\RoleAccessController;
 use App\Http\Controllers\Admin\SalesDailyController;
+use App\Http\Controllers\Admin\RegulatoryRegistrationController;
 use App\Http\Controllers\Admin\SalesDoctorController;
 use App\Http\Controllers\Admin\SalesHospitalController;
 use App\Http\Controllers\Admin\RoleController;
@@ -70,6 +71,18 @@ Route::middleware(['auth'])->group(function () {
     Route::get('sales-doctors', [SalesDoctorController::class, 'index'])->middleware('menu.access:sales-doctors,view')->name('sales-doctors.index');
     Route::post('sales-doctors', [SalesDoctorController::class, 'store'])->middleware('menu.access:sales-doctors,create')->name('sales-doctors.store');
     Route::put('sales-doctors/{rowid}', [SalesDoctorController::class, 'update'])->whereNumber('rowid')->middleware('menu.access:sales-doctors,edit')->name('sales-doctors.update');
+
+    // Regulatory — Registrasi Produk (daftar izin edar AKL, header per nomor izin + detail kode).
+    Route::get('regulatory/products', [RegulatoryRegistrationController::class, 'index'])->middleware('menu.access:regulatory-products,view')->name('regulatory-products.index');
+    Route::post('regulatory/products', [RegulatoryRegistrationController::class, 'store'])->middleware('menu.access:regulatory-products,create')->name('regulatory-products.store');
+    Route::post('regulatory/products/import', [RegulatoryRegistrationController::class, 'import'])->middleware('menu.access:regulatory-products,create')->name('regulatory-products.import');
+    Route::get('regulatory/products/product-search', [RegulatoryRegistrationController::class, 'productSearch'])->middleware('menu.access:regulatory-products,edit')->name('regulatory-products.product-search');
+    Route::get('regulatory/products/{registration}', [RegulatoryRegistrationController::class, 'show'])->whereNumber('registration')->middleware('menu.access:regulatory-products,view')->name('regulatory-products.show');
+    Route::post('regulatory/products/{registration}/attach', [RegulatoryRegistrationController::class, 'attach'])->middleware('menu.access:regulatory-products,edit')->name('regulatory-products.attach');
+    Route::post('regulatory/products/{registration}/detach', [RegulatoryRegistrationController::class, 'detach'])->middleware('menu.access:regulatory-products,edit')->name('regulatory-products.detach');
+    Route::post('regulatory/products/{registration}/replace-label', [RegulatoryRegistrationController::class, 'replaceLabel'])->middleware('menu.access:regulatory-products,edit')->name('regulatory-products.replace-label');
+    Route::put('regulatory/products/{registration}', [RegulatoryRegistrationController::class, 'update'])->middleware('menu.access:regulatory-products,edit')->name('regulatory-products.update');
+    Route::delete('regulatory/products/{registration}', [RegulatoryRegistrationController::class, 'destroy'])->middleware('menu.access:regulatory-products,delete')->name('regulatory-products.destroy');
 
     // Analytics (reporting)
     Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('menu.access:analytics,view')->name('analytics.index');

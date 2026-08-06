@@ -48,7 +48,7 @@ const STATUS: Record<Status, { label: string; cls: string }> = {
     match: { label: 'Cocok', cls: 'border-emerald-400 text-emerald-600 dark:text-emerald-400' },
     diff: { label: 'Selisih', cls: 'border-amber-400 text-amber-600 dark:text-amber-400' },
     cur_mix: { label: 'Beda Mata Uang', cls: 'border-slate-400 text-slate-600 dark:text-slate-400' },
-    acc_only: { label: 'Hanya Accurate', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
+    acc_only: { label: 'Hanya Manual Import', cls: 'border-sky-400 text-sky-600 dark:text-sky-400' },
     dol_only: { label: 'Hanya ERP', cls: 'border-violet-400 text-violet-600 dark:text-violet-400' },
 };
 
@@ -69,9 +69,9 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                     <div>
-                        <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Accurate vs ERP</h1>
+                        <h1 className="text-2xl font-semibold">Rekonsiliasi Pembelian — Manual Import vs ERP</h1>
                         <p className="text-sm text-muted-foreground">
-                            Membandingkan <b>PO ERP vs Pesanan Pembelian Accurate</b> (nomor dokumen sama, PO/I/…), diringkas per <b>vendor × tahun</b> —
+                            Membandingkan <b>PO ERP vs Pesanan Pembelian Manual Import</b> (nomor dokumen sama, PO/I/…), diringkas per <b>vendor × tahun</b> —
                             nilai total dokumen dalam mata uang asli; sisi ERP memakai PO berstatus approved / ordered / partial / full receive.
                         </p>
                     </div>
@@ -89,7 +89,7 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                     <StatCard label="Cocok" value={summary.match} active={status === 'match'} onClick={() => setStatus(status === 'match' ? null : 'match')} tone="match" />
                     <StatCard label="Selisih Nilai" value={summary.diff} active={status === 'diff'} onClick={() => setStatus(status === 'diff' ? null : 'diff')} tone="diff" />
                     <StatCard label="Beda Mata Uang" value={summary.cur_mix} active={status === 'cur_mix'} onClick={() => setStatus(status === 'cur_mix' ? null : 'cur_mix')} tone="cur_mix" />
-                    <StatCard label="Hanya di Accurate" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
+                    <StatCard label="Hanya di Manual Import" value={summary.acc_only} active={status === 'acc_only'} onClick={() => setStatus(status === 'acc_only' ? null : 'acc_only')} tone="acc_only" />
                     <StatCard label="Hanya di ERP" value={summary.dol_only} active={status === 'dol_only'} onClick={() => setStatus(status === 'dol_only' ? null : 'dol_only')} tone="dol_only" />
                 </div>
 
@@ -117,7 +117,7 @@ export default function PurchaseReconciliation({ rows, years, summary, erpApiRea
                                         <TableHead>Vendor</TableHead>
                                         <TableHead>Tahun</TableHead>
                                         <TableHead>Mata Uang</TableHead>
-                                        <TableHead className="text-right">Accurate</TableHead>
+                                        <TableHead className="text-right">Manual Import</TableHead>
                                         <TableHead className="text-right">ERP (PO)</TableHead>
                                         <TableHead className="text-right">Selisih</TableHead>
                                         <TableHead className="text-center">Status</TableHead>
@@ -192,7 +192,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
             .catch(() => setPos([]));
     }, [row]);
 
-    // PO Accurate sel ini yang nomornya tak ada di daftar PO ERP (pasangan by NOMOR).
+    // PO Manual Import sel ini yang nomornya tak ada di daftar PO ERP (pasangan by NOMOR).
     const unpairedAccPos = useMemo(() => {
         const refs = new Set((pos ?? []).map((p) => p.ref));
         return accPosAll.filter((a) => !refs.has(a.number));
@@ -205,7 +205,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
         <Dialog open={row !== null} onOpenChange={(o) => !o && onClose()}>
             <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
                 <DialogHeader>
-                    <DialogTitle>PO ERP vs PO Accurate — {row?.vendor} · {row?.tahun}</DialogTitle>
+                    <DialogTitle>PO ERP vs PO Manual Import — {row?.vendor} · {row?.tahun}</DialogTitle>
                     <DialogDescription>
                         Dipasangkan lewat <b>nomor PO</b> yang sama di kedua sistem. Dari PO juga bisa dibuat faktur + payment lunas di ERP.
                     </DialogDescription>
@@ -230,7 +230,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                 <TableHead>Status</TableHead>
                                 <TableHead className="text-right">Non-PPN</TableHead>
                                 <TableHead className="text-right">+PPN</TableHead>
-                                <TableHead className="text-right">PO Accurate</TableHead>
+                                <TableHead className="text-right">PO Manual Import</TableHead>
                                 <TableHead>Faktur</TableHead>
                                 <TableHead />
                             </TableRow>
@@ -243,7 +243,7 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                                         {po.ref_supplier && <span className="ml-1 text-[10px] text-muted-foreground">({po.ref_supplier})</span>}
                                         {(() => {
                                             const ap = accPos[po.ref];
-                                            if (!ap) return <div className="text-[10px] font-normal text-muted-foreground/60">tak ada di PO Accurate</div>;
+                                            if (!ap) return <div className="text-[10px] font-normal text-muted-foreground/60">tak ada di PO Manual Import</div>;
                                             const done = ap.status_name === 'Terproses';
                                             return (
                                                 <div className={`text-[10px] font-normal ${done ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
@@ -296,14 +296,14 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
                 {pos !== null && (pos.length > 0 || accPosAll.length > 0) && (
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
                         <span>PO ERP: <b className="text-foreground">{pos.length}</b> ({sumByCur(pos ?? [])} non-PPN)</span>
-                        <span>PO Accurate: <b className="text-foreground">{accPosAll.length}</b> ({sumByCur(accPosAll)})</span>
+                        <span>PO Manual Import: <b className="text-foreground">{accPosAll.length}</b> ({sumByCur(accPosAll)})</span>
                         <span>Berpasangan (by nomor): <b className="text-foreground">{pairedCount}</b></span>
                     </div>
                 )}
 
                 {unpairedAccPos.length > 0 && (
                     <div>
-                        <p className="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">PO Accurate tanpa pasangan di daftar ERP sel ini ({unpairedAccPos.length}):</p>
+                        <p className="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">PO Manual Import tanpa pasangan di daftar ERP sel ini ({unpairedAccPos.length}):</p>
                         <div className="max-h-40 overflow-y-auto rounded-md border">
                             {unpairedAccPos.map((a, i) => (
                                 <div key={`${a.number}-${i}`} className="flex items-center justify-between gap-2 border-b px-2.5 py-1.5 text-xs last:border-b-0">
@@ -336,10 +336,10 @@ function PoDialog({ row, onClose, erpApiReady, bankAccounts, paymentModes }: {
     );
 }
 
-/** Peta cara bayar Accurate → kode c_paiement Dolibarr. */
+/** Peta cara bayar Manual Import → kode c_paiement Dolibarr. */
 const METHOD_TO_CODE: Record<string, string> = { BANK_TRANSFER: 'VIR', CASH: 'LIQ', CHEQUE: 'CHQ', CREDIT_CARD: 'CB' };
 
-/** Form kecil: tanggal bayar, rekening, cara bayar → POST pay-po. Klik payment Accurate = isi otomatis. */
+/** Form kecil: tanggal bayar, rekening, cara bayar → POST pay-po. Klik payment Manual Import = isi otomatis. */
 function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onCancel }: {
     po: Po; cur: string; bankAccounts: BankAccount[]; paymentModes: PaymentMode[]; accPayments: AccPayment[]; onDone: () => void; onCancel: () => void;
 }) {
@@ -363,7 +363,7 @@ function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onC
         if (b) setBank(String(b.id));
         const m = paymentModes.find((x) => x.code === METHOD_TO_CODE[p.payment_method ?? '']);
         if (m) setMode(String(m.id));
-        setNote(`Accurate ${p.number}${p.bill_number ? ` (${p.bill_number})` : ''}`);
+        setNote(`Manual Import ${p.number}${p.bill_number ? ` (${p.bill_number})` : ''}`);
     };
 
     const submit = () =>
@@ -380,7 +380,7 @@ function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onC
 
             {sortedPayments.length > 0 && (
                 <div className="mb-3">
-                    <p className="mb-1 text-[11px] text-muted-foreground">Payment di Accurate — klik untuk mengisi tanggal, rekening &amp; cara bayar otomatis:</p>
+                    <p className="mb-1 text-[11px] text-muted-foreground">Payment di Manual Import — klik untuk mengisi tanggal, rekening &amp; cara bayar otomatis:</p>
                     <div className="max-h-40 overflow-y-auto rounded-md border">
                         {sortedPayments.map((p, i) => (
                             <button key={`${p.number}-${i}`} type="button" onClick={() => pickPayment(p)}
@@ -424,7 +424,7 @@ function PayForm({ po, cur, bankAccounts, paymentModes, accPayments, onDone, onC
                 </div>
                 <div className="min-w-48 flex-1">
                     <label className="text-[11px] text-muted-foreground">Catatan (opsional)</label>
-                    <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="mis. nomor bukti bayar Accurate" className="h-8" />
+                    <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="mis. nomor bukti bayar Manual Import" className="h-8" />
                 </div>
             </div>
             <div className="mt-3 flex justify-end gap-2">

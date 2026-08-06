@@ -146,7 +146,7 @@ function SyncCard({ lastSync, dataRange }: { lastSync: LastSync | null; dataRang
         <Card>
             <CardHeader className="pb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <CardTitle className="text-base">Sinkronisasi Pembelian Accurate</CardTitle>
+                    <CardTitle className="text-base">Sinkronisasi Pembelian Manual Import</CardTitle>
                     <div className="flex items-end gap-2">
                         <div>
                             <label className="text-[11px] text-muted-foreground">Mulai dari (opsional)</label>
@@ -158,7 +158,7 @@ function SyncCard({ lastSync, dataRange }: { lastSync: LastSync | null; dataRang
                     </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                    Menarik faktur pembelian dari Accurate (default 24 bulan terakhir; isi tanggal untuk menarik lebih jauh ke belakang),
+                    Menarik faktur pembelian dari Manual Import (default 24 bulan terakhir; isi tanggal untuk menarik lebih jauh ke belakang),
                     lalu otomatis mendaftarkan vendor baru & menyelaraskan mata uang. Proses bisa 1–2 menit — jangan tutup halaman.
                 </p>
             </CardHeader>

@@ -61,8 +61,8 @@ const ket = (r: Row): { text: string; cls: string } => {
     const parts: string[] = [];
     if (!r.has_erp) parts.push('ERP: tidak ada');
     else if (evs !== 0) parts.push(`ERP ${evs > 0 ? 'lebih' : 'kurang'} ${num(Math.abs(evs))}`);
-    if (!r.has_acc) parts.push('Accurate: tidak ada');
-    else if (avs !== 0) parts.push(`Accurate ${avs > 0 ? 'lebih' : 'kurang'} ${num(Math.abs(avs))}`);
+    if (!r.has_acc) parts.push('Manual Import: tidak ada');
+    else if (avs !== 0) parts.push(`Manual Import ${avs > 0 ? 'lebih' : 'kurang'} ${num(Math.abs(avs))}`);
     if (parts.length === 0) return { text: 'Cocok', cls: 'text-emerald-600' };
     return { text: parts.join(' · '), cls: 'text-red-600' };
 };
@@ -109,7 +109,7 @@ export default function StocktakeRecon({ rows, filters, summary, meta, erp_sessi
                     <div>
                         <h1 className="text-xl font-semibold">Rekon System vs Stocktake</h1>
                         <p className="text-sm text-muted-foreground">
-                            ERP vs Accurate vs hitung fisik (stocktake), dicocokkan via kode item.
+                            ERP vs Manual Import vs hitung fisik (stocktake), dicocokkan via kode item.
                             {meta.count > 0
                                 ? ` ${num(meta.count)} item fisik${meta.counted_at ? ` per ${meta.counted_at}` : ''}.`
                                 : ' Belum ada data fisik — Import dulu.'}
@@ -200,7 +200,7 @@ export default function StocktakeRecon({ rows, filters, summary, meta, erp_sessi
                         { key: '', label: 'Total Item', val: summary.total, cls: '' },
                         { key: 'all_match', label: 'Cocok Semua', val: summary.all_match, cls: 'text-emerald-600' },
                         { key: 'erp_diff', label: 'Beda ERP vs Fisik', val: summary.erp_diff, cls: 'text-red-600' },
-                        { key: 'acc_diff', label: 'Beda Accurate vs Fisik', val: summary.acc_diff, cls: 'text-amber-600' },
+                        { key: 'acc_diff', label: 'Beda Manual Import vs Fisik', val: summary.acc_diff, cls: 'text-amber-600' },
                         { key: 'no_physical', label: 'Tanpa Fisik', val: summary.no_physical, cls: 'text-muted-foreground' },
                     ].map((c) => (
                         <Card key={c.label} className={`cursor-pointer transition-colors hover:bg-accent/40 ${filters.bucket === c.key ? 'border-primary' : ''}`} onClick={() => go({ bucket: c.key || undefined })}>
@@ -230,10 +230,10 @@ export default function StocktakeRecon({ rows, filters, summary, meta, erp_sessi
                                         <TableHead>Kode</TableHead>
                                         <TableHead>Nama</TableHead>
                                         <TableHead className="text-right text-sky-600">ERP</TableHead>
-                                        <TableHead className="text-right text-amber-600">Accurate</TableHead>
+                                        <TableHead className="text-right text-amber-600">Manual Import</TableHead>
                                         <TableHead className="text-right font-semibold">Fisik</TableHead>
                                         <TableHead className="text-right">ERP−Fisik</TableHead>
-                                        <TableHead className="text-right">Acc−Fisik</TableHead>
+                                        <TableHead className="text-right">MI−Fisik</TableHead>
                                         <TableHead>Keterangan</TableHead>
                                     </TableRow>
                                 </TableHeader>

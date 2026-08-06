@@ -72,7 +72,7 @@ export default function ErpStock({ erpStock, stockMeta, filters }: Props) {
                             </Button>
                             <label
                                 className="flex h-8 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
-                                title="Baris ERP pada tanggal yang dipilih dihapus dulu sebelum insert — membersihkan kode barang lama yang nyangkut karena rename/hapus di ERP. Riwayat tanggal lain & data Accurate tidak disentuh."
+                                title="Baris ERP pada tanggal yang dipilih dihapus dulu sebelum insert — membersihkan kode barang lama yang nyangkut karena rename/hapus di ERP. Riwayat tanggal lain & data Manual Import tidak disentuh."
                             >
                                 <Checkbox checked={sync.data.fresh} onCheckedChange={(v) => sync.setData('fresh', v === true)} />
                                 Hapus & tarik ulang

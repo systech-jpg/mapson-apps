@@ -338,7 +338,7 @@ class StocktakeReconController extends Controller
         $num = fn ($v) => number_format((float) $v, 2, ',', '.');
         $hdr = 'background:#1f2937;color:#fff;font-weight:bold;text-align:center;';
         $html = '<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;font-family:Calibri,Arial;font-size:12px;">';
-        $html .= '<tr style="'.$hdr.'"><th>No</th><th>Kode</th><th>Nama</th><th>Principal</th><th>ERP</th><th>Accurate</th><th>Fisik</th><th>ERP-Fisik</th><th>Acc-Fisik</th><th>Keterangan</th></tr>';
+        $html .= '<tr style="'.$hdr.'"><th>No</th><th>Kode</th><th>Nama</th><th>Principal</th><th>ERP</th><th>Manual Import</th><th>Fisik</th><th>ERP-Fisik</th><th>MI-Fisik</th><th>Keterangan</th></tr>';
         $ket = function ($r) use ($num) {
             if (! $r->has_st) {
                 return 'Belum ada hitung fisik';
@@ -352,9 +352,9 @@ class StocktakeReconController extends Controller
                 $parts[] = 'ERP '.($evs > 0 ? 'lebih' : 'kurang').' '.$num(abs($evs));
             }
             if (! $r->has_acc) {
-                $parts[] = 'Accurate: tidak ada';
+                $parts[] = 'Manual Import: tidak ada';
             } elseif ($avs != 0) {
-                $parts[] = 'Accurate '.($avs > 0 ? 'lebih' : 'kurang').' '.$num(abs($avs));
+                $parts[] = 'Manual Import '.($avs > 0 ? 'lebih' : 'kurang').' '.$num(abs($avs));
             }
 
             return $parts ? implode(' · ', $parts) : 'Cocok';

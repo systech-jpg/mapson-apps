@@ -71,7 +71,7 @@ export default function PurchaseMonitor({ years, principals, summary, fx }: Prop
                     <div>
                         <h1 className="text-2xl font-semibold">Monitoring Pembelian</h1>
                         <p className="text-sm text-muted-foreground">
-                            Total pembelian per <b>principal</b> per <b>tahun</b> dari faktur pembelian Accurate. Nilai mata uang asing
+                            Total pembelian per <b>principal</b> per <b>tahun</b> dari faktur pembelian Manual Import. Nilai mata uang asing
                             dikonversi ke IDR memakai kurs per bulan. Klik sel untuk melihat detail item.
                         </p>
                     </div>

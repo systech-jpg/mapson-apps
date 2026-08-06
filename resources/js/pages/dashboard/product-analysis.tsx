@@ -240,7 +240,7 @@ export default function ProductAnalysis(props: Props) {
                             {sync.processing ? 'Menarik…' : 'Deteksi Item + Tarik Harga Beli'}
                         </Button>
                         <p className="text-xs text-muted-foreground">
-                            Mendeteksi item Colarose/Boneguard dari data Accurate yang sudah ada, lalu menarik faktur pembeliannya sebagai basis HPP.
+                            Mendeteksi item Colarose/Boneguard dari data Manual Import yang sudah ada, lalu menarik faktur pembeliannya sebagai basis HPP.
                             {lastPurchaseSync && <> Terakhir ditarik: {dateFmt(lastPurchaseSync)}.</>}
                         </p>
                     </CardContent>
@@ -495,7 +495,7 @@ export default function ProductAnalysis(props: Props) {
                         <CardContent className="space-y-2">
                             <p className="text-xs text-muted-foreground">Untuk item yang tidak terdeteksi otomatis dari nama produk.</p>
                             <div className="grid gap-1">
-                                <Label className="text-xs">Kode Item (Accurate)</Label>
+                                <Label className="text-xs">Kode Item (Manual Import)</Label>
                                 <Input value={mapping.data.item_no} onChange={(e) => mapping.setData('item_no', e.target.value)} placeholder="mis. CLR-001" />
                                 {mapping.errors.item_no && <p className="text-xs text-red-600">{mapping.errors.item_no}</p>}
                             </div>

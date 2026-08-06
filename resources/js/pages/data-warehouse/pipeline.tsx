@@ -170,7 +170,7 @@ export default function DwhPipeline({ sources, glPeriods, logs, glTemplate }: Pr
                     <CardHeader className="pb-2">
                         <CardTitle className="text-base">Unggah Buku Besar (GL)</CardTitle>
                         <p className="text-xs text-muted-foreground">
-                            Dari Accurate: laporan <b>Histori Buku Besar</b>, <b>tanpa filter akun</b>, <b>satu bulan per file</b> (baris buku besar tidak memuat
+                            Dari Manual Import: laporan <b>Histori Buku Besar</b>, <b>tanpa filter akun</b>, <b>satu bulan per file</b> (baris buku besar tidak memuat
                             tanggal, jadi periode dibaca dari judul laporan). Mengunggah periode yang sama akan <b>menimpa</b> data lama periode itu.
                         </p>
                     </CardHeader>
@@ -190,9 +190,9 @@ export default function DwhPipeline({ sources, glPeriods, logs, glTemplate }: Pr
                         </div>
 
                         <div className="rounded-md border bg-muted/30 p-3 text-xs">
-                            <p className="mb-1 font-medium">Export dari Accurate bisa langsung diunggah apa adanya.</p>
+                            <p className="mb-1 font-medium">Export dari Manual Import bisa langsung diunggah apa adanya.</p>
                             <p className="text-muted-foreground">
-                                Kolom dicari berdasarkan <b>judulnya</b>, bukan posisi — jadi kolom-kolom kosong pada export asli Accurate tidak masalah dan
+                                Kolom dicari berdasarkan <b>judulnya</b>, bukan posisi — jadi kolom-kolom kosong pada export asli Manual Import tidak masalah dan
                                 tak perlu dirapikan. Template hanya diperlukan bila Anda menyusun datanya sendiri. Kolom minimum:{' '}
                                 <span className="font-mono">{glTemplate.headers.join(' · ')}</span>.
                             </p>

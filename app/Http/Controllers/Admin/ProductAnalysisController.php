@@ -200,7 +200,7 @@ class ProductAnalysisController extends Controller
 
             $itemNos = DB::table('tmp_product_map')->pluck('item_no')->all();
             if (! $itemNos) {
-                return back()->with('error', 'Tidak ada item Accurate yang cocok dengan kata kunci produk (Colarose/Boneguard). Tarik data stok/penjualan Accurate dulu, atau tambahkan mapping manual.');
+                return back()->with('error', 'Tidak ada item Manual Import yang cocok dengan kata kunci produk (Colarose/Boneguard). Tarik data stok/penjualan Manual Import dulu, atau tambahkan mapping manual.');
             }
 
             $result = $sync->syncProductPurchases(

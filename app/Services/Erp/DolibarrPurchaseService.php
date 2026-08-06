@@ -135,7 +135,7 @@ class DolibarrPurchaseService
                 'payment_mode_id' => $paymentModeId,
                 'closepaidinvoices' => 'yes',
                 'accountid' => $bankAccountId,
-                'comment' => $note !== '' ? $note : 'Payment dicatat dari Mapson Apps (pembayaran riil di Accurate)',
+                'comment' => $note !== '' ? $note : 'Payment dicatat dari Mapson Apps',
             ]);
         } catch (\RuntimeException $e) {
             throw new \RuntimeException($e->getMessage()." — faktur draft/id {$invoiceId} terlanjur dibuat di ERP, periksa & bereskan di sana.", 0, $e);

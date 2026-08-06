@@ -53,7 +53,7 @@ export default function CostMapping({ pools, accounts }: Props) {
                 <div>
                     <h1 className="text-2xl font-semibold">Pemetaan Biaya — Activity Based Costing</h1>
                     <p className="text-sm text-muted-foreground">
-                        Setiap akun beban dibagi ke pool aktivitas dengan persentase. Di sinilah asumsi yang tak diketahui Accurate ditetapkan —
+                        Setiap akun beban dibagi ke pool aktivitas dengan persentase. Di sinilah asumsi yang tak diketahui Manual Import ditetapkan —
                         terutama <b>split gaji per departemen</b> dan <b>porsi gedung untuk gudang</b>. Perubahan langsung memengaruhi P&amp;L per produk.
                     </p>
                 </div>

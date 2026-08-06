@@ -13,7 +13,7 @@ import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Integrasi Data', href: '#' },
-    { title: 'Accurate', href: '#' },
+    { title: 'Manual Import', href: '#' },
     { title: 'Stok', href: '/integration/accurate/stock' },
 ];
 const ALL = 'all';
@@ -53,10 +53,10 @@ export default function Stock({ rows, filters, types, count, lastSync, snapshotD
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Stok Accurate" />
+            <Head title="Stok Manual Import" />
             <div className="flex flex-1 flex-col gap-4 p-4">
                 <div>
-                    <h1 className="text-xl font-semibold">Stok Accurate</h1>
+                    <h1 className="text-xl font-semibold">Stok Manual Import</h1>
                     <p className="text-sm text-muted-foreground">
                         Snapshot stok terkini per item (total semua gudang).
                         {snapshotDate ? ` Snapshot per: ${snapshotDate}.` : ''}
@@ -84,7 +84,7 @@ export default function Stock({ rows, filters, types, count, lastSync, snapshotD
                                 <FileSpreadsheet className="size-4" /> Export Excel
                             </a>
                         </Button>
-                        {!ready && <span className="text-sm text-amber-600">Accurate belum terhubung / API Host kosong — buka menu Setting dulu.</span>}
+                        {!ready && <span className="text-sm text-amber-600">Manual Import belum terhubung / API Host kosong — buka menu Setting dulu.</span>}
                         <span className="ml-auto text-xs text-muted-foreground">Snapshot = posisi stok saat ditarik (bukan per tanggal).</span>
                     </CardContent>
                 </Card>

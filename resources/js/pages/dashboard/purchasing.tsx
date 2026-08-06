@@ -97,7 +97,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 <div>
                     <h1 className="text-2xl font-semibold">Purchasing — Executive Dashboard</h1>
                     <p className="text-sm text-muted-foreground">
-                        Pembelian dari Accurate & ERP: spending per principal, status PR/PO, lead time, utang & CN, dan biaya impor.
+                        Pembelian dari Manual Import & ERP: spending per principal, status PR/PO, lead time, utang & CN, dan biaya impor.
                     </p>
                 </div>
 
@@ -112,8 +112,8 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                     <Kpi label={`Total Purchase${year ? ` ${year}` : ''}`} value={`Rp ${rp(spending.total_idr)}`} sub={`${num(spending.rows.reduce((s, r) => s + r.docs, 0) )}+ dokumen · klik utk detail`} onClick={() => setDrill({ type: 'purchase' })} />
                     <Kpi label="Open PO" value={num(status.open_po)} sub={`dari ${num(status.po_total)} PO${year ? ` di ${year}` : ''} · belum diterima penuh`} onClick={() => setDrill({ type: 'open_po' })} />
-                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr + balances.unbilled_idr)}` : '—'} sub={balances.available ? `faktur Rp ${rp(balances.payable_idr)} + PO belum difaktur Rp ${rp(balances.unbilled_idr)}` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'payable' }) : undefined} />
-                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Accurate tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'credit' }) : undefined} />
+                    <Kpi label="Utang Vendor (Payable)" value={balances.available ? `Rp ${rp(balances.payable_idr + balances.unbilled_idr)}` : '—'} sub={balances.available ? `faktur Rp ${rp(balances.payable_idr)} + PO belum difaktur Rp ${rp(balances.unbilled_idr)}` : 'Manual Import tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'payable' }) : undefined} />
+                    <Kpi label="Saldo CN / Kredit" value={balances.available ? `Rp ${rp(balances.credit_idr)}` : '—'} sub={balances.available ? `${balances.credit.length} vendor · kredit kita di vendor` : 'Manual Import tidak terjangkau'} onClick={balances.available ? () => setDrill({ type: 'credit' }) : undefined} />
                 </div>
 
                 {/* Baris 2: spending + status */}
@@ -186,7 +186,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                         <CardHeader className="pb-2">
                             <CardTitle className="text-base">Status PR/PO & Utang–CN per Principal</CardTitle>
                             <p className="text-xs text-muted-foreground">
-                                {num(status.pr_total)} RPO · {num(status.po_total)} PO{year ? ` — ${year}` : ''} · klik status/baris untuk detail. Saldo vendor live dari Accurate.
+                                {num(status.pr_total)} RPO · {num(status.po_total)} PO{year ? ` — ${year}` : ''} · klik status/baris untuk detail. Saldo vendor live dari Manual Import.
                             </p>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -198,7 +198,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                             </div>
                             <div className="border-t pt-3">
                             {!balances.available ? (
-                                <p className="py-6 text-center text-sm text-muted-foreground">Accurate tidak terjangkau: {balances.error}</p>
+                                <p className="py-6 text-center text-sm text-muted-foreground">Manual Import tidak terjangkau: {balances.error}</p>
                             ) : (
                                 <Table className="text-sm [&_td]:px-3 [&_td]:py-1.5 [&_th]:h-8 [&_th]:px-3">
                                     <TableHeader>
@@ -223,7 +223,7 @@ export default function PurchasingDashboard({ year, years, spending, status, lea
                                             </TableRow>
                                         ))}
                                         {balances.unbilled.map((r) => (
-                                            <TableRow key={`u-${r.vendor}-${r.cur}`} title={`${r.n_po} PO sudah jalan tapi belum ada faktur di Accurate${r.refs?.length ? `: ${r.refs.join(', ')}${(r.n_po ?? 0) > r.refs.length ? ', …' : ''}` : ''}`}>
+                                            <TableRow key={`u-${r.vendor}-${r.cur}`} title={`${r.n_po} PO sudah jalan tapi belum ada faktur di Manual Import${r.refs?.length ? `: ${r.refs.join(', ')}${(r.n_po ?? 0) > r.refs.length ? ', …' : ''}` : ''}`}>
                                                 <TableCell className="font-medium">{r.principal}</TableCell>
                                                 <TableCell><Badge variant="outline" className="border-sky-400 text-[10px] text-sky-600 dark:text-sky-400">PO belum difaktur ({r.n_po})</Badge></TableCell>
                                                 <TableCell className="text-right tabular-nums whitespace-nowrap">{r.cur} {num(r.amount, 2)}</TableCell>
@@ -464,9 +464,9 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                         {type === 'purchase' && 'Per nomor PO ERP (kunci tracing lintas sistem), terurut nilai IDR terbesar; dokumen sumber tampil sebagai info sekunder.'}
                         {type === 'open_po' && 'PO ERP status Divalidasi/Approved/Ordered/Diterima sebagian, terurut paling lama — umur besar tanpa progres = kandidat ditutup/dibereskan.'}
                         {type === 'pr_status' && 'Daftar Request PO (RPO) berstatus ini, terurut terbaru.'}
-                        {type === 'ap' && 'Faktur belum lunas vendor ini, live dari Accurate, terurut paling telat. Vendor bersaldo kredit biasanya tanpa faktur outstanding — saldonya berasal dari uang muka / CN / kelebihan bayar.'}
+                        {type === 'ap' && 'Faktur belum lunas vendor ini, live dari Manual Import, terurut paling telat. Vendor bersaldo kredit biasanya tanpa faktur outstanding — saldonya berasal dari uang muka / CN / kelebihan bayar.'}
                         {type === 'po_status' && 'Daftar PO berstatus ini, terurut terbaru, dengan progres penerimaan.'}
-                        {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Accurate saat halaman dimuat.'}
+                        {(type === 'payable' || type === 'credit') && 'Saldo per vendor, live dari Manual Import saat halaman dimuat.'}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -479,7 +479,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>PO (ERP)</TableHead>
-                                <TableHead>Dok. Accurate</TableHead>
+                                <TableHead>Dok. Manual Import</TableHead>
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead>Principal / Vendor</TableHead>
                                 <TableHead className="text-right">Nilai asli</TableHead>
@@ -514,7 +514,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                                 <TableHead>Tanggal</TableHead>
                                 <TableHead className="text-right">Umur (hari)</TableHead>
                                 {type === 'open_po' && <TableHead>Status ERP</TableHead>}
-                                <TableHead>Progres Accurate</TableHead>
+                                <TableHead>Progres Manual Import</TableHead>
                                 <TableHead className="text-right">Nilai</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -532,7 +532,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                                             ? <span className={`text-[11px] ${r.acc_status === 'Terproses' ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                                 {r.acc_status}{r.acc_percent !== null && r.acc_percent > 0 && r.acc_percent < 100 ? ` ${num(r.acc_percent, 1)}%` : ''}
                                             </span>
-                                            : <span className="text-muted-foreground/50 text-[11px]">tak ada di Accurate</span>}
+                                            : <span className="text-muted-foreground/50 text-[11px]">tak ada di Manual Import</span>}
                                     </TableCell>
                                     <TableCell className="text-right tabular-nums whitespace-nowrap"><span className="mr-1 text-[10px] text-muted-foreground">{r.cur}</span>{num(r.total, 2)}</TableCell>
                                 </TableRow>
@@ -598,7 +598,7 @@ function KpiDrillDialog({ spec, year, balances, onClose }: {
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Principal</TableHead>
-                                <TableHead>Vendor (Accurate)</TableHead>
+                                <TableHead>Vendor (Manual Import)</TableHead>
                                 <TableHead className="text-right">Saldo asli</TableHead>
                                 <TableHead className="text-right">± IDR</TableHead>
                             </TableRow>
