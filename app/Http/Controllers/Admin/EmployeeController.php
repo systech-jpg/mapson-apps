@@ -192,7 +192,12 @@ class EmployeeController extends Controller
     public function destroy(Request $request, Employee $employee): RedirectResponse
     {
         // Hard delete: permanent, removes the row (children cascade) + stored files.
+        // Hanya boleh untuk employee yang sudah di-soft-delete (alur dua tahap).
         if ($request->boolean('force')) {
+            if (! $employee->trashed()) {
+                return back()->with('error', 'Employee harus dinonaktifkan (soft delete) dulu sebelum bisa dihapus permanen.');
+            }
+
             Storage::disk('local')->deleteDirectory("employees/{$employee->id}");
             $employee->forceDelete();
 

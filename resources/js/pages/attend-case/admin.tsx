@@ -1,11 +1,15 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Human Resources', href: '#' },
@@ -38,6 +42,8 @@ interface Props {
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
+const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: Props) {
     const shiftPeriod = (delta: number) => {
         const [y, m] = period.split('-').map(Number);
@@ -45,6 +51,11 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
         const np = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
         router.get(route('attend-case.admin'), { period: np }, { preserveScroll: true, preserveState: true });
     };
+
+    // Rentang default = periode absensi yang sedang tampil (tgl 20 s/d 19 bulan berikutnya).
+    const [py, pm] = period.split('-').map(Number);
+    const [exportFrom, setExportFrom] = useState(fmtDate(new Date(py, pm - 1, 20)));
+    const [exportTo, setExportTo] = useState(fmtDate(new Date(py, pm, 19)));
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
@@ -56,9 +67,39 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
                         <p className="text-sm text-muted-foreground">Periode {periodLabel} · data tindakan dari ERP. Fee dibedakan hari kerja vs tanggal merah.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" className="h-8" onClick={() => router.reload({ preserveScroll: true })}>
+                        <Button variant="outline" size="sm" className="h-8" onClick={() => router.reload()}>
                             <RefreshCw className="size-4" /> Muat Ulang dari ERP
                         </Button>
+                        <Dialog>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-8">
+                                    <FileSpreadsheet className="size-4" /> Export Excel
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-sm">
+                                <DialogHeader>
+                                    <DialogTitle>Export Data Tindakan &amp; Usage</DialogTitle>
+                                    <DialogDescription>Satu baris per item usage. Pilih rentang tanggal tindakan yang mau diexport.</DialogDescription>
+                                </DialogHeader>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="grid gap-1.5">
+                                        <Label htmlFor="export-from">Dari Tanggal</Label>
+                                        <Input id="export-from" type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} />
+                                    </div>
+                                    <div className="grid gap-1.5">
+                                        <Label htmlFor="export-to">Sampai Tanggal</Label>
+                                        <Input id="export-to" type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} />
+                                    </div>
+                                </div>
+                                <DialogFooter>
+                                    <Button asChild disabled={!exportFrom || !exportTo}>
+                                        <a href={route('attend-case.export', { from: exportFrom, to: exportTo })}>
+                                            <FileSpreadsheet className="size-4" /> Export
+                                        </a>
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
                         <div className="flex items-center rounded-md border">
                             <Button variant="ghost" size="icon" className="size-8 rounded-r-none" onClick={() => shiftPeriod(-1)}><ChevronLeft className="size-4" /></Button>
                             <span className="px-2 text-sm font-medium">{period}</span>

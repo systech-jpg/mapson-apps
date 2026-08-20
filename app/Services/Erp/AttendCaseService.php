@@ -195,6 +195,65 @@ class AttendCaseService
         ];
     }
 
+    /**
+     * Export dataset: every tindakan in the range flattened to one row per usage item
+     * (tindakan without a usage report still yield one row with empty item columns).
+     * Rumah sakit = societe, dokter = c_doctor, item usage = usage_report(_det) + product.
+     * Range = explicit from/to dates when given, else the attendance period.
+     *
+     * @return array{period: string, periodLabel: string, rows: array<int, object>}
+     */
+    public function exportRows(?string $periodInput, ?string $fromDate = null, ?string $toDate = null): array
+    {
+        [$period, $from, $to] = AttendancePeriod::resolve($periodInput);
+        if ($fromDate && $toDate) {
+            $from = Carbon::parse($fromDate)->startOfDay();
+            $to = Carbon::parse($toDate)->startOfDay();
+            if ($from->gt($to)) {
+                [$from, $to] = [$to, $from];
+            }
+            $period = $from->toDateString().'_'.$to->toDateString();
+        }
+        $p = $this->prefix();
+
+        $rows = DB::connection($this->conn())->select(
+            "SELECT t.id, t.ref, t.tanggal, t.waktu, t.jenis_tindakan, t.pasien,
+                    s.nom AS rumah_sakit,
+                    d.fullname AS dokter,
+                    t.nama_ts AS erp_user_id,
+                    TRIM(CONCAT(u.firstname, ' ', COALESCE(u.lastname, ''))) AS erp_name,
+                    ur.ref AS usage_ref, ur.status AS usage_status,
+                    pr.ref AS item_ref, pr.label AS item_label,
+                    urd.qty_sent, urd.qty_used
+               FROM {$p}tindakan t
+               LEFT JOIN {$p}societe s ON s.rowid = t.fk_soc
+               LEFT JOIN {$p}c_doctor d ON t.dokter REGEXP '^[0-9]+$' AND d.rowid = t.dokter
+               LEFT JOIN {$p}user u ON t.nama_ts REGEXP '^[0-9]+$' AND u.rowid = t.nama_ts
+               LEFT JOIN {$p}usage_report ur ON ur.fk_tindakan = t.id
+               LEFT JOIN {$p}usage_report_det urd ON urd.fk_usage_report = ur.rowid
+               LEFT JOIN {$p}product pr ON pr.rowid = urd.fk_product
+              WHERE t.tanggal BETWEEN ? AND ?
+                AND t.entity IN ({$this->entities()})
+              ORDER BY t.tanggal, t.ref, urd.rowid",
+            [$from->toDateString(), $to->toDateString()]
+        );
+
+        // Prefer the employee master name for the TS over the raw ERP user name.
+        $ids = collect($rows)->pluck('erp_user_id')->filter(fn ($v) => ctype_digit((string) $v))->unique()->values()->all();
+        $employees = Employee::whereIn('erp_user_id', $ids)->get()->keyBy('erp_user_id');
+        foreach ($rows as $r) {
+            $raw = (string) $r->erp_user_id;
+            $emp = ctype_digit($raw) ? $employees->get((int) $raw) : null;
+            $r->nama_ts = $emp?->full_name ?: ($r->erp_name ?: (ctype_digit($raw) ? 'User #'.$raw : ''));
+        }
+
+        return [
+            'period' => $period,
+            'periodLabel' => AttendancePeriod::label($from, $to),
+            'rows' => $rows,
+        ];
+    }
+
     /** Admin drill-down: full tindakan breakdown for one attender (by ERP user id). */
     public function breakdown(int $erpUserId, ?string $periodInput): array
     {

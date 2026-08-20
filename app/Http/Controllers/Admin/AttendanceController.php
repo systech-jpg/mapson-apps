@@ -454,6 +454,7 @@ class AttendanceController extends Controller
                 'he.nik', 'he.name as hadirr_name', 'he.employee_id',
                 'e.full_name as employee_name', 'e.employee_code', 'p.name as position',
                 'e.has_meal_allowance', 'e.has_transport_allowance',
+                'e.current_employment_status', 'e.deleted_at',
             ]);
 
         // Presence (any clock-in) by nik + date.
@@ -461,6 +462,10 @@ class AttendanceController extends Controller
         foreach (DB::table('hadirr_attendances')->whereBetween('date', [$fromS, $toS])->whereNotNull('clock_in')->get(['nik', 'date']) as $a) {
             $present[$a->nik][$a->date] = true;
         }
+
+        // Sembunyikan user Hadirr nonaktif yang tidak punya absensi sama sekali pada periode ini;
+        // riwayat bulan lama tetap tampil karena di bulan itu mereka punya data.
+        $roster = $roster->filter(fn ($r) => isset($present[$r->nik]) || $this->rosterIsActive($r));
 
         // Approved leave requests overlapping the period, grouped by employee.
         $leaveByEmp = [];
@@ -655,6 +660,7 @@ class AttendanceController extends Controller
             ->get([
                 'he.nik', 'he.name as hadirr_name', 'he.employee_id',
                 'e.full_name as employee_name', 'e.employee_code', 'p.name as position',
+                'e.current_employment_status', 'e.deleted_at',
             ]);
 
         $att = DB::table('hadirr_attendances')
@@ -665,6 +671,10 @@ class AttendanceController extends Controller
         foreach ($att as $a) {
             $byNik[$a->nik][$a->date] = $this->computeCell($a);
         }
+
+        // Sembunyikan user Hadirr nonaktif yang tidak punya absensi sama sekali pada periode ini;
+        // riwayat bulan lama tetap tampil karena di bulan itu mereka punya data.
+        $roster = $roster->filter(fn ($r) => isset($byNik[$r->nik]) || $this->rosterIsActive($r));
 
         $employees = $roster->map(function ($r) use ($byNik, $dates) {
             $cells = [];
@@ -708,6 +718,14 @@ class AttendanceController extends Controller
             'dates' => $dates,
             'employees' => $employees,
         ];
+    }
+
+    /** Baris roster masih aktif: terhubung ke employee yang belum nonaktif dan belum dihapus. */
+    private function rosterIsActive(object $r): bool
+    {
+        return $r->employee_id !== null
+            && $r->deleted_at === null
+            && ! in_array($r->current_employment_status, ['terminated', 'resigned', 'retired'], true);
     }
 
     /**
