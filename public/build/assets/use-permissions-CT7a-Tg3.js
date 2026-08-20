@@ -1,1 +1,0 @@
-import{K as u}from"./app-D3f6fW-1.js";function c(){const{permissions:r,isSuperAdmin:n}=u().props;return{can:(o,t="view")=>{var e;return n?!0:!!((e=r==null?void 0:r[o])!=null&&e[t])},isSuperAdmin:n}}export{c as u};

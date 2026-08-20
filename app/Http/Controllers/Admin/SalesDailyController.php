@@ -76,6 +76,10 @@ class SalesDailyController extends Controller
             ? $request->input('to') : now()->toDateString();
         $q = trim((string) $request->input('q'));
 
+        // Tindakan yang sudah pernah ditarik/diinput sales tidak dimunculkan lagi
+        // (entri yang dihapus membebaskan tindakannya kembali).
+        $usedIds = SalesDailyEntry::whereNotNull('erp_tindakan_id')->pluck('erp_tindakan_id')->all();
+
         try {
             $p = config('erp.prefix');
             $rows = DB::connection(config('erp.connection'))->table($p.'tindakan as t')
@@ -83,6 +87,7 @@ class SalesDailyController extends Controller
                 ->leftJoin($p.'c_doctor as d', 'd.rowid', '=', 't.dokter')
                 ->leftJoin($p.'user as u', 'u.rowid', '=', 't.nama_ts')
                 ->whereBetween('t.tanggal', [$from, $to])
+                ->when($usedIds !== [], fn ($qq) => $qq->whereNotIn('t.id', $usedIds))
                 ->when($q !== '', fn ($qq) => $qq->where(fn ($w) => $w
                     ->where('t.pasien', 'like', "%{$q}%")
                     ->orWhere('t.ref', 'like', "%{$q}%")
@@ -138,7 +143,7 @@ class SalesDailyController extends Controller
 
     public function update(Request $request, SalesDailyEntry $entry): RedirectResponse
     {
-        $data = $this->validated($request);
+        $data = $this->validated($request, $entry);
 
         DB::transaction(function () use ($entry, $data) {
             $entry->update($data['header']);
@@ -216,11 +221,12 @@ class SalesDailyController extends Controller
     /**
      * @return array{header: array<string, mixed>, items: list<array<string, mixed>>}
      */
-    protected function validated(Request $request): array
+    protected function validated(Request $request, ?SalesDailyEntry $except = null): array
     {
         $v = $request->validate([
             'entry_date' => ['required', 'date'],
             'sales_type' => ['required', 'in:'.implode(',', SalesDailyEntry::TYPES)],
+            'erp_tindakan_id' => ['nullable', 'integer'],
             'hospital_name' => ['required', 'string', 'max:160'],
             'doctor_name' => ['nullable', 'string', 'max:160'],
             'patient_name' => ['nullable', 'string', 'max:160'],
@@ -250,10 +256,51 @@ class SalesDailyController extends Controller
         // BHP & Unit tidak mengenal pasien — jangan simpan sisa isian yang tersembunyi di form.
         if ($header['sales_type'] !== 'tindakan') {
             $header['patient_name'] = null;
+            $header['erp_tindakan_id'] = null;
         }
         $header['total_amount'] = round(array_sum(array_column($items, 'total')), 2);
 
+        if ($header['sales_type'] === 'tindakan') {
+            $this->assertNoDuplicateTindakan($header, $except);
+        }
+
         return ['header' => $header, 'items' => $items];
+    }
+
+    /**
+     * Tolak tindakan ganda: tarikan ERP yang sama, atau kombinasi
+     * tanggal + rumah sakit + dokter + pasien yang sudah pernah diinput.
+     *
+     * @param  array<string, mixed>  $header
+     */
+    protected function assertNoDuplicateTindakan(array $header, ?SalesDailyEntry $except): void
+    {
+        $eq = fn ($q, string $col, $v) => $v === null || $v === '' ? $q->whereNull($col) : $q->where($col, $v);
+
+        if (! empty($header['erp_tindakan_id'])) {
+            $taken = SalesDailyEntry::where('erp_tindakan_id', $header['erp_tindakan_id'])
+                ->when($except, fn ($q) => $q->whereKeyNot($except->id))
+                ->exists();
+            if ($taken) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'entry_date' => 'Data tindakan ini sudah pernah ditarik dan diinput sebelumnya.',
+                ]);
+            }
+        }
+
+        $dup = SalesDailyEntry::where('sales_type', 'tindakan')
+            ->whereDate('entry_date', $header['entry_date'])
+            ->where('hospital_name', $header['hospital_name'])
+            ->tap(fn ($q) => $eq($q, 'doctor_name', $header['doctor_name'] ?? null))
+            ->tap(fn ($q) => $eq($q, 'patient_name', $header['patient_name'] ?? null))
+            ->when($except, fn ($q) => $q->whereKeyNot($except->id))
+            ->exists();
+
+        if ($dup) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'entry_date' => 'Tindakan dengan tanggal, rumah sakit, dokter, dan pasien yang sama sudah pernah diinput.',
+            ]);
+        }
     }
 
     /** @param  list<array<string, mixed>>  $items */

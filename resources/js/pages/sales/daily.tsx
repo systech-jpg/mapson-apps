@@ -39,6 +39,7 @@ interface Entry {
     id: number;
     entry_date: string;
     sales_type: 'tindakan' | 'bhp' | 'unit';
+    erp_tindakan_id: number | null;
     hospital_name: string;
     doctor_name: string | null;
     patient_name: string | null;
@@ -243,6 +244,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
             ...d,
             entry_date: r.tanggal.substring(0, 10),
             sales_type: 'tindakan',
+            erp_tindakan_id: r.id,
             hospital_name: r.hospital ?? '',
             doctor_name: r.doctor ?? '',
             patient_name: r.pasien ?? '',
@@ -255,6 +257,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
     const { data, setData, post, put, processing, errors, clearErrors } = useForm<{
         entry_date: string;
         sales_type: Entry['sales_type'];
+        erp_tindakan_id: number | null;
         hospital_name: string;
         doctor_name: string;
         patient_name: string;
@@ -264,6 +267,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
     }>({
         entry_date: new Date().toISOString().substring(0, 10),
         sales_type: 'tindakan',
+        erp_tindakan_id: null,
         hospital_name: '',
         doctor_name: '',
         patient_name: '',
@@ -287,6 +291,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
         setData({
             entry_date: new Date().toISOString().substring(0, 10),
             sales_type: 'tindakan',
+            erp_tindakan_id: null,
             hospital_name: '',
             doctor_name: '',
             patient_name: '',
@@ -303,6 +308,7 @@ export default function SalesDaily({ month, type, q, entries, kpi, options }: Pr
         setData({
             entry_date: e.entry_date.substring(0, 10),
             sales_type: e.sales_type,
+            erp_tindakan_id: e.erp_tindakan_id ?? null,
             hospital_name: e.hospital_name,
             doctor_name: e.doctor_name ?? '',
             patient_name: e.patient_name ?? '',
