@@ -11,6 +11,7 @@ use App\Services\Overtime\OvertimeService;
 use App\Support\AttendancePeriod;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -59,11 +60,20 @@ class OvertimeController extends Controller
         $employee = $request->user()?->employee;
         abort_unless($employee, 403, 'Akun belum tertaut ke karyawan.');
 
+        // Periode ditentukan dari TANGGAL entri, bukan periode yang sedang dibuka —
+        // backdate ke periode sebelumnya (maks 30 hari) otomatis masuk ke periode yang benar.
+        $periodKey = AttendancePeriod::keyFor(Carbon::parse($request->input('date')));
+
         try {
-            $period = $this->service->openPeriod($employee, $request->input('period'), $request->user());
+            $period = $this->service->openPeriod($employee, $periodKey, $request->user());
             $this->service->addEntry($period, $request->validated());
         } catch (Throwable $e) {
             return back()->with('error', $e->getMessage());
+        }
+
+        if ($periodKey !== $request->input('period')) {
+            return to_route('overtime.index', ['period' => $periodKey])
+                ->with('success', 'Entri lembur ditambahkan ke periode '.AttendancePeriod::label($period->period_start, $period->period_end).'.');
         }
 
         return back()->with('success', 'Entri lembur ditambahkan.');

@@ -29,6 +29,14 @@ class AttendancePeriod
         return [$period, $startMonth->copy()->day(20), $startMonth->copy()->addMonthNoOverflow()->day(19)];
     }
 
+    /** Kunci periode (Y-m bulan awal) yang memuat tanggal tersebut. */
+    public static function keyFor(Carbon $date): string
+    {
+        $start = $date->day >= 20 ? $date->copy()->startOfMonth() : $date->copy()->subMonthNoOverflow()->startOfMonth();
+
+        return $start->format('Y-m');
+    }
+
     public static function label(Carbon $from, Carbon $to): string
     {
         return $from->translatedFormat('d M Y').' – '.$to->translatedFormat('d M Y');
