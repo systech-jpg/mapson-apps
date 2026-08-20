@@ -77,8 +77,18 @@ class SalesDailyController extends Controller
         $q = trim((string) $request->input('q'));
 
         // Tindakan yang sudah pernah ditarik/diinput sales tidak dimunculkan lagi
-        // (entri yang dihapus membebaskan tindakannya kembali).
+        // (entri yang dihapus membebaskan tindakannya kembali). Dua lapis: id tarikan
+        // (erp_tindakan_id) + kombinasi tanggal|RS|dokter|pasien untuk entri lama tanpa flag.
         $usedIds = SalesDailyEntry::whereNotNull('erp_tindakan_id')->pluck('erp_tindakan_id')->all();
+
+        $comboKey = fn ($date, $hospital, $doctor, $patient) => mb_strtolower(
+            trim((string) $date).'|'.trim((string) $hospital).'|'.trim((string) $doctor).'|'.trim((string) $patient)
+        );
+        $usedCombos = SalesDailyEntry::where('sales_type', 'tindakan')
+            ->whereBetween('entry_date', [$from, $to])
+            ->get(['entry_date', 'hospital_name', 'doctor_name', 'patient_name'])
+            ->mapWithKeys(fn ($e) => [$comboKey($e->entry_date->format('Y-m-d'), $e->hospital_name, $e->doctor_name, $e->patient_name) => true])
+            ->all();
 
         try {
             $p = config('erp.prefix');
@@ -99,7 +109,9 @@ class SalesDailyController extends Controller
                     COALESCE(NULLIF(s.name_alias, ''), s.nom) hospital,
                     COALESCE(d.fullname, NULLIF(t.dokter, '')) doctor,
                     TRIM(CONCAT(COALESCE(u.firstname, ''), ' ', COALESCE(u.lastname, ''))) ts_name")
-                ->get();
+                ->get()
+                ->reject(fn ($r) => isset($usedCombos[$comboKey(substr((string) $r->tanggal, 0, 10), $r->hospital, $r->doctor, $r->pasien)]))
+                ->values();
             // Detail alat TERPAKAI per tindakan (usage report diisi TS/warehouse) — qty_used > 0
             // saja; qty_sent tidak dipakai karena berisi seluruh isi tray yang dikirim.
             $details = DB::connection(config('erp.connection'))->table($p.'usage_report as ur')
