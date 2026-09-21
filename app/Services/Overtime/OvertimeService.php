@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
- * Overtime lifecycle: a per-period header (20→19) holds per-activity detail entries.
+ * Overtime lifecycle: a per-period header (periode absensi, default 20→19, diatur di Pengaturan Kepegawaian) holds per-activity detail entries.
  * Flow: employee fills entries → submit → supervisor reviews each row + approves the
  * period → HR approves the period (locks totals). Amount = hours × rate × multiplier
  * (workday vs weekend/holiday), rate snapshotted on the header at HR approval.

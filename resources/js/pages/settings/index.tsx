@@ -33,7 +33,7 @@ interface Holiday { id: number; date: string; name: string; type: string; is_wor
 interface AttendTier { id: number; tier: number; label: string; fee_workday: string | number; fee_holiday: string | number; basis: 'tindakan' | 'invoice'; is_active: boolean }
 
 interface Props {
-    attendance: { deadline: string; full_day_after: string };
+    attendance: { deadline: string; full_day_after: string; period_start_day: number };
     overtime: { rate_per_hour: number; multiplier_workday: number; holiday_flat_rate: number };
     leaveTypes: LeaveType[];
     holidayYear: number;

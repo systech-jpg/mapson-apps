@@ -113,6 +113,8 @@ class AttendCaseService
         return [
             'period' => $period,
             'periodLabel' => AttendancePeriod::label($from, $to),
+            'periodStart' => $from->toDateString(),
+            'periodEnd' => $to->toDateString(),
             'rows' => $out,
             'totals' => [
                 'cases' => $totalCases,

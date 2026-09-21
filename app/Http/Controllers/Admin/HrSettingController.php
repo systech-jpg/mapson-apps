@@ -8,6 +8,7 @@ use App\Models\AttendCaseFee;
 use App\Models\LeaveHoliday;
 use App\Models\LeaveType;
 use App\Models\OvertimeSetting;
+use App\Support\AttendancePeriod;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -30,6 +31,7 @@ class HrSettingController extends Controller
             'attendance' => [
                 'deadline' => $att->deadline,
                 'full_day_after' => $att->full_day_after,
+                'period_start_day' => (int) $att->period_start_day,
             ],
             'overtime' => [
                 'rate_per_hour' => (float) $ot->rate_per_hour,
@@ -86,9 +88,11 @@ class HrSettingController extends Controller
         $data = $request->validate([
             'deadline' => ['required', 'date_format:H:i'],
             'full_day_after' => ['required', 'date_format:H:i'],
+            'period_start_day' => ['required', 'integer', 'min:1', 'max:28'],
         ]);
 
         AttendanceSetting::current()->update($data);
+        AttendancePeriod::forget();
 
         return back()->with('success', 'Pengaturan absensi disimpan.');
     }

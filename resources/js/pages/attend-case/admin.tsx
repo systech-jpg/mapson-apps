@@ -36,15 +36,15 @@ interface Row {
 interface Props {
     period: string;
     periodLabel: string;
+    periodStart: string;
+    periodEnd: string;
     rows: Row[];
     totals: { cases: number; fee: number; attenders: number; unmapped: number };
 }
 
 const rupiah = (n: number) => 'Rp ' + Number(n).toLocaleString('id-ID');
 
-const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: Props) {
+export default function AttendCaseAdmin({ period, periodLabel, periodStart, periodEnd, rows, totals }: Props) {
     const shiftPeriod = (delta: number) => {
         const [y, m] = period.split('-').map(Number);
         const dt = new Date(y, m - 1 + delta, 1);
@@ -52,10 +52,9 @@ export default function AttendCaseAdmin({ period, periodLabel, rows, totals }: P
         router.get(route('attend-case.admin'), { period: np }, { preserveScroll: true, preserveState: true });
     };
 
-    // Rentang default = periode absensi yang sedang tampil (tgl 20 s/d 19 bulan berikutnya).
-    const [py, pm] = period.split('-').map(Number);
-    const [exportFrom, setExportFrom] = useState(fmtDate(new Date(py, pm - 1, 20)));
-    const [exportTo, setExportTo] = useState(fmtDate(new Date(py, pm, 19)));
+    // Rentang default = periode absensi yang sedang tampil (tanggal awal periode diatur di Pengaturan Kepegawaian).
+    const [exportFrom, setExportFrom] = useState(periodStart);
+    const [exportTo, setExportTo] = useState(periodEnd);
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
