@@ -45,7 +45,45 @@ class OvertimeService
             $p->update(['request_number' => 'OT-'.$from->year.'-'.str_pad((string) $p->id, 6, '0', STR_PAD_LEFT)]);
         }
 
+        // Tanggal awal periode bisa diubah di Pengaturan Kepegawaian; header yang belum
+        // disetujui HR mengikuti rentang terbaru (yang sudah approved tetap beku).
+        $this->syncPeriodRange($p, $from, $to);
+
         return $p;
+    }
+
+    /** Samakan period_start/period_end header dengan rentang periode saat ini (kecuali sudah approved). */
+    private function syncPeriodRange(OvertimePeriod $p, Carbon $from, Carbon $to): void
+    {
+        if ($p->status === OvertimePeriod::STATUS_APPROVED) {
+            return;
+        }
+        $fromS = $from->toDateString();
+        $toS = $to->toDateString();
+        if ($p->period_start?->toDateString() !== $fromS || $p->period_end?->toDateString() !== $toS) {
+            $p->forceFill(['period_start' => $fromS, 'period_end' => $toS])->save();
+        }
+    }
+
+    /**
+     * Dipanggil setelah tanggal awal periode diubah di pengaturan: semua header yang belum
+     * disetujui HR disesuaikan ke rentang baru. Mengembalikan jumlah header yang berubah.
+     */
+    public function resyncOpenPeriods(): int
+    {
+        $n = 0;
+        OvertimePeriod::where('status', '!=', OvertimePeriod::STATUS_APPROVED)
+            ->orderBy('id')
+            ->each(function (OvertimePeriod $p) use (&$n) {
+                [, $from, $to] = AttendancePeriod::resolve($p->period);
+                $before = [$p->period_start?->toDateString(), $p->period_end?->toDateString()];
+                $this->syncPeriodRange($p, $from, $to);
+                if ($before !== [$from->toDateString(), $to->toDateString()]) {
+                    $n++;
+                }
+            });
+
+        return $n;
     }
 
     public function addEntry(OvertimePeriod $period, array $data): OvertimeEntry

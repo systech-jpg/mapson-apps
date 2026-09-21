@@ -8,6 +8,7 @@ use App\Models\AttendCaseFee;
 use App\Models\LeaveHoliday;
 use App\Models\LeaveType;
 use App\Models\OvertimeSetting;
+use App\Services\Overtime\OvertimeService;
 use App\Support\AttendancePeriod;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,9 +92,17 @@ class HrSettingController extends Controller
             'period_start_day' => ['required', 'integer', 'min:1', 'max:28'],
         ]);
 
+        $before = (int) AttendanceSetting::current()->period_start_day;
         AttendanceSetting::current()->update($data);
         AttendancePeriod::forget();
 
-        return back()->with('success', 'Pengaturan absensi disimpan.');
+        $msg = 'Pengaturan absensi disimpan.';
+        if ($before !== (int) $data['period_start_day']) {
+            // Header lembur yang belum disetujui HR ikut rentang periode yang baru.
+            $n = app(OvertimeService::class)->resyncOpenPeriods();
+            $msg .= " Tanggal awal periode diubah dari {$before} ke {$data['period_start_day']}; {$n} periode lembur yang belum disetujui disesuaikan.";
+        }
+
+        return back()->with('success', $msg);
     }
 }
