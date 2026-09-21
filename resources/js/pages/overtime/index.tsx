@@ -80,7 +80,10 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
     const localIso = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
     const todayIso = localIso(new Date());
     const backdateLimit = localIso(new Date(Date.now() - 30 * 86400000));
-    const defaultDate = todayIso >= periodStart && todayIso <= periodEnd ? todayIso : periodStart;
+    // Default: hari ini bila masih di periode yang dibuka; kalau tidak, tanggal terdekat di dalam
+    // periode itu, dan tidak lebih mundur dari batas backdate (agar nilai awal form selalu valid).
+    const clampedToPeriod = todayIso < periodStart ? periodStart : todayIso > periodEnd ? periodEnd : todayIso;
+    const defaultDate = clampedToPeriod < backdateLimit ? backdateLimit : clampedToPeriod;
 
     const { data, setData, post, put, processing, errors, reset, clearErrors } = useForm({
         period,
@@ -354,7 +357,7 @@ export default function OvertimeMine({ employeeLinked, period, periodLabel, peri
                     <form onSubmit={submit} className="grid gap-4">
                         <div className="grid gap-2">
                             <Label htmlFor="ot_date">Tanggal *</Label>
-                            <Input id="ot_date" type="date" min={backdateLimit} max={periodEnd} value={data.date} onChange={(e) => setData('date', e.target.value)} required />
+                            <Input id="ot_date" type="date" min={backdateLimit} value={data.date} onChange={(e) => setData('date', e.target.value)} required />
                             <InputError message={errors.date} />
                         </div>
                         <div className="grid gap-2">
